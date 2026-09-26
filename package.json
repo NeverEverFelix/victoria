@@ -1,0 +1,16 @@
+{
+  "name": "victoria",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An agentic financial companion that turns money you almost spent into money you actually save.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.11"
+  }
+}
