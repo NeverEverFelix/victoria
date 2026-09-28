@@ -69,6 +69,23 @@ npm run check
 
 Only commit `.env*.example` files. Keep real `.env.local`, `.env.test`, `.env.staging`, and `.env.production` files uncommitted.
 
+## Agentic Coding Setup
+
+Victoria is set up for agent-assisted development before full product development begins.
+
+Start with:
+
+- `AGENTS.md` for repository-level coding instructions.
+- `.agents/README.md` for reusable orchestrator, reviewer, and handoff prompts.
+- `docs/agentic-coding-patterns.md` for the coding-agent workflow.
+- `docs/agent-work-queue.md` for prioritized implementation slices.
+- `docs/decisions.md` for product decisions and unresolved questions.
+- `docs/mvp.md` and `docs/user-stories.md` for the MVP behavior contract.
+
+The default coding pattern is one orchestrator agent working on one slice at a time. Specialist reviewers should be used only for risky or cross-cutting changes, especially around tests, safety, architecture, and documentation drift.
+
+GitHub Actions also includes an optional AI code review workflow in `.github/workflows/ai-code-review.yml`. To enable it, add an `OPENAI_API_KEY` repository secret. You can optionally set the repository variable `OPENAI_CODE_REVIEW_MODEL`; otherwise the workflow uses `gpt-5`. Without the secret, the workflow skips AI review and leaves a job summary.
+
 ## Agentic Architecture
 
 Victoria is not just a chat window. Victoria should be able to reason about a user's financial behavior, remember context, choose tools, ask follow-up questions, and take approved actions.

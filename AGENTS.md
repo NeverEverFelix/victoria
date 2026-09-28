@@ -12,9 +12,12 @@ Before making code changes, read:
 2. `docs/mvp.md`
 3. `docs/user-stories.md`
 4. `tests/test-plan.md`
-5. The relevant files under `src/`
+5. `docs/agentic-coding-patterns.md`
+6. The relevant files under `src/`
 
 Use these documents as the product contract. If they conflict, prefer the narrower and safer behavior from `docs/mvp.md` and `docs/user-stories.md`.
+
+For reusable agent roles and handoff templates, see `.agents/README.md`.
 
 ## Current Product Boundary
 
