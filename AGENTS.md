@@ -61,6 +61,20 @@ Keep changes small and aligned with the existing architecture.
 
 `npm run check` includes `npm run agent:validate`, which verifies that Victoria's agentic coding setup and safety-oriented task briefs have not silently drifted.
 
+## Headless-First Development
+
+Victoria's user interface is the final implementation phase, not an early development surface.
+
+Until every non-UI MVP slice in `docs/agent-work-queue.md` is complete and verified:
+
+- Do not build user-facing pages, components, layouts, or styles for Victoria.
+- Do not build a temporary chat screen, testing UI, developer dashboard, component showcase, or similar interface.
+- Do not use UI work to stand in for agent, domain, policy, API-contract, or integration tests.
+- It is acceptable to install and configure frontend tooling and dependencies, provided no Victoria UI is implemented.
+- Test behavior headlessly through unit, integration, contract, and route-handler tests.
+
+Begin UI implementation only after the headless MVP behavior and server boundaries pass `npm run check`, unless the user explicitly changes this sequencing decision.
+
 ## Architecture Boundaries
 
 Use the existing folders intentionally:
@@ -117,6 +131,8 @@ The first implementation slices should follow this order:
 5. Regretful spend.
 
 After those are solid, consider weekly progress, goal allocation, memory, and richer summaries.
+
+Do not begin the Victoria UI or a testing UI while these headless implementation slices remain incomplete.
 
 ## Testing Expectations
 

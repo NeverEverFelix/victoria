@@ -89,6 +89,24 @@ Implications:
 - Plaid production access should not be added yet.
 - Any future real transfer work needs explicit approval and new tests.
 
+### UI Development Comes After The Headless MVP
+
+Decision:
+
+Victoria will not have a user-facing UI or a temporary testing UI until the non-UI MVP behavior and server boundaries are complete.
+
+Why:
+
+The agent loop, approval policy, mocked ledger behavior, domain rules, and API contracts should be correct without relying on a screen to exercise or demonstrate them. Deferring the UI also prevents early visual work from driving unresolved product behavior.
+
+Implications:
+
+- Develop and verify the MVP through unit, integration, contract, and route-handler tests first.
+- Do not create Victoria pages, components, layouts, styles, chat sandboxes, developer dashboards, or testing interfaces during the headless phases.
+- Frontend dependencies and configuration may be prepared without implementing UI.
+- UI implementation becomes the final product phase after the non-UI work queue is complete and `npm run check` passes.
+- End-to-end browser journeys and production deployment follow the UI phase.
+
 ## Open Questions
 
 ### What Makes Saved Money Feel Protected With One Account?

@@ -5,17 +5,39 @@
   "description": "An agentic financial companion that turns money you almost spent into money you actually save.",
   "type": "module",
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier . --write",
     "ai:review": "node scripts/ai-code-review.mjs",
     "agent:validate": "node scripts/validate-agentic-setup.mjs",
-    "check": "npm run agent:validate && npm run typecheck && npm run typecheck:test && npm test",
+    "check": "npm run agent:validate && npm run lint && npm run typecheck && npm run typecheck:test && npm test",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "^16.3.6",
+    "eslint-config-prettier": "^10.1.8",
+    "postcss": "^8.5.28",
+    "prettier": "^3.9.9",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.6.0",
     "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "next": "^16.3.6",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.5"
   }
 }
