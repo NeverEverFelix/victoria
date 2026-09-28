@@ -354,6 +354,18 @@ These are useful later, but should wait until the core loop works:
 - Prisma/Postgres persistence.
 - Plaid sandbox transaction reads.
 - Notification reminders.
-- Browser UI.
-- End-to-end chat journeys.
 - Production deployment.
+
+## Final Phase: Victoria UI
+
+Do not begin this phase until every non-UI MVP slice above is complete and `npm run check` passes.
+
+This phase may include:
+
+- The browser-based Victoria conversation experience.
+- Mocked savings ledger and progress views.
+- Shared UI components and the Victoria design system.
+- Responsive and accessible interaction states.
+- End-to-end browser journeys.
+
+Do not create a temporary testing UI before this phase. Exercise unfinished behavior through headless tests instead.
