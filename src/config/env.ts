@@ -214,11 +214,11 @@ function parseDatabaseUrl(
 }
 
 function assertMoneyMovementIsAllowed(
-  appEnv: AppEnv,
+  _appEnv: AppEnv,
   moneyMovementMode: MoneyMovementMode
 ): void {
-  if (appEnv !== "production" && moneyMovementMode === "real_transfer") {
-    throw new Error("Real money movement is only allowed in production.");
+  if (moneyMovementMode === "real_transfer") {
+    throw new Error("Real money movement is not available in the Victoria MVP.");
   }
 }
 

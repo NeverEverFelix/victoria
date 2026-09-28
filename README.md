@@ -1,8 +1,8 @@
 # Victoria
 
-Victoria is an agentic financial companion that helps people turn everyday restraint into real savings.
+Victoria is an agentic financial companion that helps people turn everyday restraint into recorded savings.
 
-Most budgeting tools show you where your money went after it is already gone. Victoria is different: it meets you in the moment, understands the small financial decisions you are making, and helps move the money you almost spent somewhere safer before it quietly disappears into the rest of your balance.
+Most budgeting tools show you where your money went after it is already gone. Victoria is different: it meets you in the moment, understands the small financial decisions you are making, and helps you record the money you almost spent before it quietly disappears into the rest of your balance.
 
 The goal of Victoria is simple: help people actually save money.
 
@@ -16,7 +16,7 @@ For example:
 
 Victoria should understand the decision, estimate the amount you avoided spending, and ask whether you want to save it:
 
-> "Great job. Your typical 7th Street order is about $27.46. Would you like me to move that into savings? If you do, you will have saved $546 this month from choices like this."
+> "Great job. Your typical 7th Street order is about $27.46. Would you like me to record that in your Victoria savings ledger? No real money has moved yet."
 
 Victoria is designed around the belief that saving money should not depend only on strict budgets, guilt, or perfect discipline. It should also capture the tiny wins people already have: cooking instead of ordering food, making coffee at home, skipping an impulse purchase, choosing a cheaper ride, waiting before buying something, or deciding not to go out.
 
@@ -26,7 +26,7 @@ Victoria helps users:
 
 - Recognize small money-saving decisions as they happen.
 - Estimate the value of the purchase they avoided.
-- Move that money out of their available spending balance.
+- Record that amount in a mocked savings ledger.
 - Track how those small decisions add up over time.
 - Build a healthier relationship with money through encouragement, reflection, and consistent nudges.
 
@@ -37,8 +37,8 @@ Victoria should feel less like a spreadsheet and more like a trusted companion w
 1. The user tells Victoria about a financial decision.
 2. Victoria interprets the decision and identifies the avoided or regretted spend.
 3. Victoria estimates the typical cost using transaction history, known habits, or user-provided context.
-4. Victoria asks for confirmation before moving money.
-5. Victoria transfers the amount into a savings destination, vault, or protected account.
+4. Victoria asks for confirmation before recording savings.
+5. Victoria records the amount in a mocked savings ledger.
 6. Victoria shows the user the impact over time.
 
 ## Bare Bones Machinery
@@ -80,11 +80,14 @@ Start with:
 - `docs/agentic-coding-patterns.md` for the coding-agent workflow.
 - `docs/agent-work-queue.md` for prioritized implementation slices.
 - `docs/decisions.md` for product decisions and unresolved questions.
+- `docs/failure-modes.md` for Victoria-specific silent failures to guard against.
 - `docs/mvp.md` and `docs/user-stories.md` for the MVP behavior contract.
 
 The default coding pattern is one orchestrator agent working on one slice at a time. Specialist reviewers should be used only for risky or cross-cutting changes, especially around tests, safety, architecture, and documentation drift.
 
-GitHub Actions also includes an optional AI code review workflow in `.github/workflows/ai-code-review.yml`. To enable it, add an `OPENAI_API_KEY` repository secret. You can optionally set the repository variable `OPENAI_CODE_REVIEW_MODEL`; otherwise the workflow uses `gpt-5`. Without the secret, the workflow skips AI review and leaves a job summary.
+GitHub Actions also includes an optional AI code review workflow in `.github/workflows/ai-code-review.yml`. Pull requests are reviewed by a trusted script checked out from the default branch; proposed changes are downloaded only as diff data and are never executed with the OpenAI secret. Trusted pushes to `main` are reviewed too. To enable it, add an `OPENAI_API_KEY` repository secret. You can optionally set the repository variable `OPENAI_CODE_REVIEW_MODEL`; otherwise the workflow uses `gpt-5`. Without the secret, the workflow skips AI review and leaves a job summary.
+
+See `docs/github-setup.md` for recommended branch protection, labels, and GitHub repository settings.
 
 ## Agentic Architecture
 
@@ -154,7 +157,7 @@ For the MVP, the Victoria agent can follow a simple loop:
 8. Create a ledger entry or update a goal.
 9. Show the user the impact.
 
-The key rule: Victoria can be proactive with insight, memory, reminders, and suggestions, but it should never move real money without clear confirmation from the user.
+The key rule for the MVP: Victoria can be proactive with insight, memory, reminders, and suggestions, but it cannot move real money.
 
 ## Testing Strategy
 
@@ -201,7 +204,7 @@ User:
 I almost bought a $90 jacket but decided to wait.
 
 Victoria:
-That is a strong pause. Want me to move the $90 into your savings vault so it does not get absorbed into the rest of your balance?
+That is a strong pause. Want me to record the $90 in your Victoria savings ledger? No real money has moved yet.
 ```
 
 ```text

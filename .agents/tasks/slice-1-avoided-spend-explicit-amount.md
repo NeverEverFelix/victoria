@@ -55,7 +55,7 @@ Victoria should:
 - Create a savings suggestion for 9000 cents.
 - Set the suggestion source to `user_provided`.
 - Require approval before creating a ledger entry.
-- Avoid calling `createSavingsEntry` during the initial response.
+- Avoid executing `createSavingsEntry` during the initial response.
 - Avoid claiming that real money moved.
 
 ## In Scope
@@ -102,7 +102,7 @@ Add or confirm coverage for:
 - The returned classification is `avoided_spend`.
 - The returned suggestion amount is `9000`.
 - The returned suggestion source is `user_provided`.
-- The returned tool call is `createSavingsEntry`.
+- The returned proposed tool call is `createSavingsEntry`.
 - The returned tool call requires approval.
 - No ledger entry is created before approval.
 - The user-facing message does not imply a real transfer.
@@ -114,6 +114,13 @@ Add or confirm coverage for:
 - Do not claim funds were moved.
 - Do not treat the initial avoided-spend message as approval.
 - Do not create a ledger entry until an explicit approval path is used.
+
+## Silent Failure Risks
+
+- The response could suggest savings but sound like money already moved.
+- A test could verify the amount but miss that approval is still required.
+- The mock classifier could pass this exact phrase while failing similar explicit-amount wording.
+- Future real-transfer code could accidentally reuse this path without a policy gate.
 
 ## Optional Reviewers
 
@@ -147,6 +154,7 @@ This task is done when:
 - Victoria suggests saving 9000 cents for the $90 example.
 - The savings entry is pending approval, not created immediately.
 - The behavior remains mocked-ledger only.
+- Silent-failure risks above are covered by tests, wording, or handoff notes.
 - `npm run check` passes.
 - The final response uses `.agents/templates/handoff.md`.
 

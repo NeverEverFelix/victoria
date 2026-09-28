@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, appendFileSync } from "node:fs";
+import { buildReviewInput, prepareDiffForReview } from "./ai-code-review-core.mjs";
 
 const {
   BASE_SHA,
@@ -9,6 +10,8 @@ const {
   GITHUB_REPOSITORY,
   GITHUB_STEP_SUMMARY,
   GITHUB_TOKEN,
+  PULL_REQUEST_NUMBER,
+  AI_REVIEW_REQUIRED,
   OPENAI_API_KEY,
   OPENAI_CODE_REVIEW_MODEL = "gpt-5"
 } = process.env;
@@ -43,7 +46,37 @@ function getEvent() {
   return JSON.parse(readFileSync(GITHUB_EVENT_PATH, "utf8"));
 }
 
-function getDiff() {
+async function getPullRequestDiff() {
+  if (!GITHUB_TOKEN || !GITHUB_REPOSITORY || !PULL_REQUEST_NUMBER) {
+    throw new Error(
+      "GITHUB_TOKEN, GITHUB_REPOSITORY, and PULL_REQUEST_NUMBER are required for pull request review."
+    );
+  }
+
+  const response = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${PULL_REQUEST_NUMBER}`,
+    {
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Accept: "application/vnd.github.v3.diff",
+        "X-GitHub-Api-Version": "2022-11-28"
+      }
+    }
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`GitHub diff request failed: ${response.status} ${body}`);
+  }
+
+  return response.text();
+}
+
+async function getDiff() {
+  if (GITHUB_EVENT_NAME === "pull_request_target") {
+    return getPullRequestDiff();
+  }
+
   if (!BASE_SHA || !HEAD_SHA) {
     throw new Error("BASE_SHA and HEAD_SHA are required.");
   }
@@ -65,63 +98,10 @@ function getDiff() {
     ":(exclude)package-lock.json"
   ]);
 
-  if (diff.length > maxDiffChars) {
-    return `${diff.slice(0, maxDiffChars)}\n\n[Diff truncated at ${maxDiffChars} characters]`;
-  }
-
   return diff;
 }
 
-function buildPrompt(diff) {
-  const agentInstructions = readOptional("AGENTS.md");
-  const codingPatterns = readOptional("docs/agentic-coding-patterns.md");
-  const decisions = readOptional("docs/decisions.md");
-
-  return `You are reviewing a Victoria repository change.
-
-Focus on bugs, regressions, missing tests, safety issues, and docs drift.
-Prioritize findings by severity. Be concise and concrete.
-
-Victoria-specific review priorities:
-- No real money movement in the MVP.
-- Mocked ledger entries must not be described as bank transfers.
-- User approval is required before recording savings.
-- Ambiguous user language must not be treated as approval.
-- Product behavior should match docs and tests.
-- External integrations should not be wired prematurely.
-
-Return Markdown with these sections:
-
-## Findings
-- If there are findings, list them as severity + file/path + issue + suggested fix.
-- If there are no findings, say "No blocking findings."
-
-## Tests
-- Mention missing or relevant tests.
-
-## Notes
-- Mention docs drift or follow-up concerns.
-
-Repository instructions:
-
-${agentInstructions}
-
-Agentic coding patterns:
-
-${codingPatterns}
-
-Product decisions:
-
-${decisions}
-
-Diff to review:
-
-\`\`\`diff
-${diff}
-\`\`\``;
-}
-
-async function createReview(prompt) {
+async function createReview(input) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -130,7 +110,7 @@ async function createReview(prompt) {
     },
     body: JSON.stringify({
       model: OPENAI_CODE_REVIEW_MODEL,
-      input: prompt,
+      input,
       text: {
         verbosity: "medium"
       },
@@ -200,24 +180,41 @@ function writeSummary(body) {
 
 async function main() {
   if (!OPENAI_API_KEY) {
+    const message = "OPENAI_API_KEY is not set; skipping AI review.";
     log("OPENAI_API_KEY is not set; skipping AI review.");
     writeSummary("## AI Code Review\n\nSkipped because `OPENAI_API_KEY` is not configured.");
+    if (AI_REVIEW_REQUIRED === "true") {
+      throw new Error(`${message} AI_REVIEW_REQUIRED=true, so this job must fail.`);
+    }
     return;
   }
 
   const event = getEvent();
-  const diff = getDiff();
+  const rawDiff = await getDiff();
 
-  if (!diff.trim()) {
+  if (!rawDiff.trim()) {
     log("No diff found; skipping AI review.");
     writeSummary("## AI Code Review\n\nSkipped because there was no diff to review.");
+    if (AI_REVIEW_REQUIRED === "true") {
+      throw new Error("AI_REVIEW_REQUIRED=true, but there was no diff to review.");
+    }
     return;
   }
 
-  const review = await createReview(buildPrompt(diff));
-  const body = `## AI Code Review\n\n${review}`;
+  const preparedDiff = prepareDiffForReview(rawDiff, maxDiffChars);
+  const input = buildReviewInput({
+    diff: preparedDiff.text,
+    agentInstructions: readOptional("AGENTS.md"),
+    codingPatterns: readOptional("docs/agentic-coding-patterns.md"),
+    decisions: readOptional("docs/decisions.md")
+  });
+  const review = await createReview(input);
+  const completenessWarning = preparedDiff.truncated
+    ? `> **Incomplete automated review:** the diff was ${preparedDiff.originalChars} characters and exceeded the ${maxDiffChars}-character limit. Safety-sensitive files were prioritized, but a human must review the complete diff.\n\n`
+    : "";
+  const body = `## AI Code Review\n\n${completenessWarning}${review}`;
 
-  if (GITHUB_EVENT_NAME === "pull_request") {
+  if (GITHUB_EVENT_NAME === "pull_request_target") {
     const posted = await postPullRequestComment(event, body);
     if (posted) {
       log("Posted AI review comment to pull request.");
@@ -225,10 +222,16 @@ async function main() {
       log("Could not post PR comment; writing summary instead.");
       writeSummary(body);
     }
+    if (preparedDiff.truncated && AI_REVIEW_REQUIRED === "true") {
+      throw new Error("Required AI review was incomplete because the diff exceeded the review limit.");
+    }
     return;
   }
 
   writeSummary(body);
+  if (preparedDiff.truncated && AI_REVIEW_REQUIRED === "true") {
+    throw new Error("Required AI review was incomplete because the diff exceeded the review limit.");
+  }
 }
 
 main().catch((error) => {

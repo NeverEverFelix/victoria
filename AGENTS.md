@@ -13,7 +13,8 @@ Before making code changes, read:
 3. `docs/user-stories.md`
 4. `tests/test-plan.md`
 5. `docs/agentic-coding-patterns.md`
-6. The relevant files under `src/`
+6. `docs/failure-modes.md`
+7. The relevant files under `src/`
 
 Use these documents as the product contract. If they conflict, prefer the narrower and safer behavior from `docs/mvp.md` and `docs/user-stories.md`.
 
@@ -57,6 +58,8 @@ Recommended loop:
 6. Run `npm run check`.
 
 Keep changes small and aligned with the existing architecture.
+
+`npm run check` includes `npm run agent:validate`, which verifies that Victoria's agentic coding setup and safety-oriented task briefs have not silently drifted.
 
 ## Architecture Boundaries
 
@@ -165,7 +168,7 @@ When adding one:
 - Preserve mock implementations for tests.
 - Add configuration validation before use.
 - Add tests for disabled, mocked, and unsafe states.
-- Keep real money movement impossible unless explicitly approved and configured.
+- Keep real money movement impossible throughout the MVP, even when it is requested or approved.
 
 ## Documentation Expectations
 

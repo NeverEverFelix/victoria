@@ -1,0 +1,17 @@
+# Victoria ownership.
+#
+# Replace `@felixm` with a team handle later if the repo moves to an organization.
+
+* @felixm
+
+# Safety-sensitive areas should always have explicit review ownership.
+AGENTS.md @felixm
+.agents/ @felixm
+.github/workflows/ @felixm
+docs/decisions.md @felixm
+docs/environments.md @felixm
+docs/failure-modes.md @felixm
+scripts/ai-code-review.mjs @felixm
+scripts/validate-agentic-setup.mjs @felixm
+src/agent/ @felixm
+src/config/ @felixm

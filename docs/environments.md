@@ -32,7 +32,7 @@ AUTH_SECRET=
 
 - `local`, `test`, and `staging` should default to `MONEY_MOVEMENT_MODE=mock_ledger`.
 - `production` should also use `MONEY_MOVEMENT_MODE=mock_ledger` until real transfers have been fully approved, audited, and tested.
-- `production` may eventually use real transfers, but only behind explicit user approval.
+- `production` cannot use real transfers during the MVP. A future audited release may revisit this boundary.
 - `OPENAI_MODEL=mock` is the only runnable AI setting until the real AI adapter is wired.
 - `PLAID_ENV=production` should not be used until banking reads and writes have separate audited adapters.
 - Victoria must never treat a mocked ledger entry as real moved money.
@@ -53,7 +53,7 @@ The config parser enforces the most important environment boundaries:
 - Local, test, staging, and production database names must not be reused across environments.
 - Production `AUTH_SECRET` must be at least 32 characters.
 - Production provider credentials must not use obvious local, test, or example placeholder values.
-- `MONEY_MOVEMENT_MODE=real_transfer` is only allowed in production and requires `PLAID_ENV=production`.
+- `MONEY_MOVEMENT_MODE=real_transfer` is rejected in every environment during the MVP.
 
 ## Suggested Files
 

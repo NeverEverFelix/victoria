@@ -53,6 +53,7 @@ Implications:
 
 - An avoided-spend message can create a pending suggestion.
 - A confirmed suggestion can create a mocked ledger entry.
+- Approval must match the exact pending action and user, and it cannot be replayed after completion.
 - Ambiguous replies must not be treated as approval.
 - Declines should be respected without pressure.
 

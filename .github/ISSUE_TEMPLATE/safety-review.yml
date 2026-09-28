@@ -1,0 +1,39 @@
+name: Safety Review
+description: Review a money movement, approval, environment, or trust boundary.
+title: "Safety: "
+labels:
+  - safety
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for Victoria safety checks, especially around mocked ledger behavior, approvals, environment config, or future provider integrations.
+  - type: textarea
+    id: area
+    attributes:
+      label: Area To Review
+      description: What code, behavior, or workflow needs a safety pass?
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundaries To Check
+      options:
+        - label: Real money movement is impossible or explicitly gated.
+        - label: Mocked ledger entries are not described as transfers.
+        - label: Approval is required before savings entries or approval-gated actions.
+        - label: Ambiguous language is not treated as approval.
+        - label: Production credentials and providers are safely gated.
+        - label: User-facing language is clear, honest, and nonjudgmental.
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Safe Behavior
+      description: What should be true after review?
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes

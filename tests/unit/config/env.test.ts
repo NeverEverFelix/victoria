@@ -37,7 +37,7 @@ describe("parseVictoriaEnv", () => {
           MONEY_MOVEMENT_MODE: "real_transfer"
         })
       )
-    ).toThrow("Real money movement is only allowed in production.");
+    ).toThrow("Real money movement is not available in the Victoria MVP.");
   });
 
   it("blocks production Plaid settings outside production", () => {
@@ -53,23 +53,22 @@ describe("parseVictoriaEnv", () => {
     ).toThrow("Production Plaid credentials are only allowed in production.");
   });
 
-  it("allows real money movement in production configuration", () => {
-    const env = parseVictoriaEnv(
-      validEnv({
-        APP_ENV: "production",
-        NODE_ENV: "production",
-        DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
-        OPENAI_API_KEY: "production-openai-key",
-        PLAID_CLIENT_ID: "production-plaid-client-id",
-        PLAID_SECRET: "production-plaid-secret",
-        PLAID_ENV: "production",
-        MONEY_MOVEMENT_MODE: "real_transfer",
-        AUTH_SECRET: "production-auth-secret-at-least-32-characters"
-      })
-    );
-
-    expect(env.isProduction).toBe(true);
-    expect(env.usesRealMoneyMovement).toBe(true);
+  it("blocks real money movement in production during the MVP", () => {
+    expect(() =>
+      parseVictoriaEnv(
+        validEnv({
+          APP_ENV: "production",
+          NODE_ENV: "production",
+          DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
+          OPENAI_API_KEY: "production-openai-key",
+          PLAID_CLIENT_ID: "production-plaid-client-id",
+          PLAID_SECRET: "production-plaid-secret",
+          PLAID_ENV: "production",
+          MONEY_MOVEMENT_MODE: "real_transfer",
+          AUTH_SECRET: "production-auth-secret-at-least-32-characters"
+        })
+      )
+    ).toThrow("Real money movement is not available in the Victoria MVP.");
   });
 
   it("requires production Plaid for real money movement", () => {
@@ -84,7 +83,7 @@ describe("parseVictoriaEnv", () => {
           AUTH_SECRET: "production-auth-secret-at-least-32-characters"
         })
       )
-    ).toThrow("Real money movement requires PLAID_ENV=production.");
+    ).toThrow("Real money movement is not available in the Victoria MVP.");
   });
 
   it("blocks production app mode with test node mode", () => {

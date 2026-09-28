@@ -1,0 +1,28 @@
+name: Docs Update
+description: Track documentation changes for Victoria.
+title: "Docs: "
+labels:
+  - documentation
+body:
+  - type: textarea
+    id: docs
+    attributes:
+      label: Docs To Update
+      description: Which docs need changes?
+      placeholder: "- docs/mvp.md\n- docs/user-stories.md\n- docs/decisions.md"
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: Reason
+      description: What behavior, decision, or workflow changed?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Done Criteria
+      description: What should be true when the docs are updated?
+    validations:
+      required: true

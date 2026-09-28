@@ -52,7 +52,7 @@ describe("buildFeatureFlags", () => {
     expect(flags.allowRealTransfers).toBe(false);
   });
 
-  it("allows real transfers only for production real_transfer configuration", () => {
+  it("keeps real transfers disabled for production during the MVP", () => {
     const flags = buildFeatureFlags(
       parseVictoriaEnv(
         validEnv({
@@ -62,16 +62,15 @@ describe("buildFeatureFlags", () => {
           OPENAI_API_KEY: "production-openai-key",
           PLAID_CLIENT_ID: "production-plaid-client-id",
           PLAID_SECRET: "production-plaid-secret",
-          PLAID_ENV: "production",
-          MONEY_MOVEMENT_MODE: "real_transfer",
+          PLAID_ENV: "sandbox",
+          MONEY_MOVEMENT_MODE: "mock_ledger",
           AUTH_SECRET: "production-auth-secret-at-least-32-characters"
         })
       )
     );
 
-    expect(flags.useMockLedger).toBe(false);
-    expect(flags.useSandboxBanking).toBe(false);
-    expect(flags.allowRealTransfers).toBe(true);
+    expect(flags.useMockLedger).toBe(true);
+    expect(flags.allowRealTransfers).toBe(false);
   });
 });
 

@@ -88,6 +88,7 @@ export interface AgentResponse {
 
 export interface ToolCallRequest {
   name: VictoriaToolName;
+  actionId?: string;
   arguments: Record<string, unknown>;
   requiresApproval: boolean;
   movementMode?: MoneyMovementMode;
@@ -101,4 +102,3 @@ export type VictoriaToolName =
   | "updateSavingsGoal"
   | "scheduleReminder"
   | "eventuallyMoveMoney";
-

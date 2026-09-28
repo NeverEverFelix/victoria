@@ -14,9 +14,8 @@ export function buildFeatureFlags(env: VictoriaEnv): VictoriaFeatureFlags {
     useMockAi: env.openAiModel === "mock",
     useMockLedger: env.moneyMovementMode === "mock_ledger",
     useSandboxBanking: env.plaidEnv !== "production",
-    allowRealTransfers: env.isProduction && env.moneyMovementMode === "real_transfer",
+    allowRealTransfers: false,
     requireApprovalForSavingsLedger: true,
     requireApprovalForRealTransfers: true
   };
 }
-

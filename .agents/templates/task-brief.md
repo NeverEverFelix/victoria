@@ -16,7 +16,7 @@ What should be true when this task is complete?
 
 ## In Scope
 
-- 
+-
 
 ## Out Of Scope
 
@@ -33,6 +33,12 @@ What should be true when this task is complete?
 ## Safety Notes
 
 - 
+
+## Silent Failure Risks
+
+What could pass CI but still be wrong for Victoria's trust, safety, or future development?
+
+-
 
 ## Verification
 

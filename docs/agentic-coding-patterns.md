@@ -118,6 +118,7 @@ Notes:
 - Decisions made
 - Follow-up work
 - Anything not run or not completed
+- Silent-failure risks considered
 ```
 
 The handoff should be short, specific, and useful to the next agent or human.
@@ -137,6 +138,31 @@ Coding agents must treat these as hard constraints:
 - Do not expand a work slice just because adjacent code is nearby.
 
 When a task hits an unresolved product question, check `docs/decisions.md`. If the answer is not there, ask the user or record the question instead of guessing.
+
+## Silent Failure Prevention
+
+Victoria's biggest development risk is not a loud crash. It is a change that passes tests while quietly weakening trust, safety, or product meaning.
+
+Watch for these Victoria-specific silent failures:
+
+- A mocked ledger entry is worded like real money moved.
+- A savings suggestion is created from a vague or unsupported estimate.
+- A ledger entry is created before explicit approval.
+- A regretful-spend flow accidentally becomes a fake savings flow.
+- A future integration is wired directly into the agent instead of behind an adapter.
+- Environment safety rules are relaxed to make local development easier.
+- Docs still describe the old behavior after code changes.
+- AI review is skipped because `OPENAI_API_KEY` is missing, but the PR or handoff assumes it ran.
+- Untrusted diff text redirects the AI reviewer or oversized generated content hides safety-sensitive changes.
+- Tests assert only action types and miss user-facing safety language.
+
+For each coding task, the orchestrator should ask:
+
+```text
+What could silently go wrong if this passes CI?
+```
+
+Then add at least one test, docs note, or handoff warning if the answer points to a real risk.
 
 ## File Ownership Pattern
 
@@ -189,3 +215,15 @@ For Victoria's current stage, use:
 - `npm run check` as the standard verification gate.
 
 This keeps the workflow agent-friendly without creating unnecessary process overhead.
+
+## Executable Setup Checks
+
+`npm run agent:validate` is the drift canary for the agentic coding setup. It should fail when:
+
+- Required agent docs, task briefs, workflows, PR templates, or CODEOWNERS entries are missing.
+- MVP-facing docs use unsafe real-money movement language.
+- Mocked-ledger responses are not covered by tests that assert honest wording.
+- Pull-request AI review runs trusted default-branch code and treats the proposed diff only as untrusted data.
+- Oversized AI reviews are visibly incomplete, prioritize safety-sensitive paths, and require human review.
+
+Keep this script focused on high-signal workflow and safety drift. Product behavior should still be protected by normal unit and integration tests.

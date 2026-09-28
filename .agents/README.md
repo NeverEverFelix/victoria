@@ -21,6 +21,10 @@ These files do not automatically run agents. They define the operating setup for
 ## Tasks
 
 - `tasks/slice-1-avoided-spend-explicit-amount.md`: first launch-ready implementation task.
+- `tasks/slice-2-vague-savings-moment.md`: unclear savings message follow-up.
+- `tasks/slice-3-confirm-suggested-savings.md`: approval flow for mocked ledger entries.
+- `tasks/slice-4-avoided-spend-without-known-amount.md`: known habit estimate or follow-up.
+- `tasks/slice-5-regretful-spend-reflection.md`: nonjudgmental regretful-spend response.
 
 ## Recommended Workflow
 
