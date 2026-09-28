@@ -5,11 +5,14 @@
   "description": "An agentic financial companion that turns money you almost spent into money you actually save.",
   "type": "module",
   "scripts": {
+    "check": "npm run typecheck && npm run typecheck:test && npm test",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json"
   },
   "devDependencies": {
+    "@types/node": "^26.6.3",
     "typescript": "^5.6.0",
     "vitest": "^4.1.11"
   }

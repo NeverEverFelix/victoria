@@ -18,6 +18,7 @@ describe("parseVictoriaEnv", () => {
       validEnv({
         APP_ENV: "test",
         NODE_ENV: "test",
+        DATABASE_URL: "postgresql://victoria:password@localhost:5432/victoria_test",
         OPENAI_MODEL: "mock"
       })
     );
@@ -32,6 +33,7 @@ describe("parseVictoriaEnv", () => {
         validEnv({
           APP_ENV: "staging",
           NODE_ENV: "production",
+          DATABASE_URL: "postgresql://victoria:password@staging-db.example.com:5432/victoria_staging",
           MONEY_MOVEMENT_MODE: "real_transfer"
         })
       )
@@ -44,6 +46,7 @@ describe("parseVictoriaEnv", () => {
         validEnv({
           APP_ENV: "staging",
           NODE_ENV: "production",
+          DATABASE_URL: "postgresql://victoria:password@staging-db.example.com:5432/victoria_staging",
           PLAID_ENV: "production"
         })
       )
@@ -55,7 +58,10 @@ describe("parseVictoriaEnv", () => {
       validEnv({
         APP_ENV: "production",
         NODE_ENV: "production",
-        DATABASE_URL: "postgresql://victoria:password@prod-db.example.com:5432/victoria_prod",
+        DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
+        OPENAI_API_KEY: "production-openai-key",
+        PLAID_CLIENT_ID: "production-plaid-client-id",
+        PLAID_SECRET: "production-plaid-secret",
         PLAID_ENV: "production",
         MONEY_MOVEMENT_MODE: "real_transfer",
         AUTH_SECRET: "production-auth-secret-at-least-32-characters"
@@ -72,7 +78,7 @@ describe("parseVictoriaEnv", () => {
         validEnv({
           APP_ENV: "production",
           NODE_ENV: "production",
-          DATABASE_URL: "postgresql://victoria:password@prod-db.example.com:5432/victoria_prod",
+          DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
           PLAID_ENV: "sandbox",
           MONEY_MOVEMENT_MODE: "real_transfer",
           AUTH_SECRET: "production-auth-secret-at-least-32-characters"
@@ -87,7 +93,7 @@ describe("parseVictoriaEnv", () => {
         validEnv({
           APP_ENV: "production",
           NODE_ENV: "test",
-          DATABASE_URL: "postgresql://victoria:password@prod-db.example.com:5432/victoria_prod",
+          DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
           PLAID_ENV: "production",
           AUTH_SECRET: "production-auth-secret-at-least-32-characters"
         })
@@ -118,6 +124,18 @@ describe("parseVictoriaEnv", () => {
     ).toThrow("APP_ENV=local requires NODE_ENV=development.");
   });
 
+  it("blocks staging app mode without production node mode", () => {
+    expect(() =>
+      parseVictoriaEnv(
+        validEnv({
+          APP_ENV: "staging",
+          NODE_ENV: "development",
+          DATABASE_URL: "postgresql://victoria:password@staging-db.example.com:5432/victoria_staging"
+        })
+      )
+    ).toThrow("APP_ENV=staging requires NODE_ENV=production.");
+  });
+
   it("blocks local database URLs in production", () => {
     expect(() =>
       parseVictoriaEnv(
@@ -132,18 +150,103 @@ describe("parseVictoriaEnv", () => {
     ).toThrow("Production DATABASE_URL must not point to localhost.");
   });
 
+  it("blocks wildcard local database hosts in production", () => {
+    expect(() =>
+      parseVictoriaEnv(
+        validEnv({
+          APP_ENV: "production",
+          NODE_ENV: "production",
+          DATABASE_URL: "postgresql://victoria:password@0.0.0.0:5432/victoria_prod",
+          PLAID_ENV: "production",
+          AUTH_SECRET: "production-auth-secret-at-least-32-characters"
+        })
+      )
+    ).toThrow("Production DATABASE_URL must not point to localhost.");
+  });
+
+  it("requires a Postgres database URL", () => {
+    expect(() =>
+      parseVictoriaEnv(
+        validEnv({
+          DATABASE_URL: "mysql://victoria:password@localhost:3306/victoria_local"
+        })
+      )
+    ).toThrow("DATABASE_URL must use the postgresql:// or postgres:// protocol.");
+  });
+
+  it("rejects malformed database URLs", () => {
+    expect(() =>
+      parseVictoriaEnv(
+        validEnv({
+          DATABASE_URL: "victoria_local"
+        })
+      )
+    ).toThrow("DATABASE_URL must be a valid URL.");
+  });
+
   it("blocks test database names in production", () => {
     expect(() =>
       parseVictoriaEnv(
         validEnv({
           APP_ENV: "production",
           NODE_ENV: "production",
-          DATABASE_URL: "postgresql://victoria:password@prod-db.example.com:5432/victoria_test",
+          DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_test",
           PLAID_ENV: "production",
           AUTH_SECRET: "production-auth-secret-at-least-32-characters"
         })
       )
-    ).toThrow("Production DATABASE_URL must not use a local or test database name.");
+    ).toThrow("production DATABASE_URL must not use the test database name.");
+  });
+
+  it("rejects placeholder database URLs in production", () => {
+    expect(() =>
+      parseVictoriaEnv(
+        validEnv({
+          APP_ENV: "production",
+          NODE_ENV: "production",
+          DATABASE_URL: "postgresql://victoria:password@prod-db.example.com:5432/victoria_prod",
+          PLAID_ENV: "production",
+          AUTH_SECRET: "production-auth-secret-at-least-32-characters"
+        })
+      )
+    ).toThrow("Production DATABASE_URL must not use example hosts or placeholder passwords.");
+  });
+
+  it("blocks production database names outside production", () => {
+    expect(() =>
+      parseVictoriaEnv(
+        validEnv({
+          APP_ENV: "staging",
+          NODE_ENV: "production",
+          DATABASE_URL: "postgresql://victoria:password@staging-db.example.com:5432/victoria_prod"
+        })
+      )
+    ).toThrow("staging DATABASE_URL must not use the production database name.");
+  });
+
+  it("blocks local database names in test", () => {
+    expect(() =>
+      parseVictoriaEnv(
+        validEnv({
+          APP_ENV: "test",
+          NODE_ENV: "test",
+          DATABASE_URL: "postgresql://victoria:password@localhost:5432/victoria_local",
+          OPENAI_MODEL: "mock"
+        })
+      )
+    ).toThrow("test DATABASE_URL must not use the local database name.");
+  });
+
+  it("blocks staging database names in local", () => {
+    expect(() =>
+      parseVictoriaEnv(
+        validEnv({
+          APP_ENV: "local",
+          NODE_ENV: "development",
+          DATABASE_URL: "postgresql://victoria:password@localhost:5432/victoria_staging"
+        })
+      )
+    ).toThrow("local DATABASE_URL must not use the staging database name.");
   });
 
   it("requires DATABASE_URL", () => {
@@ -151,6 +254,13 @@ describe("parseVictoriaEnv", () => {
     delete source.DATABASE_URL;
 
     expect(() => parseVictoriaEnv(source)).toThrow("DATABASE_URL is required.");
+  });
+
+  it("requires OPENAI_MODEL", () => {
+    const source = validEnv();
+    delete source.OPENAI_MODEL;
+
+    expect(() => parseVictoriaEnv(source)).toThrow("OPENAI_MODEL is required.");
   });
 
   it("rejects whitespace-only required values", () => {
@@ -169,12 +279,43 @@ describe("parseVictoriaEnv", () => {
         validEnv({
           APP_ENV: "production",
           NODE_ENV: "production",
-          DATABASE_URL: "postgresql://victoria:password@prod-db.example.com:5432/victoria_prod",
+          DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
           PLAID_ENV: "production",
           AUTH_SECRET: "test-auth-secret"
         })
       )
     ).toThrow("Production AUTH_SECRET must be at least 32 characters.");
+  });
+
+  it("rejects test provider credentials in production", () => {
+    expect(() =>
+      parseVictoriaEnv(
+        validEnv({
+          APP_ENV: "production",
+          NODE_ENV: "production",
+          DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
+          PLAID_ENV: "production",
+          AUTH_SECRET: "production-auth-secret-at-least-32-characters"
+        })
+      )
+    ).toThrow("Production provider credentials must not use local or test placeholder values.");
+  });
+
+  it("rejects generic placeholder provider credentials in production", () => {
+    expect(() =>
+      parseVictoriaEnv(
+        validEnv({
+          APP_ENV: "production",
+          NODE_ENV: "production",
+          DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
+          OPENAI_API_KEY: "replace-me",
+          PLAID_CLIENT_ID: "production-plaid-client-id",
+          PLAID_SECRET: "production-plaid-secret",
+          PLAID_ENV: "production",
+          AUTH_SECRET: "production-auth-secret-at-least-32-characters"
+        })
+      )
+    ).toThrow("Production provider credentials must not use local or test placeholder values.");
   });
 });
 

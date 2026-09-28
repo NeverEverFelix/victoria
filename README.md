@@ -57,6 +57,18 @@ Recommended starting stack:
 
 The first version should prove the behavioral loop before it tries to become a bank. Victoria can begin by recording saved amounts in an internal ledger, showing progress, and building trust. Real transfers should come later and should always require explicit user approval.
 
+## Developer Setup
+
+Install dependencies, create a local environment file, then run the project checks:
+
+```bash
+npm install
+cp .env.example .env.local
+npm run check
+```
+
+Only commit `.env*.example` files. Keep real `.env.local`, `.env.test`, `.env.staging`, and `.env.production` files uncommitted.
+
 ## Agentic Architecture
 
 Victoria is not just a chat window. Victoria should be able to reason about a user's financial behavior, remember context, choose tools, ask follow-up questions, and take approved actions.
@@ -161,7 +173,7 @@ Victoria should run with separate local, test, staging, and production environme
 
 See `docs/environments.md` for the environment matrix, required variables, and money movement safety rules. Start from `.env.example` for local development, `.env.test.example` for test runs, `.env.staging.example` for staging, and `.env.production.example` for production.
 
-The config parser lives in `src/config/env.ts`. It validates required variables and prevents real money movement or production Plaid settings outside production. Feature flags derived from that config live in `src/config/feature-flags.ts`.
+The config parser lives in `src/config/env.ts`. It validates required variables, enforces compatible `APP_ENV` and `NODE_ENV` pairs, keeps environment database names separated, rejects unsafe production secrets, and prevents real money movement or production Plaid settings outside the approved production path. Feature flags derived from that config live in `src/config/feature-flags.ts`.
 
 The agent composition entry point lives in `src/app/create-victoria-agent.ts`. For now it wires mock AI, mock memory, and mock ledger tools only. Real OpenAI, Prisma, and banking adapters should be added behind the same interfaces later.
 

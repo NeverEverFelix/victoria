@@ -27,6 +27,7 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
   const plaidEnv = parsePlaidEnv(source.PLAID_ENV);
   const databaseUrl = requireEnv(source, "DATABASE_URL");
   const openAiApiKey = requireEnv(source, "OPENAI_API_KEY");
+  const openAiModel = requireEnv(source, "OPENAI_MODEL");
   const plaidClientId = requireEnv(source, "PLAID_CLIENT_ID");
   const plaidSecret = requireEnv(source, "PLAID_SECRET");
   const authSecret = requireEnv(source, "AUTH_SECRET");
@@ -37,13 +38,14 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
   assertMoneyMovementIsAllowed(appEnv, moneyMovementMode);
   assertPlaidEnvIsAllowed(appEnv, plaidEnv);
   assertRealMovementUsesProductionPlaid(moneyMovementMode, plaidEnv);
+  assertProviderCredentialsAreAllowed(appEnv, openAiApiKey, plaidClientId, plaidSecret);
 
   return {
     appEnv,
     nodeEnv,
     databaseUrl,
     openAiApiKey,
-    openAiModel: source.OPENAI_MODEL ?? "gpt-4.1-mini",
+    openAiModel,
     plaidClientId,
     plaidSecret,
     plaidEnv,
@@ -109,27 +111,53 @@ function assertNodeEnvMatchesAppEnv(appEnv: AppEnv, nodeEnv: VictoriaEnv["nodeEn
   if (appEnv === "local" && nodeEnv !== "development") {
     throw new Error("APP_ENV=local requires NODE_ENV=development.");
   }
+
+  if (appEnv === "staging" && nodeEnv !== "production") {
+    throw new Error("APP_ENV=staging requires NODE_ENV=production.");
+  }
 }
 
 function assertDatabaseUrlIsAllowed(appEnv: AppEnv, databaseUrl: string): void {
-  if (appEnv !== "production") {
-    return;
-  }
-
   const parsedUrl = parseDatabaseUrl(databaseUrl);
 
   if (!parsedUrl) {
     throw new Error("DATABASE_URL must be a valid URL.");
   }
 
-  if (parsedUrl.hostname === "localhost" || parsedUrl.hostname === "127.0.0.1") {
+  if (parsedUrl.protocol !== "postgresql" && parsedUrl.protocol !== "postgres") {
+    throw new Error("DATABASE_URL must use the postgresql:// or postgres:// protocol.");
+  }
+
+  const localHosts = ["localhost", "127.0.0.1", "0.0.0.0"];
+
+  if (appEnv === "production" && localHosts.includes(parsedUrl.hostname)) {
     throw new Error("Production DATABASE_URL must not point to localhost.");
   }
 
   const databaseName = parsedUrl.pathname.toLowerCase();
 
-  if (databaseName.includes("victoria_local") || databaseName.includes("victoria_test")) {
-    throw new Error("Production DATABASE_URL must not use a local or test database name.");
+  const forbiddenDatabaseNamesByEnv: Record<AppEnv, string[]> = {
+    local: ["victoria_test", "victoria_staging", "victoria_prod"],
+    test: ["victoria_local", "victoria_staging", "victoria_prod"],
+    staging: ["victoria_local", "victoria_test", "victoria_prod"],
+    production: ["victoria_local", "victoria_test", "victoria_staging"]
+  };
+
+  const forbiddenDatabaseName = forbiddenDatabaseNamesByEnv[appEnv].find((candidate) =>
+    databaseName.includes(candidate)
+  );
+
+  if (forbiddenDatabaseName) {
+    const forbiddenEnvName = forbiddenDatabaseName.replace("victoria_", "").replace("prod", "production");
+    throw new Error(`${appEnv} DATABASE_URL must not use the ${forbiddenEnvName} database name.`);
+  }
+
+  if (
+    appEnv === "production" &&
+    (databaseUrl.toLowerCase().includes("example.") ||
+      databaseUrl.toLowerCase().includes(":password@"))
+  ) {
+    throw new Error("Production DATABASE_URL must not use example hosts or placeholder passwords.");
   }
 }
 
@@ -139,16 +167,49 @@ function assertAuthSecretIsAllowed(appEnv: AppEnv, authSecret: string): void {
   }
 }
 
-function parseDatabaseUrl(databaseUrl: string): { hostname: string; pathname: string } | null {
-  const match = databaseUrl.match(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]+@)?([^/:]+)(?::\d+)?(\/[^?]*)/i);
+function assertProviderCredentialsAreAllowed(
+  appEnv: AppEnv,
+  openAiApiKey: string,
+  plaidClientId: string,
+  plaidSecret: string
+): void {
+  if (appEnv !== "production") {
+    return;
+  }
 
-  if (!match?.[1] || !match[2]) {
+  const providerValues = [openAiApiKey, plaidClientId, plaidSecret];
+  const hasPlaceholderValue = providerValues.some((value) => {
+    const normalizedValue = value.toLowerCase();
+
+    return (
+      normalizedValue.startsWith("test-") ||
+      normalizedValue.startsWith("local-") ||
+      normalizedValue.includes("example") ||
+      normalizedValue.includes("placeholder") ||
+      normalizedValue.includes("replace") ||
+      normalizedValue.includes("changeme") ||
+      normalizedValue.includes("change-me")
+    );
+  });
+
+  if (hasPlaceholderValue) {
+    throw new Error("Production provider credentials must not use local or test placeholder values.");
+  }
+}
+
+function parseDatabaseUrl(
+  databaseUrl: string
+): { protocol: string; hostname: string; pathname: string } | null {
+  const match = databaseUrl.match(/^([a-z][a-z0-9+.-]*):\/\/(?:[^@/]+@)?([^/:]+)(?::\d+)?(\/[^?]*)/i);
+
+  if (!match?.[1] || !match[2] || !match[3]) {
     return null;
   }
 
   return {
-    hostname: match[1].toLowerCase(),
-    pathname: match[2]
+    protocol: match[1].toLowerCase(),
+    hostname: match[2].toLowerCase(),
+    pathname: match[3]
   };
 }
 

@@ -45,8 +45,11 @@ describe("createVictoriaAgent", () => {
           validEnv({
             APP_ENV: "production",
             NODE_ENV: "production",
-            DATABASE_URL: "postgresql://victoria:password@prod-db.example.com:5432/victoria_prod",
+            DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
+            OPENAI_API_KEY: "production-openai-key",
             OPENAI_MODEL: "mock",
+            PLAID_CLIENT_ID: "production-plaid-client-id",
+            PLAID_SECRET: "production-plaid-secret",
             PLAID_ENV: "production",
             MONEY_MOVEMENT_MODE: "real_transfer",
             AUTH_SECRET: "production-auth-secret-at-least-32-characters"

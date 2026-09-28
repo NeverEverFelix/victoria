@@ -20,6 +20,7 @@ describe("buildFeatureFlags", () => {
         validEnv({
           APP_ENV: "test",
           NODE_ENV: "test",
+          DATABASE_URL: "postgresql://victoria:password@localhost:5432/victoria_test",
           OPENAI_MODEL: "mock"
         })
       )
@@ -35,8 +36,11 @@ describe("buildFeatureFlags", () => {
         validEnv({
           APP_ENV: "production",
           NODE_ENV: "production",
-          DATABASE_URL: "postgresql://victoria:password@prod-db.example.com:5432/victoria_prod",
-          PLAID_ENV: "production",
+          DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
+          OPENAI_API_KEY: "production-openai-key",
+          PLAID_CLIENT_ID: "production-plaid-client-id",
+          PLAID_SECRET: "production-plaid-secret",
+          PLAID_ENV: "sandbox",
           MONEY_MOVEMENT_MODE: "mock_ledger",
           AUTH_SECRET: "production-auth-secret-at-least-32-characters"
         })
@@ -44,6 +48,7 @@ describe("buildFeatureFlags", () => {
     );
 
     expect(flags.useMockLedger).toBe(true);
+    expect(flags.useSandboxBanking).toBe(true);
     expect(flags.allowRealTransfers).toBe(false);
   });
 
@@ -53,7 +58,10 @@ describe("buildFeatureFlags", () => {
         validEnv({
           APP_ENV: "production",
           NODE_ENV: "production",
-          DATABASE_URL: "postgresql://victoria:password@prod-db.example.com:5432/victoria_prod",
+          DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
+          OPENAI_API_KEY: "production-openai-key",
+          PLAID_CLIENT_ID: "production-plaid-client-id",
+          PLAID_SECRET: "production-plaid-secret",
           PLAID_ENV: "production",
           MONEY_MOVEMENT_MODE: "real_transfer",
           AUTH_SECRET: "production-auth-secret-at-least-32-characters"

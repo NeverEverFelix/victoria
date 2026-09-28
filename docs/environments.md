@@ -39,6 +39,22 @@ AUTH_SECRET=
 - Real banking integrations should be isolated behind tool contracts.
 - Failed real transfer attempts must not create completed savings entries.
 
+## Parser Safety Rules
+
+The config parser enforces the most important environment boundaries:
+
+- `APP_ENV=local` requires `NODE_ENV=development`.
+- `APP_ENV=test` requires `NODE_ENV=test`.
+- `APP_ENV=staging` requires `NODE_ENV=production`.
+- `APP_ENV=production` requires `NODE_ENV=production`.
+- `DATABASE_URL` must use `postgresql://` or `postgres://`.
+- Production `DATABASE_URL` must not point to `localhost`, `127.0.0.1`, or `0.0.0.0`.
+- Production `DATABASE_URL` must not use example hosts or placeholder passwords.
+- Local, test, staging, and production database names must not be reused across environments.
+- Production `AUTH_SECRET` must be at least 32 characters.
+- Production provider credentials must not use obvious local, test, or example placeholder values.
+- `MONEY_MOVEMENT_MODE=real_transfer` is only allowed in production and requires `PLAID_ENV=production`.
+
 ## Suggested Files
 
 ```text

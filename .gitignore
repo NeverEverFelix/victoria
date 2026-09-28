@@ -1,10 +1,13 @@
 # Dependencies
 node_modules/
 
-# Build output
+# Build/test output
 dist/
 .next/
 out/
+coverage/
+.coverage/
+.nyc_output/
 
 # Environment secrets
 .env*
@@ -19,3 +22,5 @@ pnpm-debug.log*
 
 # OS/editor files
 .DS_Store
+.idea/
+.vscode/
