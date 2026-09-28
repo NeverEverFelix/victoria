@@ -2,7 +2,7 @@
 
 ## Completed
 
-- 
+-
 
 ## Verified
 
@@ -15,6 +15,10 @@
 ## Notes
 
 - 
+
+## Silent Failure Risks
+
+-
 
 ## Follow-Up
 

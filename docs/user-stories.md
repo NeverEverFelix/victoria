@@ -153,6 +153,8 @@ Acceptance criteria:
 
 - Given there is a pending savings suggestion, a clear yes confirms it.
 - Given there is no pending savings suggestion, a yes does not create a new entry.
+- Given approval refers to another action or user, no entry is created.
+- Given an approved action was already completed, replaying that approval creates no second entry.
 - Given the entry is created, it includes amount, reason, timestamp, and mocked status.
 - Given the entry is created, Victoria returns a confirmation message.
 

@@ -12,10 +12,10 @@ describe("agent policy", () => {
     });
 
     expect(decision.allowed).toBe(false);
-    expect(decision.reason).toBe("Real money movement requires explicit approval.");
+    expect(decision.reason).toBe("Real money movement is not available in the Victoria MVP.");
   });
 
-  it("allows real money movement when explicit approval is present", () => {
+  it("blocks real money movement during the MVP even when approval is present", () => {
     const decision = canCallTool(
       baseRequest({
         approvedActionId: "approval_123"
@@ -28,19 +28,52 @@ describe("agent policy", () => {
       }
     );
 
-    expect(decision.allowed).toBe(true);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe("Real money movement is not available in the Victoria MVP.");
   });
 
   it("blocks approval-gated savings ledger entries without approval", () => {
     const decision = canCallTool(baseRequest(), {
       name: "createSavingsEntry",
+      actionId: "action_123",
       arguments: {},
       requiresApproval: true,
       movementMode: "mock_ledger"
     });
 
     expect(decision.allowed).toBe(false);
-    expect(decision.reason).toBe("Savings ledger entries require explicit approval.");
+    expect(decision.reason).toBe("Savings ledger entries require approval for this exact action.");
+  });
+
+  it("blocks approval for a different savings action", () => {
+    const decision = canCallTool(
+      baseRequest({ approvedActionId: "action_other" }),
+      {
+        name: "createSavingsEntry",
+        actionId: "action_123",
+        arguments: {},
+        requiresApproval: true,
+        movementMode: "mock_ledger"
+      }
+    );
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe("Savings ledger entries require approval for this exact action.");
+  });
+
+  it("allows a savings entry only when approval matches the action", () => {
+    const decision = canCallTool(
+      baseRequest({ approvedActionId: "action_123" }),
+      {
+        name: "createSavingsEntry",
+        actionId: "action_123",
+        arguments: {},
+        requiresApproval: true,
+        movementMode: "mock_ledger"
+      }
+    );
+
+    expect(decision.allowed).toBe(true);
   });
 
   it("allows non-money tools without approval", () => {
@@ -57,7 +90,7 @@ describe("agent policy", () => {
     const decision = canUseMovementMode(baseRequest(), "real_transfer");
 
     expect(decision.allowed).toBe(false);
-    expect(decision.reason).toBe("Real transfers require explicit approval.");
+    expect(decision.reason).toBe("Real money movement is not available in the Victoria MVP.");
   });
 });
 
@@ -68,4 +101,3 @@ function baseRequest(overrides: Partial<AgentRequest> = {}): AgentRequest {
     ...overrides
   };
 }
-

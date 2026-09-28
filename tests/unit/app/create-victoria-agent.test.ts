@@ -39,22 +39,28 @@ describe("createVictoriaAgent", () => {
   });
 
   it("fails clearly when real money movement is requested before it exists", () => {
+    const productionMockEnv = parseVictoriaEnv(
+      validEnv({
+        APP_ENV: "production",
+        NODE_ENV: "production",
+        DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
+        OPENAI_API_KEY: "production-openai-key",
+        OPENAI_MODEL: "mock",
+        PLAID_CLIENT_ID: "production-plaid-client-id",
+        PLAID_SECRET: "production-plaid-secret",
+        PLAID_ENV: "production",
+        MONEY_MOVEMENT_MODE: "mock_ledger",
+        AUTH_SECRET: "production-auth-secret-at-least-32-characters"
+      })
+    );
+
     expect(() =>
       createVictoriaAgent({
-        env: parseVictoriaEnv(
-          validEnv({
-            APP_ENV: "production",
-            NODE_ENV: "production",
-            DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
-            OPENAI_API_KEY: "production-openai-key",
-            OPENAI_MODEL: "mock",
-            PLAID_CLIENT_ID: "production-plaid-client-id",
-            PLAID_SECRET: "production-plaid-secret",
-            PLAID_ENV: "production",
-            MONEY_MOVEMENT_MODE: "real_transfer",
-            AUTH_SECRET: "production-auth-secret-at-least-32-characters"
-          })
-        )
+        env: {
+          ...productionMockEnv,
+          moneyMovementMode: "real_transfer",
+          usesRealMoneyMovement: true
+        }
       })
     ).toThrow("Real money movement is not wired yet. Set MONEY_MOVEMENT_MODE=mock_ledger.");
   });

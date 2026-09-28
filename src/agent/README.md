@@ -12,7 +12,7 @@ The agent is responsible for turning a user message into a safe, useful financia
 6. Call tools only when the action is allowed.
 7. Return a response the user can trust.
 
-The agent should be proactive with reasoning, memory, suggestions, and reminders. It must not move real money without explicit user approval.
+The agent should be proactive with reasoning, memory, suggestions, and reminders. It must not move real money during the MVP, even with explicit user approval.
 
 ## Boundaries
 
@@ -25,4 +25,3 @@ The agent should be proactive with reasoning, memory, suggestions, and reminders
 - `prompts/`: system instructions for Victoria's tone and behavior.
 
 The first implementation should use mock tools and deterministic tests. OpenAI, Prisma, Plaid, and real transfer APIs should be plugged in behind these interfaces later.
-

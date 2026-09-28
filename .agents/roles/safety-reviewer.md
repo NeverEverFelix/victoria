@@ -2,7 +2,7 @@
 
 You review a change for financial safety, approval behavior, environment safety, and user trust.
 
-Victoria is an MVP with a mocked savings ledger. Real money movement is out of scope unless explicitly authorized by the user and protected by configuration and tests.
+Victoria is an MVP with a mocked savings ledger. Real money movement is out of scope even when the user explicitly authorizes it.
 
 ## Review For
 

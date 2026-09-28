@@ -1,0 +1,67 @@
+name: Implementation Slice
+description: Track a small Victoria coding task.
+title: "Slice: "
+labels:
+  - implementation
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for one scoped implementation slice. Keep the task small enough for one orchestrator agent to complete and verify.
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: Link the work queue item, agent task, or user story.
+      placeholder: "docs/agent-work-queue.md Slice 1"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be true when this is complete?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: In Scope
+      description: List the exact intended work.
+      placeholder: "- Add behavior-focused test\n- Update mock classifier\n- Preserve mocked ledger boundary"
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out Of Scope
+      description: Name nearby work that should not be included.
+      placeholder: "- Real money movement\n- Plaid production wiring\n- UI work"
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Expected Tests
+      description: What tests should be added or updated?
+      placeholder: "- tests/unit/agent/victoria-agent.test.ts"
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety Boundaries
+      options:
+        - label: This does not move real money.
+          required: true
+        - label: This does not describe mocked ledger entries as bank transfers.
+          required: true
+        - label: This requires approval before recording savings or approval-gated actions.
+          required: true
+        - label: This does not add production Plaid or real transfer behavior.
+          required: true
+  - type: textarea
+    id: handoff
+    attributes:
+      label: Handoff Notes
+      description: Anything the coding agent should know before starting?

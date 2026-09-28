@@ -9,18 +9,18 @@ This file captures the first behaviors that should become tests as Victoria is i
 - Victoria classifies "Put this toward my emergency fund" as a goal-allocation request.
 - Victoria asks a follow-up question when a user says "I saved money today" without enough context.
 - Victoria chooses `estimateAvoidedSpend()` before suggesting a savings action.
-- Victoria refuses to call `eventuallyMoveMoney()` without explicit user approval.
+- Victoria refuses to call `eventuallyMoveMoney()` during the MVP, even when approval is present.
 
 ## Environment Safety
 
 - Victoria parses a valid local environment.
 - Victoria parses a valid test environment.
-- Victoria blocks real money movement outside production.
+- Victoria blocks real money movement in every environment during the MVP.
 - Victoria blocks production Plaid configuration outside production.
 - Victoria requires a database URL.
 - Victoria marks production and test modes clearly.
 - Victoria derives feature flags from environment settings.
-- Victoria allows real transfers only for production real-transfer configuration.
+- Victoria keeps real transfers disabled in production during the MVP.
 
 ## Application Composition
 
@@ -74,8 +74,20 @@ This file captures the first behaviors that should become tests as Victoria is i
 - Victoria does not perform irreversible actions from a single ambiguous message.
 - Victoria treats real money movement as a separate approved action.
 - Victoria records an approval timestamp and source when the user confirms.
+- Victoria binds approval to the exact pending action and user.
+- Victoria prevents an approval from being replayed after the action completes.
 - Victoria can cancel or decline a pending savings suggestion.
 - Victoria makes it clear when an action is only a mocked ledger entry.
+
+## Agentic Coding Setup
+
+- `npm run agent:validate` fails when required agent instructions, task briefs, workflows, PR templates, or CODEOWNERS files are missing.
+- `npm run agent:validate` fails when MVP-facing docs drift back toward real money movement language.
+- The AI review script skips cleanly when optional and `OPENAI_API_KEY` is missing.
+- The AI review script fails when `AI_REVIEW_REQUIRED=true` and `OPENAI_API_KEY` is missing.
+- Pull-request AI review runs trusted default-branch code and never executes pull-request code with secrets.
+- AI review keeps trusted instructions separate from untrusted diff content.
+- Oversized diffs list every changed path, prioritize safety-sensitive excerpts, and cannot satisfy required AI review.
 
 ## Future Integration Boundaries
 

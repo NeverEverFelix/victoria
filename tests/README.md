@@ -64,7 +64,7 @@ tests/
 
 ## Non-Negotiable Safety Expectations
 
-- Victoria must never move real money without explicit user confirmation.
+- Victoria must never move real money during the MVP, even with user confirmation.
 - Victoria must be able to explain or expose why it suggested a savings amount.
 - Victoria must ask a follow-up question when the amount or intent is unclear.
 - Victoria must treat regretful spending without shame.

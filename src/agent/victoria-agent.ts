@@ -18,6 +18,12 @@ export interface VictoriaAgentDependencies {
 }
 
 export class VictoriaAgent {
+  private readonly pendingSavingsActions = new Map<
+    string,
+    { userId: string; decision: AgentDecision }
+  >();
+  private nextActionNumber = 1;
+
   constructor(private readonly dependencies: VictoriaAgentDependencies) {}
 
   async respond(request: AgentRequest): Promise<AgentResponse> {
@@ -94,7 +100,14 @@ export class VictoriaAgent {
       };
     }
 
-    return this.buildSavingsSuggestionDecision(classification, suggestion);
+    const decision = this.buildSavingsSuggestionDecision(classification, suggestion);
+    const actionId = decision.toolCall?.actionId;
+
+    if (actionId) {
+      this.pendingSavingsActions.set(actionId, { userId: request.userId, decision });
+    }
+
+    return decision;
   }
 
   private buildSavingsSuggestionDecision(
@@ -102,6 +115,7 @@ export class VictoriaAgent {
     suggestion: SavingsSuggestion
   ): AgentDecision {
     const dollars = formatUsd(suggestion.amountCents);
+    const actionId = `savings_action_${this.nextActionNumber++}`;
 
     return {
       action: "suggest_savings",
@@ -109,6 +123,7 @@ export class VictoriaAgent {
       suggestion,
       toolCall: {
         name: "createSavingsEntry",
+        actionId,
         arguments: {
           suggestionId: suggestion.id,
           amountCents: suggestion.amountCents,
@@ -118,7 +133,7 @@ export class VictoriaAgent {
         requiresApproval: true,
         movementMode: suggestion.movementMode
       },
-      userFacingMessage: `Great job. I estimate you avoided spending ${dollars}. Would you like me to save that in your Victoria ledger?`
+      userFacingMessage: `Great job. I estimate you avoided spending ${dollars}. Would you like me to record that in your Victoria savings ledger? No real money has moved yet.`
     };
   }
 
@@ -134,13 +149,33 @@ export class VictoriaAgent {
       };
     }
 
-    const policyDecision = canCallTool(request, decision.toolCall);
+    const approvedActionId = request.approvedActionId;
+    const pendingAction = approvedActionId
+      ? this.pendingSavingsActions.get(approvedActionId)
+      : undefined;
+
+    if (
+      approvedActionId &&
+      (!pendingAction || pendingAction.userId !== request.userId)
+    ) {
+      return this.refuseApproval(decision, "That approval does not match a pending savings action.");
+    }
+
+    const trustedDecision = pendingAction?.decision ?? decision;
+    const trustedToolCall = trustedDecision.toolCall;
+    const trustedSuggestion = trustedDecision.suggestion;
+
+    if (!trustedToolCall || !trustedSuggestion) {
+      return this.refuseApproval(decision, "There is no savings action waiting for approval.");
+    }
+
+    const policyDecision = canCallTool(request, trustedToolCall);
 
     if (!policyDecision.allowed) {
       return {
         message: policyDecision.reason ?? "That action needs approval first.",
         decision: {
-          ...decision,
+          ...trustedDecision,
           action: "refuse",
           userFacingMessage: policyDecision.reason ?? "That action needs approval first."
         }
@@ -149,22 +184,34 @@ export class VictoriaAgent {
 
     const createSavingsEntryInput = {
       userId: request.userId,
-      suggestionId: decision.suggestion.id,
-      amountCents: decision.suggestion.amountCents,
-      reason: decision.suggestion.reason,
-      movementMode: decision.suggestion.movementMode,
+      suggestionId: trustedSuggestion.id,
+      amountCents: trustedSuggestion.amountCents,
+      reason: trustedSuggestion.reason,
+      movementMode: trustedSuggestion.movementMode,
       ...(request.approvedActionId ? { approvedActionId: request.approvedActionId } : {})
     };
 
     const entry = await this.dependencies.tools.createSavingsEntry(createSavingsEntryInput);
+    this.pendingSavingsActions.delete(trustedToolCall.actionId ?? "");
 
-    const message = `Done. I saved ${formatUsd(entry.amountCents)} in your Victoria ledger.`;
+    const message = `Done. I recorded ${formatUsd(entry.amountCents)} in your Victoria savings ledger. No real money has moved yet.`;
 
     return {
       message,
       decision: {
-        ...decision,
+        ...trustedDecision,
         action: "create_ledger_entry",
+        userFacingMessage: message
+      }
+    };
+  }
+
+  private refuseApproval(decision: AgentDecision, message: string): AgentResponse {
+    return {
+      message,
+      decision: {
+        ...decision,
+        action: "refuse",
         userFacingMessage: message
       }
     };

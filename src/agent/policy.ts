@@ -6,37 +6,46 @@ export interface PolicyDecision {
 }
 
 export function canCallTool(request: AgentRequest, toolCall: ToolCallRequest): PolicyDecision {
-  if (toolCall.name === "eventuallyMoveMoney") {
-    return requireApproval(request, "Real money movement requires explicit approval.");
+  if (toolCall.name === "eventuallyMoveMoney" || toolCall.movementMode === "real_transfer") {
+    return {
+      allowed: false,
+      reason: "Real money movement is not available in the Victoria MVP."
+    };
   }
 
   if (toolCall.name === "createSavingsEntry" && toolCall.requiresApproval) {
-    return requireApproval(request, "Savings ledger entries require explicit approval.");
-  }
-
-  if (toolCall.movementMode === "real_transfer") {
-    return requireApproval(request, "Real transfers require explicit approval.");
+    return requireApproval(
+      request,
+      toolCall.actionId,
+      "Savings ledger entries require approval for this exact action."
+    );
   }
 
   return { allowed: true };
 }
 
 export function canUseMovementMode(
-  request: AgentRequest,
+  _request: AgentRequest,
   movementMode: MoneyMovementMode
 ): PolicyDecision {
   if (movementMode === "real_transfer") {
-    return requireApproval(request, "Real transfers require explicit approval.");
+    return {
+      allowed: false,
+      reason: "Real money movement is not available in the Victoria MVP."
+    };
   }
 
   return { allowed: true };
 }
 
-function requireApproval(request: AgentRequest, reason: string): PolicyDecision {
-  if (!request.approvedActionId) {
+function requireApproval(
+  request: AgentRequest,
+  expectedActionId: string | undefined,
+  reason: string
+): PolicyDecision {
+  if (!expectedActionId || request.approvedActionId !== expectedActionId) {
     return { allowed: false, reason };
   }
 
   return { allowed: true };
 }
-

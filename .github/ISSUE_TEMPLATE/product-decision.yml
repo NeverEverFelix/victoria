@@ -1,0 +1,47 @@
+name: Product Decision
+description: Capture or resolve a Victoria product decision.
+title: "Decision: "
+labels:
+  - product
+  - decision
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when Victoria needs a product choice before implementation. Resolved decisions should be reflected in `docs/decisions.md`.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What decision needs to be made?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why does this matter for Victoria?
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options
+      description: List possible choices and tradeoffs.
+      placeholder: "- Option A:\n- Option B:"
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommendation
+      description: Which option seems best right now?
+  - type: checkboxes
+    id: docs
+    attributes:
+      label: Follow-Up
+      options:
+        - label: Update `docs/decisions.md` after this is resolved.
+          required: true
+        - label: Update user stories or MVP docs if behavior changes.
+          required: false
