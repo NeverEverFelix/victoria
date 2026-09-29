@@ -1,10 +1,11 @@
 import type { ClassifiedMessage } from "../types.js";
+import { parseExplicitDollarAmountCents } from "../../domain/financial-events/parse-explicit-amount.js";
 import type { ClassifyMessageInput, DraftResponseInput, LlmAdapter } from "./types.js";
 
 export class MockLlmAdapter implements LlmAdapter {
   async classifyMessage(input: ClassifyMessageInput): Promise<ClassifiedMessage> {
     const message = input.userMessage.toLowerCase();
-    const amountCents = extractDollarAmountCents(message);
+    const amountCents = parseExplicitDollarAmountCents(message);
     const merchantName = inferMerchantName(message);
 
     if (message.includes("instead of") || message.includes("almost bought") || message.includes("cooked")) {
@@ -52,16 +53,6 @@ export class MockLlmAdapter implements LlmAdapter {
   async draftResponse(input: DraftResponseInput): Promise<string> {
     return input.responseGoal;
   }
-}
-
-function extractDollarAmountCents(message: string): number | undefined {
-  const match = message.match(/\$(\d+(?:\.\d{1,2})?)/);
-
-  if (!match?.[1]) {
-    return undefined;
-  }
-
-  return Math.round(Number(match[1]) * 100);
 }
 
 function inferMerchantName(message: string): string | undefined {

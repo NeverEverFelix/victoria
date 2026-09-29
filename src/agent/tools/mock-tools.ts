@@ -2,9 +2,9 @@ import type {
   CreateSavingsEntryInput,
   EstimateAvoidedSpendInput,
   FindTypicalMerchantSpendInput,
-  SavingsEntry,
   VictoriaTools
 } from "./contracts.js";
+import type { SavingsEntry } from "../../domain/savings/types.js";
 import type { SavingsSuggestion, UserHabit } from "../types.js";
 
 export class MockVictoriaTools implements VictoriaTools {
@@ -67,4 +67,3 @@ export class MockVictoriaTools implements VictoriaTools {
     };
   }
 }
-

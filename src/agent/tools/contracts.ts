@@ -1,4 +1,10 @@
-import type { MoneyMovementMode, SavingsSuggestion } from "../types.js";
+import type {
+  MoneyMovementMode,
+  SavingsEntry,
+  SavingsSuggestion
+} from "../../domain/savings/types.js";
+
+export type { SavingsEntry } from "../../domain/savings/types.js";
 
 export interface FindTypicalMerchantSpendInput {
   userId: string;
@@ -20,20 +26,8 @@ export interface CreateSavingsEntryInput {
   approvedActionId?: string;
 }
 
-export interface SavingsEntry {
-  id: string;
-  userId: string;
-  amountCents: number;
-  currency: "USD";
-  reason: string;
-  movementMode: MoneyMovementMode;
-  status: "pending" | "completed" | "cancelled";
-  createdAt: string;
-}
-
 export interface VictoriaTools {
   findTypicalMerchantSpend(input: FindTypicalMerchantSpendInput): Promise<number | null>;
   estimateAvoidedSpend(input: EstimateAvoidedSpendInput): Promise<SavingsSuggestion | null>;
   createSavingsEntry(input: CreateSavingsEntryInput): Promise<SavingsEntry>;
 }
-

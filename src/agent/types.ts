@@ -1,10 +1,22 @@
-export type FinancialEventType =
-  | "avoided_spend"
-  | "regretful_spend"
-  | "goal_allocation"
-  | "pattern_reflection"
-  | "general_finance"
-  | "unclear";
+import type {
+  FinancialDecision,
+  FinancialEventType
+} from "../domain/financial-events/types.js";
+import type {
+  MoneyMovementMode,
+  SavingsGoal,
+  SavingsSuggestion
+} from "../domain/savings/types.js";
+
+export type {
+  FinancialDecision,
+  FinancialEventType
+} from "../domain/financial-events/types.js";
+export type {
+  MoneyMovementMode,
+  SavingsGoal,
+  SavingsSuggestion
+} from "../domain/savings/types.js";
 
 export type AgentActionType =
   | "ask_follow_up"
@@ -13,8 +25,6 @@ export type AgentActionType =
   | "update_goal"
   | "reflect"
   | "refuse";
-
-export type MoneyMovementMode = "mock_ledger" | "real_transfer";
 
 export interface AgentRequest {
   userId: string;
@@ -37,23 +47,6 @@ export interface UserHabit {
   confidence: number;
 }
 
-export interface SavingsGoal {
-  id: string;
-  name: string;
-  targetAmountCents?: number;
-  savedAmountCents: number;
-  currency: "USD";
-}
-
-export interface FinancialDecision {
-  id: string;
-  type: FinancialEventType;
-  summary: string;
-  amountCents?: number;
-  merchantName?: string;
-  createdAt: string;
-}
-
 export interface ClassifiedMessage {
   type: FinancialEventType;
   confidence: number;
@@ -62,15 +55,6 @@ export interface ClassifiedMessage {
   goalName?: string;
   summary: string;
   needsClarification: boolean;
-}
-
-export interface SavingsSuggestion {
-  id: string;
-  amountCents: number;
-  currency: "USD";
-  reason: string;
-  source: "merchant_history" | "user_provided" | "manual_estimate";
-  movementMode: MoneyMovementMode;
 }
 
 export interface AgentDecision {

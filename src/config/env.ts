@@ -1,6 +1,8 @@
+import type { MoneyMovementMode } from "../domain/savings/types.js";
+
 export type AppEnv = "local" | "test" | "staging" | "production";
 export type PlaidEnv = "sandbox" | "development" | "production";
-export type MoneyMovementMode = "mock_ledger" | "real_transfer";
+export type { MoneyMovementMode } from "../domain/savings/types.js";
 
 export interface VictoriaEnv {
   appEnv: AppEnv;
