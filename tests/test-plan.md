@@ -2,6 +2,8 @@
 
 This file captures the first behaviors that should become tests as Victoria is implemented.
 
+Normative safety rules and their stable identifiers live in `docs/specification/mvp-safety-contract.md`. New behavior tests should include the applicable rule IDs so product decisions remain traceable to executable coverage.
+
 ## Agent Behavior
 
 - Victoria classifies "I cooked instead of DoorDashing" as an avoided-spend event.
@@ -52,6 +54,8 @@ This file captures the first behaviors that should become tests as Victoria is i
 - Victoria records the reason for the saved amount.
 - Victoria can summarize weekly and monthly savings totals.
 - Victoria keeps mocked ledger entries separate from real transfer state.
+- Victoria preserves historical events, suggestions, approvals, and ledger entries instead of mutating them.
+- Victoria represents a correction or reversal as a new record linked to the original.
 
 ## Memory Behavior
 
@@ -60,6 +64,7 @@ This file captures the first behaviors that should become tests as Victoria is i
 - Victoria retrieves relevant goals before suggesting where savings should go.
 - Victoria stores conversation context needed for follow-up questions.
 - Victoria avoids using stale or unrelated memory for a new decision.
+- Victoria can use updated memory for a future suggestion without rewriting an earlier suggestion.
 
 ## Conversation Quality
 

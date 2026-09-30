@@ -89,6 +89,24 @@ Implications:
 - Plaid production access should not be added yet.
 - Any future real transfer work needs explicit approval and new tests.
 
+### Memory Evolves While Financial History Remains Immutable
+
+Decision:
+
+Victoria's memory evolves, but historical events, suggestions, approvals, and ledger entries remain immutable.
+
+Why:
+
+Victoria should learn each user's habits and produce better future suggestions without changing the historical record of what it knew, proposed, received approval for, or recorded at an earlier moment. Preserving that record supports user trust, debugging, and auditability.
+
+Implications:
+
+- User habits, learned patterns, and other memory may change over time.
+- Historical events, suggestions, approvals, and ledger entries must not be updated in place to reflect newer knowledge.
+- A revised estimate creates a new suggestion rather than changing an earlier suggestion.
+- A correction, reversal, or superseding action creates a new linked record rather than deleting or overwriting the original.
+- Approvals remain bound to the exact historical proposal and user that were approved.
+
 ### UI Development Comes After The Headless MVP
 
 Decision:
@@ -142,21 +160,21 @@ Current default:
 
 Support optional goal language in contracts, but do not make goals required for the first loop.
 
-### Can Users Edit Or Delete Saved Entries?
+### How Should Corrections And Reversals Be Represented?
 
 Question:
 
-Should users be able to correct, delete, or undo mocked savings entries?
+What linked record types should Victoria use when a user needs to correct or undo a mocked savings entry?
 
 Possible answers:
 
-- Yes, because early entries are user-controlled records.
-- Not in the first implementation slice.
-- Only allow canceling pending suggestions, not editing confirmed entries.
+- Append an adjustment entry for the difference.
+- Append a reversal that references the original entry.
+- Append a corrected replacement while retaining the original entry.
 
 Current default:
 
-Support declining pending suggestions first. Defer edit/delete behavior.
+Do not mutate or delete the original historical record. Defer the exact correction and reversal record shapes until that behavior is implemented.
 
 ### How Should Victoria Handle Saved Money That Gets Spent Later?
 

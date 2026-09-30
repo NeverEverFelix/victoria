@@ -14,7 +14,9 @@ Before making code changes, read:
 4. `tests/test-plan.md`
 5. `docs/agentic-coding-patterns.md`
 6. `docs/failure-modes.md`
-7. The relevant files under `src/`
+7. `docs/specification/mvp-safety-contract.md`
+8. `docs/session-history/README.md` and the most recent relevant session entries
+9. The relevant files under `src/`
 
 Use these documents as the product contract. If they conflict, prefer the narrower and safer behavior from `docs/mvp.md` and `docs/user-stories.md`.
 
@@ -95,6 +97,8 @@ Money-related behavior must be conservative.
 - Ask for confirmation before creating a savings ledger entry.
 - Require explicit approval before any tool call that records or moves money.
 - Keep mocked ledger entries separate from real transfer state.
+- Let Victoria's memory evolve without rewriting historical events, suggestions, approvals, or ledger entries.
+- Represent corrections or newer understanding with new linked records rather than mutating historical records in place.
 - Never represent estimated savings as guaranteed savings.
 - Never represent mocked savings as moved money.
 - Never enable production banking behavior by default.
@@ -152,6 +156,7 @@ Focus tests on:
 - Money formatting and cents arithmetic.
 - Environment safety rules.
 - Separation between mocked and real money movement.
+- Preservation of immutable financial history as memory and estimates evolve.
 
 Avoid tests that lock in incidental implementation details unless they protect a safety boundary.
 
@@ -196,3 +201,14 @@ When product behavior changes, update the relevant docs:
 - `docs/environments.md` for environment or safety rule changes.
 
 Do not let code drift away from the product contract.
+
+## Session History
+
+Before the final handoff for each completed repository work session, create one Markdown entry under `docs/session-history/` following `docs/session-history/README.md`.
+
+- Use the local date, time, timezone, and a short topic in the filename and entry.
+- Record completed work, decisions, verification, unresolved gaps, and the recommended next step.
+- Distinguish confirmed product decisions from proposals that still need review.
+- Link to relevant repository files instead of copying large code blocks or full chat transcripts.
+- Never include secrets, credentials, private user data, or hidden reasoning.
+- Treat entries as append-only history. If an older entry is inaccurate, add a correction in a new entry rather than silently rewriting the old record.

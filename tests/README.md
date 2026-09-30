@@ -62,6 +62,15 @@ tests/
 4. Refactor while keeping the test green.
 5. Add integration coverage when multiple units need to work together.
 
+## Normative Safety Contract
+
+The stable rule identifiers, decision tables, examples, counterexamples, and traceability requirements for the headless MVP live in `docs/specification/mvp-safety-contract.md`.
+
+- Include the applicable rule identifier in a contract test title, for example `[APR-002]`.
+- Do not mark a rule as enforced until a test exercises the implementation rather than merely restating the documentation.
+- Keep unfinished rules visible as `Specified`; completing the relevant implementation slice requires making its applicable rules executable.
+- Do not reuse a retired rule identifier.
+
 ## Non-Negotiable Safety Expectations
 
 - Victoria must never move real money during the MVP, even with user confirmation.

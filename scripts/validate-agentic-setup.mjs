@@ -17,6 +17,7 @@ const requiredFiles = [
   "docs/failure-modes.md",
   "docs/mvp.md",
   "docs/user-stories.md",
+  "docs/session-history/README.md",
   "docs/github-setup.md",
   "scripts/ai-code-review-core.mjs",
   ".github/CODEOWNERS",
@@ -121,7 +122,16 @@ for (const file of taskFiles) {
 requireIncludes("AGENTS.md", [
   "mocked savings ledger",
   "Move real money",
-  ".agents/README.md"
+  ".agents/README.md",
+  "docs/session-history/README.md"
+]);
+
+requireIncludes("docs/session-history/README.md", [
+  "YYYY-MM-DD-HHMM",
+  "Decisions",
+  "Verification",
+  "Unresolved",
+  "Never include"
 ]);
 
 requireIncludes("docs/agentic-coding-patterns.md", [

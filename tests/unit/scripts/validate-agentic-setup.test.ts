@@ -13,6 +13,18 @@ afterEach(() => {
 });
 
 describe("agentic setup validation", () => {
+  it("fails when the session history instructions are missing", () => {
+    const fixture = createRepositoryFixture();
+    rmSync(join(fixture, "docs/session-history/README.md"));
+
+    const result = runValidator(fixture);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      "Missing required file: docs/session-history/README.md"
+    );
+  });
+
   it("fails when CODEOWNERS is missing", () => {
     const fixture = createRepositoryFixture();
     rmSync(join(fixture, ".github/CODEOWNERS"));

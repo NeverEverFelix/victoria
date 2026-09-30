@@ -94,6 +94,20 @@ Safer behavior:
 - Make physical movement optional and future-facing.
 - Avoid language that depends on multiple accounts.
 
+### Learning Rewrites Financial History
+
+Risk:
+
+Victoria learns a newer habit or estimate and updates an older event, suggestion, approval, or ledger entry as if the newer knowledge had been available originally. This destroys the audit trail and can make a user's past approval appear to cover a different amount or action.
+
+Safer behavior:
+
+- Allow habits and other memory to evolve for future decisions.
+- Keep historical events, suggestions, approvals, and ledger entries immutable.
+- Create a new suggestion when an estimate changes.
+- Represent corrections, reversals, and superseding actions with new records linked to the originals.
+- Test that learning changes future suggestions without changing historical records.
+
 ## Integration Failures
 
 ### Real Providers Leak Into The Agent

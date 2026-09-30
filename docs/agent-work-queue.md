@@ -115,6 +115,7 @@ Expected behavior:
 - Recognizes approval through the approval path.
 - Creates a mocked ledger entry.
 - Includes amount, reason, movement mode, and approval context.
+- Preserves the event, suggestion, approval, and ledger entry as immutable historical records.
 - Communicates that the amount was recorded in the Victoria ledger.
 
 Likely test area:
@@ -132,6 +133,7 @@ Done when:
 
 - A test proves approval creates a ledger entry.
 - A test proves no pending suggestion means no entry is created.
+- A test proves later memory changes cannot rewrite the approved historical records.
 - Mocked ledger entries remain separate from real money movement.
 - `npm run check` passes.
 

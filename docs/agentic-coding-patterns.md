@@ -28,6 +28,7 @@ Before coding, the orchestrator should read:
 - `docs/agent-work-queue.md`
 - The relevant story in `docs/user-stories.md`
 - The relevant decisions in `docs/decisions.md`
+- The applicable rules in `docs/specification/mvp-safety-contract.md`
 - The relevant tests and source files
 
 For larger behavior changes, also read:
@@ -123,6 +124,8 @@ Notes:
 
 The handoff should be short, specific, and useful to the next agent or human.
 
+After verification and before the final handoff, create one append-only session record under `docs/session-history/` using the format in `docs/session-history/README.md`. The record should help the next coding agent resume without relying on the original chat transcript. Product contracts and `docs/decisions.md` remain authoritative when a session record conflicts with them.
+
 ## Guardrails
 
 Coding agents must treat these as hard constraints:
@@ -132,6 +135,8 @@ Coding agents must treat these as hard constraints:
 - Do not add production Plaid behavior without explicit scope.
 - Do not add real transfer behavior without explicit scope.
 - Do not treat ambiguous user language as approval.
+- Do not mutate historical events, suggestions, approvals, or ledger entries when memory or estimates evolve.
+- Model corrections, reversals, and revised estimates as new linked records.
 - Do not skip tests for agent behavior.
 - Do not change product behavior without checking docs.
 - Do not let a subagent invent unresolved product decisions.
@@ -148,6 +153,7 @@ Watch for these Victoria-specific silent failures:
 - A mocked ledger entry is worded like real money moved.
 - A savings suggestion is created from a vague or unsupported estimate.
 - A ledger entry is created before explicit approval.
+- New memory silently rewrites a historical event, suggestion, approval, or ledger entry.
 - A regretful-spend flow accidentally becomes a fake savings flow.
 - A future integration is wired directly into the agent instead of behind an adapter.
 - Environment safety rules are relaxed to make local development easier.

@@ -33,5 +33,6 @@ These files do not automatically run agents. They define the operating setup for
 3. Implement one slice from `docs/agent-work-queue.md`.
 4. Use reviewer roles only when the task is risky or cross-cutting.
 5. Finish with `templates/handoff.md`.
+6. Record the completed session under `docs/session-history/` using its README format.
 
 Default rule: one orchestrator agent is enough for most tasks.

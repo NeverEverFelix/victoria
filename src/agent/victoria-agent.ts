@@ -1,6 +1,6 @@
 import type { LlmAdapter } from "./llm/types.js";
 import type { MemoryProvider } from "./memory/types.js";
-import { canCallTool } from "./policy.js";
+import { canCallTool, interpretApprovalResponse } from "./policy.js";
 import type { VictoriaTools } from "./tools/contracts.js";
 import { formatUsd } from "../domain/money.js";
 import type {
@@ -20,13 +20,43 @@ export interface VictoriaAgentDependencies {
 export class VictoriaAgent {
   private readonly pendingSavingsActions = new Map<
     string,
-    { userId: string; decision: AgentDecision }
+    { userId: string; conversationKey: string; decision: AgentDecision }
   >();
+  private readonly pendingActionIdsByConversation = new Map<string, string>();
   private nextActionNumber = 1;
 
   constructor(private readonly dependencies: VictoriaAgentDependencies) {}
 
   async respond(request: AgentRequest): Promise<AgentResponse> {
+    const pendingActionId = this.pendingActionIdsByConversation.get(this.conversationKey(request));
+    const pendingAction = pendingActionId
+      ? this.pendingSavingsActions.get(pendingActionId)
+      : undefined;
+
+    if (pendingAction && pendingActionId) {
+      const approvalResponse = interpretApprovalResponse(request.message);
+
+      if (approvalResponse === "explicit_approval") {
+        return this.approveToolCall(
+          { ...request, approvedActionId: pendingActionId },
+          pendingAction.decision
+        );
+      }
+
+      if (approvalResponse === "ambiguous") {
+        const message = "Please give me a clear yes or no before I record this savings entry.";
+
+        return {
+          message,
+          decision: {
+            action: "ask_follow_up",
+            classification: pendingAction.decision.classification,
+            userFacingMessage: message
+          }
+        };
+      }
+    }
+
     const memory = await this.dependencies.memory.getMemoryForUser(request.userId);
     const classification = await this.dependencies.llm.classifyMessage({
       userMessage: request.message,
@@ -49,7 +79,8 @@ export class VictoriaAgent {
       return {
         action: "ask_follow_up",
         classification,
-        userFacingMessage: "I can help with that. What did you avoid spending on, and about how much would it have cost?"
+        userFacingMessage:
+          "I can help with that. What did you avoid spending on, and about how much would it have cost?"
       };
     }
 
@@ -57,7 +88,8 @@ export class VictoriaAgent {
       return {
         action: "reflect",
         classification,
-        userFacingMessage: "No shame. Want to look at what led to it and set up a small plan for next time?"
+        userFacingMessage:
+          "No shame. Want to look at what led to it and set up a small plan for next time?"
       };
     }
 
@@ -76,7 +108,8 @@ export class VictoriaAgent {
     return {
       action: "reflect",
       classification,
-      userFacingMessage: "I am here with you. Tell me a little more about the money decision you are thinking through."
+      userFacingMessage:
+        "I am here with you. Tell me a little more about the money decision you are thinking through."
     };
   }
 
@@ -96,7 +129,8 @@ export class VictoriaAgent {
       return {
         action: "ask_follow_up",
         classification,
-        userFacingMessage: "Nice choice. About how much would you have spent if you had gone through with it?"
+        userFacingMessage:
+          "Nice choice. About how much would you have spent if you had gone through with it?"
       };
     }
 
@@ -104,7 +138,13 @@ export class VictoriaAgent {
     const actionId = decision.toolCall?.actionId;
 
     if (actionId) {
-      this.pendingSavingsActions.set(actionId, { userId: request.userId, decision });
+      const conversationKey = this.conversationKey(request);
+      this.pendingSavingsActions.set(actionId, {
+        userId: request.userId,
+        conversationKey,
+        decision
+      });
+      this.pendingActionIdsByConversation.set(conversationKey, actionId);
     }
 
     return decision;
@@ -116,6 +156,11 @@ export class VictoriaAgent {
   ): AgentDecision {
     const dollars = formatUsd(suggestion.amountCents);
     const actionId = `savings_action_${this.nextActionNumber++}`;
+
+    const evidence =
+      suggestion.source === "user_provided"
+        ? `Using the ${dollars} amount you provided, would you like me to record it`
+        : `Great job. I estimate you avoided spending ${dollars}. Would you like me to record that`;
 
     return {
       action: "suggest_savings",
@@ -133,7 +178,7 @@ export class VictoriaAgent {
         requiresApproval: true,
         movementMode: suggestion.movementMode
       },
-      userFacingMessage: `Great job. I estimate you avoided spending ${dollars}. Would you like me to record that in your Victoria savings ledger? No real money has moved yet.`
+      userFacingMessage: `${evidence} in your Victoria savings ledger? No real money has moved yet.`
     };
   }
 
@@ -154,11 +199,11 @@ export class VictoriaAgent {
       ? this.pendingSavingsActions.get(approvedActionId)
       : undefined;
 
-    if (
-      approvedActionId &&
-      (!pendingAction || pendingAction.userId !== request.userId)
-    ) {
-      return this.refuseApproval(decision, "That approval does not match a pending savings action.");
+    if (approvedActionId && (!pendingAction || pendingAction.userId !== request.userId)) {
+      return this.refuseApproval(
+        decision,
+        "That approval does not match a pending savings action."
+      );
     }
 
     const trustedDecision = pendingAction?.decision ?? decision;
@@ -192,7 +237,12 @@ export class VictoriaAgent {
     };
 
     const entry = await this.dependencies.tools.createSavingsEntry(createSavingsEntryInput);
-    this.pendingSavingsActions.delete(trustedToolCall.actionId ?? "");
+    const completedActionId = trustedToolCall.actionId ?? "";
+    const completedAction = this.pendingSavingsActions.get(completedActionId);
+    this.pendingSavingsActions.delete(completedActionId);
+    if (completedAction) {
+      this.pendingActionIdsByConversation.delete(completedAction.conversationKey);
+    }
 
     const message = `Done. I recorded ${formatUsd(entry.amountCents)} in your Victoria savings ledger. No real money has moved yet.`;
 
@@ -215,5 +265,9 @@ export class VictoriaAgent {
         userFacingMessage: message
       }
     };
+  }
+
+  private conversationKey(request: AgentRequest): string {
+    return `${request.userId}:${request.conversationId ?? "default"}`;
   }
 }

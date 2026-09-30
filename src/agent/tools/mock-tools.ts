@@ -8,12 +8,13 @@ import type { SavingsEntry } from "../../domain/savings/types.js";
 import type { SavingsSuggestion, UserHabit } from "../types.js";
 
 export class MockVictoriaTools implements VictoriaTools {
+  private readonly savingsEntries: SavingsEntry[] = [];
+
   constructor(private readonly habits: UserHabit[] = []) {}
 
   async findTypicalMerchantSpend(input: FindTypicalMerchantSpendInput): Promise<number | null> {
     const habit = this.habits.find(
-      (candidate) =>
-        candidate.merchantName.toLowerCase() === input.merchantName.toLowerCase()
+      (candidate) => candidate.merchantName.toLowerCase() === input.merchantName.toLowerCase()
     );
 
     return habit?.typicalAmountCents ?? null;
@@ -55,7 +56,7 @@ export class MockVictoriaTools implements VictoriaTools {
   }
 
   async createSavingsEntry(input: CreateSavingsEntryInput): Promise<SavingsEntry> {
-    return {
+    const entry: SavingsEntry = {
       id: `entry_${Date.now()}`,
       userId: input.userId,
       amountCents: input.amountCents,
@@ -65,5 +66,12 @@ export class MockVictoriaTools implements VictoriaTools {
       status: "completed",
       createdAt: new Date().toISOString()
     };
+
+    this.savingsEntries.push(entry);
+    return entry;
+  }
+
+  async listSavingsEntries(userId: string): Promise<SavingsEntry[]> {
+    return this.savingsEntries.filter((entry) => entry.userId === userId);
   }
 }

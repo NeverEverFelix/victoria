@@ -81,6 +81,7 @@ Start with:
 - `docs/agent-work-queue.md` for prioritized implementation slices.
 - `docs/decisions.md` for product decisions and unresolved questions.
 - `docs/failure-modes.md` for Victoria-specific silent failures to guard against.
+- `docs/specification/mvp-safety-contract.md` for normative safety rules, decision tables, and test traceability.
 - `docs/mvp.md` and `docs/user-stories.md` for the MVP behavior contract.
 
 The default coding pattern is one orchestrator agent working on one slice at a time. Specialist reviewers should be used only for risky or cross-cutting changes, especially around tests, safety, architecture, and documentation drift.
@@ -231,6 +232,7 @@ No shame. Want to look at what triggered it and set up a small plan for next tim
 - Everywhere: Victoria should be available wherever financial decisions happen.
 - Protective by default: money saved through Victoria should feel meaningfully separate from money available to spend.
 - Transparent: users should always understand why Victoria suggested an amount and approve any movement of money.
+- Auditable over time: Victoria's memory may evolve, but historical events, suggestions, approvals, and ledger entries remain immutable.
 
 ## Long-Term Vision
 

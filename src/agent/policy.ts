@@ -5,6 +5,25 @@ export interface PolicyDecision {
   reason?: string;
 }
 
+export type ApprovalResponse = "explicit_approval" | "ambiguous" | "not_approval";
+
+export function interpretApprovalResponse(message: string): ApprovalResponse {
+  const normalized = message
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?]+$/g, "");
+
+  if (["yes", "yes save it", "record it", "please do", "do it"].includes(normalized)) {
+    return "explicit_approval";
+  }
+
+  if (/\b(maybe|guess|probably)\b/.test(normalized)) {
+    return "ambiguous";
+  }
+
+  return "not_approval";
+}
+
 export function canCallTool(request: AgentRequest, toolCall: ToolCallRequest): PolicyDecision {
   if (toolCall.name === "eventuallyMoveMoney" || toolCall.movementMode === "real_transfer") {
     return {

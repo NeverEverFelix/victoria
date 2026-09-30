@@ -8,6 +8,81 @@ import {
 import type { UserHabit } from "../../../src/agent/types.js";
 
 describe("VictoriaAgent", () => {
+  it("[AUD-001] completes the explicit-amount savings loop through conversation", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+
+    const suggestion = await agent.respond({
+      userId: "user_123",
+      conversationId: "conversation_123",
+      message: "I almost bought a $90 jacket but decided to wait."
+    });
+
+    expect(suggestion.decision.action).toBe("suggest_savings");
+    expect(suggestion.message).toContain("$90.00");
+    expect(suggestion.message).toContain("amount you provided");
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+
+    const confirmation = await agent.respond({
+      userId: "user_123",
+      conversationId: "conversation_123",
+      message: "Yes"
+    });
+
+    expect(confirmation.decision.action).toBe("create_ledger_entry");
+    expect(confirmation.message).toBe(
+      "Done. I recorded $90.00 in your Victoria savings ledger. No real money has moved yet."
+    );
+    expect(await tools.listSavingsEntries("user_123")).toMatchObject([
+      {
+        userId: "user_123",
+        amountCents: 9000,
+        movementMode: "mock_ledger",
+        status: "completed"
+      }
+    ]);
+  });
+
+  it("[APR-003] does not treat ambiguous confirmation language as approval", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+
+    await agent.respond({
+      userId: "user_123",
+      conversationId: "conversation_123",
+      message: "I almost bought a $90 jacket but decided to wait."
+    });
+
+    const response = await agent.respond({
+      userId: "user_123",
+      conversationId: "conversation_123",
+      message: "Sure, I guess"
+    });
+
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.message).toContain("clear yes or no");
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("does not create a second entry when confirmation is repeated", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const context = {
+      userId: "user_123",
+      conversationId: "conversation_123"
+    };
+
+    await agent.respond({
+      ...context,
+      message: "I almost bought a $90 jacket but decided to wait."
+    });
+    await agent.respond({ ...context, message: "Yes" });
+    const repeated = await agent.respond({ ...context, message: "Yes" });
+
+    expect(repeated.decision.action).not.toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries("user_123")).toHaveLength(1);
+  });
+
   it("suggests saving avoided spend without creating a ledger entry immediately", async () => {
     const agent = createAgent([
       {
@@ -207,11 +282,14 @@ describe("VictoriaAgent", () => {
   });
 });
 
-function createAgent(habits: UserHabit[] = []): VictoriaAgent {
+function createAgent(
+  habits: UserHabit[] = [],
+  tools: MockVictoriaTools = new MockVictoriaTools(habits)
+): VictoriaAgent {
   return new VictoriaAgent({
     llm: new MockLlmAdapter(),
     memory: new MockMemoryProvider(habits),
-    tools: new MockVictoriaTools(habits)
+    tools
   });
 }
 

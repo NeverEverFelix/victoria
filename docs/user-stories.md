@@ -156,6 +156,8 @@ Acceptance criteria:
 - Given approval refers to another action or user, no entry is created.
 - Given an approved action was already completed, replaying that approval creates no second entry.
 - Given the entry is created, it includes amount, reason, timestamp, and mocked status.
+- Given the event, suggestion, approval, and entry have been recorded, later learning does not rewrite them.
+- Given a recorded amount needs correction, Victoria preserves the original history and creates a new linked correction record.
 - Given the entry is created, Victoria returns a confirmation message.
 
 ## Story 7: Decline Suggested Savings

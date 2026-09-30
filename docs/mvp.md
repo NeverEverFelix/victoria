@@ -161,6 +161,7 @@ Victoria must:
 - Explain whether the action is mocked or real.
 - Keep the tone encouraging, practical, and nonjudgmental.
 - Track weekly and monthly saved totals from mocked ledger entries.
+- Allow memory and learned habits to evolve without rewriting historical events, suggestions, approvals, or ledger entries.
 
 Victoria must not:
 
@@ -186,6 +187,8 @@ The MVP should eventually store:
 - Whether the entry is mocked or real.
 
 For now, these can be represented through in-memory mocks and test fixtures.
+
+Victoria's memory evolves, but historical events, suggestions, approvals, and ledger entries remain immutable. A later correction, revised estimate, or newly learned habit must create a new linked record instead of changing what Victoria previously observed, suggested, approved, or recorded.
 
 ## Out Of Scope
 

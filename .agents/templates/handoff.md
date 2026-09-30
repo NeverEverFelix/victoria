@@ -23,3 +23,7 @@
 ## Follow-Up
 
 - 
+
+## Session History
+
+- `docs/session-history/<YYYY-MM-DD-HHMM-topic>.md`
