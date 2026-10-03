@@ -5,6 +5,8 @@ import type {
 import type {
   MoneyMovementMode,
   SavingsGoal,
+  SavingsEvent,
+  SavingsProposal,
   SavingsSuggestion
 } from "../domain/savings/types.js";
 
@@ -15,6 +17,8 @@ export type {
 export type {
   MoneyMovementMode,
   SavingsGoal,
+  SavingsEvent,
+  SavingsProposal,
   SavingsSuggestion
 } from "../domain/savings/types.js";
 
@@ -60,6 +64,8 @@ export interface ClassifiedMessage {
 export interface AgentDecision {
   action: AgentActionType;
   classification: ClassifiedMessage;
+  savingsEvent?: SavingsEvent;
+  proposal?: SavingsProposal;
   suggestion?: SavingsSuggestion;
   toolCall?: ToolCallRequest;
   userFacingMessage: string;

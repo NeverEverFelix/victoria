@@ -79,6 +79,7 @@ Start with:
 - `.agents/README.md` for reusable orchestrator, reviewer, and handoff prompts.
 - `docs/agentic-coding-patterns.md` for the coding-agent workflow.
 - `docs/agent-work-queue.md` for prioritized implementation slices.
+- `docs/architecture/README.md` for system diagrams, architecture decisions, and tradeoffs.
 - `docs/decisions.md` for product decisions and unresolved questions.
 - `docs/failure-modes.md` for Victoria-specific silent failures to guard against.
 - `docs/specification/mvp-safety-contract.md` for normative safety rules, decision tables, and test traceability.

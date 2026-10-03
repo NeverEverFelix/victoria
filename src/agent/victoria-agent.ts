@@ -8,6 +8,8 @@ import type {
   AgentRequest,
   AgentResponse,
   ClassifiedMessage,
+  SavingsEvent,
+  SavingsProposal,
   SavingsSuggestion
 } from "./types.js";
 
@@ -23,7 +25,14 @@ export class VictoriaAgent {
     { userId: string; conversationKey: string; decision: AgentDecision }
   >();
   private readonly pendingActionIdsByConversation = new Map<string, string>();
+  private readonly pendingAmountClarifications = new Map<
+    string,
+    { userId: string; classification: ClassifiedMessage; savingsEvent: SavingsEvent }
+  >();
   private nextActionNumber = 1;
+  private nextEventNumber = 1;
+  private nextProposalNumber = 1;
+  private nextApprovalNumber = 1;
 
   constructor(private readonly dependencies: VictoriaAgentDependencies) {}
 
@@ -41,6 +50,35 @@ export class VictoriaAgent {
           { ...request, approvedActionId: pendingActionId },
           pendingAction.decision
         );
+      }
+
+      if (approvalResponse === "explicit_decline") {
+        const message = "No problem. I won't record it.";
+        const actionId = pendingAction.decision.toolCall?.actionId;
+        const proposal = pendingAction.decision.proposal;
+        const declinedProposal: SavingsProposal | undefined =
+          proposal?.status === "pending"
+            ? {
+                ...proposal,
+                status: "declined",
+                declinedAt: new Date().toISOString()
+              }
+            : undefined;
+
+        if (actionId) {
+          this.pendingSavingsActions.delete(actionId);
+        }
+        this.pendingActionIdsByConversation.delete(this.conversationKey(request));
+
+        return {
+          message,
+          decision: {
+            ...pendingAction.decision,
+            action: "reflect",
+            ...(declinedProposal ? { proposal: declinedProposal } : {}),
+            userFacingMessage: message
+          }
+        };
       }
 
       if (approvalResponse === "ambiguous") {
@@ -63,7 +101,27 @@ export class VictoriaAgent {
       memory
     });
 
-    const decision = await this.decide(request, classification);
+    const pendingClarification = this.pendingAmountClarifications.get(this.conversationKey(request));
+    let resolvedSavingsEvent: SavingsEvent | undefined;
+    const resolvedClassification =
+      pendingClarification?.userId === request.userId &&
+      classification.amountCents !== undefined &&
+      classification.type === "unclear"
+        ? {
+            ...pendingClarification.classification,
+            amountCents: classification.amountCents,
+            needsClarification: false
+          }
+        : classification;
+
+    if (resolvedClassification !== classification) {
+      resolvedSavingsEvent = pendingClarification?.savingsEvent;
+      this.pendingAmountClarifications.delete(this.conversationKey(request));
+    } else if (pendingClarification && classification.type !== "unclear") {
+      this.pendingAmountClarifications.delete(this.conversationKey(request));
+    }
+
+    const decision = await this.decide(request, resolvedClassification, resolvedSavingsEvent);
 
     return {
       message: decision.userFacingMessage,
@@ -73,7 +131,8 @@ export class VictoriaAgent {
 
   private async decide(
     request: AgentRequest,
-    classification: ClassifiedMessage
+    classification: ClassifiedMessage,
+    savingsEvent?: SavingsEvent
   ): Promise<AgentDecision> {
     if (classification.needsClarification || classification.type === "unclear") {
       return {
@@ -94,7 +153,7 @@ export class VictoriaAgent {
     }
 
     if (classification.type === "avoided_spend") {
-      return this.suggestSavings(request, classification);
+      return this.suggestSavings(request, classification, savingsEvent);
     }
 
     if (classification.type === "goal_allocation") {
@@ -115,8 +174,10 @@ export class VictoriaAgent {
 
   private async suggestSavings(
     request: AgentRequest,
-    classification: ClassifiedMessage
+    classification: ClassifiedMessage,
+    existingSavingsEvent?: SavingsEvent
   ): Promise<AgentDecision> {
+    const savingsEvent = existingSavingsEvent ?? this.buildSavingsEvent(request, classification);
     const suggestion = await this.dependencies.tools.estimateAvoidedSpend({
       userId: request.userId,
       ...(classification.merchantName ? { merchantName: classification.merchantName } : {}),
@@ -126,15 +187,22 @@ export class VictoriaAgent {
     });
 
     if (!suggestion) {
+      this.pendingAmountClarifications.set(this.conversationKey(request), {
+        userId: request.userId,
+        classification,
+        savingsEvent
+      });
+
       return {
         action: "ask_follow_up",
         classification,
+        savingsEvent,
         userFacingMessage:
           "Nice choice. About how much would you have spent if you had gone through with it?"
       };
     }
 
-    const decision = this.buildSavingsSuggestionDecision(classification, suggestion);
+    const decision = this.buildSavingsSuggestionDecision(classification, savingsEvent, suggestion);
     const actionId = decision.toolCall?.actionId;
 
     if (actionId) {
@@ -152,10 +220,26 @@ export class VictoriaAgent {
 
   private buildSavingsSuggestionDecision(
     classification: ClassifiedMessage,
+    savingsEvent: SavingsEvent,
     suggestion: SavingsSuggestion
   ): AgentDecision {
     const dollars = formatUsd(suggestion.amountCents);
     const actionId = `savings_action_${this.nextActionNumber++}`;
+    const proposal: SavingsProposal = {
+      id: `proposal_${this.nextProposalNumber++}`,
+      eventId: savingsEvent.id,
+      userId: savingsEvent.userId,
+      suggestion: {
+        id: suggestion.id,
+        amountCents: suggestion.amountCents,
+        currency: suggestion.currency,
+        reason: suggestion.reason,
+        source: suggestion.source,
+        movementMode: "mock_ledger"
+      },
+      status: "pending",
+      createdAt: new Date().toISOString()
+    };
 
     const evidence =
       suggestion.source === "user_provided"
@@ -165,11 +249,15 @@ export class VictoriaAgent {
     return {
       action: "suggest_savings",
       classification,
+      savingsEvent,
+      proposal,
       suggestion,
       toolCall: {
         name: "createSavingsEntry",
         actionId,
         arguments: {
+          eventId: savingsEvent.id,
+          proposalId: proposal.id,
           suggestionId: suggestion.id,
           amountCents: suggestion.amountCents,
           reason: suggestion.reason,
@@ -179,6 +267,24 @@ export class VictoriaAgent {
         movementMode: suggestion.movementMode
       },
       userFacingMessage: `${evidence} in your Victoria savings ledger? No real money has moved yet.`
+    };
+  }
+
+  private buildSavingsEvent(
+    request: AgentRequest,
+    classification: ClassifiedMessage
+  ): SavingsEvent {
+    return {
+      id: `event_${this.nextEventNumber++}`,
+      userId: request.userId,
+      type: "avoided_spend",
+      summary: classification.summary,
+      ...(classification.merchantName ? { merchantName: classification.merchantName } : {}),
+      ...(classification.amountCents !== undefined
+        ? { userProvidedAmountCents: classification.amountCents }
+        : {}),
+      classificationConfidence: classification.confidence,
+      createdAt: new Date().toISOString()
     };
   }
 
@@ -209,9 +315,15 @@ export class VictoriaAgent {
     const trustedDecision = pendingAction?.decision ?? decision;
     const trustedToolCall = trustedDecision.toolCall;
     const trustedSuggestion = trustedDecision.suggestion;
+    const trustedProposal = trustedDecision.proposal;
+    const trustedEvent = trustedDecision.savingsEvent;
 
-    if (!trustedToolCall || !trustedSuggestion) {
+    if (!trustedToolCall || !trustedSuggestion || !trustedProposal || !trustedEvent) {
       return this.refuseApproval(decision, "There is no savings action waiting for approval.");
+    }
+
+    if (trustedProposal.status !== "pending") {
+      return this.refuseApproval(decision, "That savings action is no longer pending.");
     }
 
     const policyDecision = canCallTool(request, trustedToolCall);
@@ -227,13 +339,33 @@ export class VictoriaAgent {
       };
     }
 
+    const approvedActionIdForEntry = request.approvedActionId;
+
+    if (!approvedActionIdForEntry) {
+      return this.refuseApproval(
+        trustedDecision,
+        "Savings ledger entries require approval for this exact action."
+      );
+    }
+
+    const approval = {
+      id: `approval_${this.nextApprovalNumber++}`,
+      proposalId: trustedProposal.id,
+      userId: request.userId,
+      actionId: approvedActionIdForEntry,
+      source: "user_message" as const,
+      approvedAt: new Date().toISOString()
+    };
     const createSavingsEntryInput = {
       userId: request.userId,
+      eventId: trustedEvent.id,
+      proposalId: trustedProposal.id,
+      approvalId: approval.id,
       suggestionId: trustedSuggestion.id,
       amountCents: trustedSuggestion.amountCents,
       reason: trustedSuggestion.reason,
       movementMode: trustedSuggestion.movementMode,
-      ...(request.approvedActionId ? { approvedActionId: request.approvedActionId } : {})
+      approvedActionId: approvedActionIdForEntry
     };
 
     const entry = await this.dependencies.tools.createSavingsEntry(createSavingsEntryInput);
@@ -251,6 +383,13 @@ export class VictoriaAgent {
       decision: {
         ...trustedDecision,
         action: "create_ledger_entry",
+        proposal: {
+          ...trustedProposal,
+          status: "recorded",
+          approval,
+          ledgerEntryId: entry.id,
+          recordedAt: entry.createdAt
+        },
         userFacingMessage: message
       }
     };

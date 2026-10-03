@@ -15,7 +15,11 @@ export class MockLlmAdapter implements LlmAdapter {
         ...(amountCents !== undefined ? { amountCents } : {}),
         ...(merchantName !== undefined ? { merchantName } : {}),
         summary: input.userMessage,
-        needsClarification: amountCents === undefined && merchantName === undefined
+        needsClarification:
+          amountCents === undefined &&
+          merchantName === undefined &&
+          !message.includes("instead of") &&
+          !message.includes("almost bought")
       };
     }
 

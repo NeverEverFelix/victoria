@@ -5,7 +5,11 @@ export interface PolicyDecision {
   reason?: string;
 }
 
-export type ApprovalResponse = "explicit_approval" | "ambiguous" | "not_approval";
+export type ApprovalResponse =
+  | "explicit_approval"
+  | "explicit_decline"
+  | "ambiguous"
+  | "not_approval";
 
 export function interpretApprovalResponse(message: string): ApprovalResponse {
   const normalized = message
@@ -15,6 +19,10 @@ export function interpretApprovalResponse(message: string): ApprovalResponse {
 
   if (["yes", "yes save it", "record it", "please do", "do it"].includes(normalized)) {
     return "explicit_approval";
+  }
+
+  if (["no", "no thanks", "not today", "i'd rather not"].includes(normalized)) {
+    return "explicit_decline";
   }
 
   if (/\b(maybe|guess|probably)\b/.test(normalized)) {

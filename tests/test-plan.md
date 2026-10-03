@@ -8,8 +8,10 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 
 - Victoria classifies "I cooked instead of DoorDashing" as an avoided-spend event.
 - Victoria classifies "I regret ordering takeout last night" as a regretful-spend reflection.
+- Regretful spending stays reflective even when it includes a dollar amount; it creates no savings event, proposal, suggestion, tool call, or ledger entry.
 - Victoria classifies "Put this toward my emergency fund" as a goal-allocation request.
 - Victoria asks a follow-up question when a user says "I saved money today" without enough context.
+- A vague savings message creates no event, proposal, suggestion, tool call, or ledger entry; after the user provides context, the agent can make an approval-gated suggestion.
 - Victoria chooses `estimateAvoidedSpend()` before suggesting a savings action.
 - Victoria refuses to call `eventuallyMoveMoney()` during the MVP, even when approval is present.
 
@@ -36,6 +38,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria uses a known merchant habit when a typical spend exists.
 - Victoria uses user-provided amount when the user names a specific amount.
 - Victoria falls back to asking a question when neither history nor amount exists.
+- When an avoided-spend event is clear but its amount is unknown, Victoria asks for the amount and can use the user's answer in an approval-gated suggestion linked to the same event.
 - Victoria rounds and formats suggested savings amounts consistently.
 - Victoria does not overstate monthly savings totals.
 
@@ -82,6 +85,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria binds approval to the exact pending action and user.
 - Victoria prevents an approval from being replayed after the action completes.
 - Victoria can cancel or decline a pending savings suggestion.
+- A clear decline marks its pending proposal declined, clears the pending action, and creates no ledger entry.
 - Victoria makes it clear when an action is only a mocked ledger entry.
 
 ## Agentic Coding Setup

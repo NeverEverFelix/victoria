@@ -8,7 +8,7 @@ import {
 import type { UserHabit } from "../../../src/agent/types.js";
 
 describe("VictoriaAgent", () => {
-  it("[AUD-001] completes the explicit-amount savings loop through conversation", async () => {
+  it("[INT-002] [AUD-001] [AUD-004] completes the explicit-amount savings loop through conversation", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);
 
@@ -19,6 +19,24 @@ describe("VictoriaAgent", () => {
     });
 
     expect(suggestion.decision.action).toBe("suggest_savings");
+    expect(suggestion.decision.savingsEvent).toMatchObject({
+      id: "event_1",
+      userId: "user_123",
+      type: "avoided_spend",
+      summary: "I almost bought a $90 jacket but decided to wait.",
+      userProvidedAmountCents: 9000
+    });
+    expect(suggestion.decision.proposal).toMatchObject({
+      id: "proposal_1",
+      eventId: "event_1",
+      userId: "user_123",
+      status: "pending",
+      suggestion: {
+        amountCents: 9000,
+        source: "user_provided",
+        movementMode: "mock_ledger"
+      }
+    });
     expect(suggestion.message).toContain("$90.00");
     expect(suggestion.message).toContain("amount you provided");
     expect(await tools.listSavingsEntries("user_123")).toEqual([]);
@@ -30,12 +48,29 @@ describe("VictoriaAgent", () => {
     });
 
     expect(confirmation.decision.action).toBe("create_ledger_entry");
+    expect(confirmation.decision.proposal).toMatchObject({
+      id: "proposal_1",
+      eventId: "event_1",
+      userId: "user_123",
+      status: "recorded",
+      approval: {
+        id: "approval_1",
+        proposalId: "proposal_1",
+        userId: "user_123",
+        actionId: "savings_action_1",
+        source: "user_message"
+      }
+    });
     expect(confirmation.message).toBe(
       "Done. I recorded $90.00 in your Victoria savings ledger. No real money has moved yet."
     );
     expect(await tools.listSavingsEntries("user_123")).toMatchObject([
       {
         userId: "user_123",
+        eventId: "event_1",
+        proposalId: "proposal_1",
+        approvalId: "approval_1",
+        approvedActionId: "savings_action_1",
         amountCents: 9000,
         movementMode: "mock_ledger",
         status: "completed"
@@ -62,6 +97,33 @@ describe("VictoriaAgent", () => {
     expect(response.decision.action).toBe("ask_follow_up");
     expect(response.message).toContain("clear yes or no");
     expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("[APR-004] declines a pending savings proposal without pressure or a ledger entry", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const context = { userId: "user_123", conversationId: "conversation_123" };
+    const suggestion = await agent.respond({
+      ...context,
+      message: "I almost bought a $90 jacket but decided to wait."
+    });
+
+    const response = await agent.respond({ ...context, message: "Not today." });
+
+    expect(response.decision.action).toBe("reflect");
+    expect(response.decision.proposal).toMatchObject({
+      id: "proposal_1",
+      status: "declined",
+      eventId: "event_1"
+    });
+    expect(response.decision.proposal).toHaveProperty("declinedAt");
+    expect(response.message).toBe("No problem. I won't record it.");
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+
+    const afterDecline = await agent.respond({ ...context, message: "Yes" });
+    expect(afterDecline.decision.action).not.toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+    expect(suggestion.decision.proposal?.status).toBe("pending");
   });
 
   it("does not create a second entry when confirmation is repeated", async () => {
@@ -257,28 +319,108 @@ describe("VictoriaAgent", () => {
     expect(replayResponse.message).toBe("That approval does not match a pending savings action.");
   });
 
-  it("asks a follow-up question when avoided spend cannot be estimated", async () => {
-    const agent = createAgent();
+  it("asks about a vague savings moment and continues after the user gives context", async () => {
+    const tools = new MockVictoriaTools([
+      {
+        id: "habit_7th_street",
+        merchantName: "7th Street",
+        typicalAmountCents: 2746,
+        currency: "USD",
+        confidence: 0.9
+      }
+    ]);
+    const agent = createAgent(
+      [
+        {
+          id: "habit_7th_street",
+          merchantName: "7th Street",
+          typicalAmountCents: 2746,
+          currency: "USD",
+          confidence: 0.9
+        }
+      ],
+      tools
+    );
+    const context = { userId: "user_123", conversationId: "conversation_123" };
 
     const response = await agent.respond({
-      userId: "user_123",
+      ...context,
       message: "I saved money today."
     });
 
     expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.classification.type).toBe("unclear");
+    expect(response.decision.savingsEvent).toBeUndefined();
+    expect(response.decision.proposal).toBeUndefined();
+    expect(response.decision.suggestion).toBeUndefined();
+    expect(response.decision.toolCall).toBeUndefined();
     expect(response.message).toContain("What did you avoid spending on");
+    expect(response.message).toContain("about how much");
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+
+    const followUp = await agent.respond({
+      ...context,
+      message: "I cooked instead of DoorDashing my usual 7th Street order."
+    });
+
+    expect(followUp.decision.action).toBe("suggest_savings");
+    expect(followUp.decision.proposal?.status).toBe("pending");
+    expect(followUp.decision.suggestion?.amountCents).toBe(2746);
+    expect(followUp.decision.toolCall?.requiresApproval).toBe(true);
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
   });
 
-  it("responds without shame for regretful spending", async () => {
-    const agent = createAgent();
+  it("asks for an unknown avoided-spend amount and uses the user's answer", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const context = { userId: "user_123", conversationId: "conversation_123" };
+
+    const clarification = await agent.respond({
+      ...context,
+      message: "I cooked instead of ordering takeout."
+    });
+
+    expect(clarification.decision.action).toBe("ask_follow_up");
+    expect(clarification.decision.classification.type).toBe("avoided_spend");
+    expect(clarification.decision.savingsEvent).toMatchObject({
+      id: "event_1",
+      type: "avoided_spend"
+    });
+    expect(clarification.decision.savingsEvent?.userProvidedAmountCents).toBeUndefined();
+    expect(clarification.decision.proposal).toBeUndefined();
+    expect(clarification.decision.toolCall).toBeUndefined();
+    expect(clarification.message).toContain("About how much");
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+
+    const suggestion = await agent.respond({ ...context, message: "About $18." });
+
+    expect(suggestion.decision.action).toBe("suggest_savings");
+    expect(suggestion.decision.savingsEvent?.id).toBe(clarification.decision.savingsEvent?.id);
+    expect(suggestion.decision.proposal?.status).toBe("pending");
+    expect(suggestion.decision.suggestion).toMatchObject({
+      amountCents: 1800,
+      source: "user_provided"
+    });
+    expect(suggestion.decision.toolCall?.requiresApproval).toBe(true);
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("responds without shame or savings action for regretful spending", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
 
     const response = await agent.respond({
       userId: "user_123",
-      message: "I regret ordering takeout last night."
+      message: "I regret spending $42 on takeout last night."
     });
 
     expect(response.decision.action).toBe("reflect");
     expect(response.message).toContain("No shame");
+    expect(response.decision.savingsEvent).toBeUndefined();
+    expect(response.decision.proposal).toBeUndefined();
+    expect(response.decision.suggestion).toBeUndefined();
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
   });
 });
 

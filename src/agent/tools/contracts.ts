@@ -19,11 +19,14 @@ export interface EstimateAvoidedSpendInput {
 
 export interface CreateSavingsEntryInput {
   userId: string;
+  eventId: string;
+  proposalId: string;
+  approvalId: string;
   suggestionId: string;
   amountCents: number;
   reason: string;
   movementMode: MoneyMovementMode;
-  approvedActionId?: string;
+  approvedActionId: string;
 }
 
 export interface VictoriaTools {

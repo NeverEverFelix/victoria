@@ -59,6 +59,10 @@ export class MockVictoriaTools implements VictoriaTools {
     const entry: SavingsEntry = {
       id: `entry_${Date.now()}`,
       userId: input.userId,
+      eventId: input.eventId,
+      proposalId: input.proposalId,
+      approvalId: input.approvalId,
+      approvedActionId: input.approvedActionId,
       amountCents: input.amountCents,
       currency: "USD",
       reason: input.reason,

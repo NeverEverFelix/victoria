@@ -83,6 +83,10 @@ export type SavingsEntryStatus = "pending" | "completed" | "cancelled";
 export interface SavingsEntry {
   id: string;
   userId: string;
+  eventId: string;
+  proposalId: string;
+  approvalId: string;
+  approvedActionId: string;
   amountCents: number;
   currency: "USD";
   reason: string;
