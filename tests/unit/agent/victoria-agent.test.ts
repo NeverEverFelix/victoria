@@ -475,6 +475,29 @@ describe("VictoriaAgent", () => {
         approvedActionId: actionId
       }
     ]);
+    const [recordedAllocation] = allocations;
+    expect(recordedAllocation).toBeDefined();
+    if (!recordedAllocation) throw new Error("Expected the goal allocation to be recorded.");
+
+    const retriedAllocation = await tools.createSavingsGoalAllocation({
+      userId: "user_123",
+      savingsEntryId: recordedAllocation.savingsEntryId,
+      amountCents: recordedAllocation.amountCents,
+      goalName: recordedAllocation.goalName,
+      approval: recordedAllocation.approval,
+      approvedActionId: recordedAllocation.approvedActionId
+    });
+
+    expect(retriedAllocation).toEqual(recordedAllocation);
+    await expect(tools.createSavingsGoalAllocation({
+      userId: "user_123",
+      savingsEntryId: recordedAllocation.savingsEntryId,
+      amountCents: recordedAllocation.amountCents,
+      goalName: "Vacation",
+      approval: recordedAllocation.approval,
+      approvedActionId: recordedAllocation.approvedActionId
+    })).rejects.toThrow("An approved action cannot be reused for a different goal allocation.");
+    expect(await tools.listSavingsGoalAllocations("user_123")).toEqual([recordedAllocation]);
     const replay = await agent.respond({ ...context, message: "Yes" });
     expect(replay.decision.action).not.toBe("record_goal_allocation");
     expect(await tools.listSavingsGoalAllocations("user_123")).toHaveLength(allocations.length);

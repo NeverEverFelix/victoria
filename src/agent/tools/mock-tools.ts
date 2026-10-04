@@ -13,6 +13,7 @@ export class MockVictoriaTools implements VictoriaTools {
   private readonly savingsEntries: SavingsEntry[] = [];
   private readonly savingsGoalAllocations: SavingsGoalAllocation[] = [];
   private readonly entriesByApprovedAction = new Map<string, SavingsEntry>();
+  private readonly goalAllocationsByApprovedAction = new Map<string, SavingsGoalAllocation>();
 
   constructor(
     private readonly habits: UserHabit[] = [],
@@ -122,6 +123,19 @@ export class MockVictoriaTools implements VictoriaTools {
   async createSavingsGoalAllocation(
     input: CreateSavingsGoalAllocationInput
   ): Promise<SavingsGoalAllocation> {
+    const idempotencyKey = this.idempotencyKey(input.userId, input.approvedActionId);
+    const existingAllocation = this.goalAllocationsByApprovedAction.get(idempotencyKey);
+    if (existingAllocation) {
+      const sameAction = existingAllocation.savingsEntryId === input.savingsEntryId &&
+        existingAllocation.amountCents === input.amountCents &&
+        existingAllocation.goalName === input.goalName &&
+        JSON.stringify(existingAllocation.approval) === JSON.stringify(input.approval);
+      if (!sameAction) {
+        throw new Error("An approved action cannot be reused for a different goal allocation.");
+      }
+      return existingAllocation;
+    }
+
     const entry = this.savingsEntries.find(
       (candidate) => candidate.id === input.savingsEntryId && candidate.userId === input.userId
     );
@@ -153,6 +167,7 @@ export class MockVictoriaTools implements VictoriaTools {
       createdAt: input.approval.approvedAt
     };
     this.savingsGoalAllocations.push(allocation);
+    this.goalAllocationsByApprovedAction.set(idempotencyKey, allocation);
     return allocation;
   }
 

@@ -49,5 +49,6 @@ export interface VictoriaTools {
    */
   createSavingsEntry(input: CreateSavingsEntryInput): Promise<SavingsEntry>;
   getWeeklySavingsTotal(userId: string, asOf?: Date): Promise<number>;
+  /** Must be idempotent for (userId, approvedActionId), returning the existing allocation on an identical retry. */
   createSavingsGoalAllocation(input: CreateSavingsGoalAllocationInput): Promise<SavingsGoalAllocation>;
 }

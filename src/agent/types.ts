@@ -98,7 +98,6 @@ export type VictoriaToolName =
   | "findTypicalMerchantSpend"
   | "estimateAvoidedSpend"
   | "createSavingsEntry"
-  | "updateSavingsGoal"
   | "scheduleReminder"
   | "getWeeklySavingsTotal"
   | "createSavingsGoalAllocation"

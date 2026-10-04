@@ -117,9 +117,8 @@ Tool Layer
   findTypicalMerchantSpend()
   estimateAvoidedSpend()
   createSavingsEntry()
-  updateSavingsGoal()
-  scheduleReminder()
-  eventuallyMoveMoney()
+  getWeeklySavingsTotal()
+  createSavingsGoalAllocation()
 
 Database
   Users

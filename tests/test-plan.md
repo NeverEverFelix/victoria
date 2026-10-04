@@ -63,6 +63,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria can summarize weekly and monthly savings totals.
 - A weekly progress question calls the read-only ledger summary tool, counts only completed entries for the current Monday-to-Monday UTC week, and clearly says the total is recorded in the mocked Victoria ledger.
 - A goal allocation for a recent confirmed entry requires a separate exact-action approval and creates an immutable linked record without changing the original entry.
+- Retrying an identical approved goal allocation returns the existing allocation, while reusing its action ID for different allocation details is rejected.
 - Victoria keeps mocked ledger entries separate from real transfer state.
 - Victoria preserves historical events, suggestions, approvals, and ledger entries instead of mutating them.
 - Victoria represents a correction or reversal as a new record linked to the original.
