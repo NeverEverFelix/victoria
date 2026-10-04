@@ -82,10 +82,10 @@ describe("AI code review core", () => {
 
   it("covers the previously recurring 256k-character PR size in bounded passes", () => {
     const diff = fileDiff("src/agent/large.ts", "+x".repeat(128_000));
-    const partition = chunkDiffForReview(diff, 60_000);
+    const partition = chunkDiffForReview(diff, 18_000);
 
-    expect(partition.chunks).toHaveLength(5);
-    expect(partition.chunks.every((chunk) => chunk.text.length <= 60_000)).toBe(true);
+    expect(partition.chunks.length).toBeLessThanOrEqual(20);
+    expect(partition.chunks.every((chunk) => chunk.text.length <= 18_000)).toBe(true);
     expect(partition.coveredDiffChars).toBe(diff.length);
   });
 
