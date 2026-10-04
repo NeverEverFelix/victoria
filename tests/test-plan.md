@@ -115,6 +115,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Pull-request AI review runs trusted default-branch code and never executes pull-request code with secrets.
 - AI review keeps trusted instructions separate from untrusted diff content.
 - Oversized diffs list every changed path, prioritize safety-sensitive excerpts, and cannot satisfy required AI review.
+- AI review uses its configured per-pass output-token budget and rejects values outside the bounded range.
 
 ## Future Integration Boundaries
 

@@ -42,6 +42,7 @@ jobs:
           PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          AI_REVIEW_MAX_OUTPUT_TOKENS: ${{ vars.AI_REVIEW_MAX_OUTPUT_TOKENS || '2000' }}
           AI_REVIEW_MAX_CHUNKS: ${{ vars.AI_REVIEW_MAX_CHUNKS || '12' }}
           AI_REVIEW_MAX_COMMENT_CHARS: ${{ vars.AI_REVIEW_MAX_COMMENT_CHARS || '60000' }}
           AI_REVIEW_REQUIRED: ${{ vars.AI_REVIEW_REQUIRED || 'false' }}
@@ -74,5 +75,6 @@ jobs:
           BASE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
           AI_REVIEW_REQUIRED: ${{ vars.AI_REVIEW_REQUIRED || 'false' }}
+          AI_REVIEW_MAX_OUTPUT_TOKENS: ${{ vars.AI_REVIEW_MAX_OUTPUT_TOKENS || '2000' }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_CODE_REVIEW_MODEL: ${{ vars.OPENAI_CODE_REVIEW_MODEL || 'gpt-5' }}

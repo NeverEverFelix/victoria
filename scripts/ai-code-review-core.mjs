@@ -1,3 +1,18 @@
+export function resolveReviewOutputTokenLimit(value) {
+  if (value === undefined || value === "") {
+    return 2000;
+  }
+
+  const limit = Number(value);
+  if (!Number.isInteger(limit) || limit < 100 || limit > 4000) {
+    throw new Error(
+      "AI_REVIEW_MAX_OUTPUT_TOKENS must be an integer between 100 and 4000."
+    );
+  }
+
+  return limit;
+}
+
 export function buildReviewInput({
   diff,
   agentInstructions,
