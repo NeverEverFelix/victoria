@@ -166,6 +166,7 @@ requireIncludes(".github/workflows/ai-code-review.yml", [
   "github.event.pull_request.base.sha",
   "persist-credentials: false",
   "BASE_SHA",
+  "AI_REVIEW_MAX_OUTPUT_TOKENS",
   "AI_REVIEW_MAX_CHUNKS",
   "AI_REVIEW_MAX_COMMENT_CHARS",
   "PULL_REQUEST_NUMBER",
@@ -193,6 +194,7 @@ requireIncludes("scripts/ai-code-review.mjs", [
   "runGit([\"show\"",
   "pull_request?.base?.sha",
   "chunkDiffForReview",
+  "resolveReviewOutputTokenLimit",
   "buildCompleteReviewComment",
   "process.exitCode = 1"
 ]);

@@ -3,7 +3,8 @@ import { existsSync, readFileSync, appendFileSync } from "node:fs";
 import {
   buildCompleteReviewComment,
   buildReviewInput,
-  chunkDiffForReview
+  chunkDiffForReview,
+  resolveReviewOutputTokenLimit
 } from "./ai-code-review-core.mjs";
 
 const {
@@ -136,7 +137,7 @@ async function getDiff() {
   return diff;
 }
 
-async function createReview(input) {
+async function createReview(input, maxOutputTokens) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -149,7 +150,7 @@ async function createReview(input) {
       text: {
         verbosity: "medium"
       },
-      max_output_tokens: 700,
+      max_output_tokens: maxOutputTokens,
       store: false
     })
   });
@@ -256,6 +257,9 @@ async function main() {
 
   const trustedRef = getTrustedRef(event);
   const trustedContext = loadTrustedContext(trustedRef);
+  const maxOutputTokens = resolveReviewOutputTokenLimit(
+    process.env.AI_REVIEW_MAX_OUTPUT_TOKENS
+  );
   const reviews = [];
   for (let index = 0; index < partition.chunks.length; index += 1) {
     const chunk = partition.chunks[index];
@@ -269,7 +273,7 @@ async function main() {
       reviewScope: scope,
       ...trustedContext
     });
-    reviews.push(await createReview(input));
+    reviews.push(await createReview(input, maxOutputTokens));
   }
 
   const body = buildCompleteReviewComment(partition, reviews, trustedRef, maxCommentChars);
