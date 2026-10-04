@@ -206,7 +206,11 @@ async function main() {
     diff: preparedDiff.text,
     agentInstructions: readOptional("AGENTS.md"),
     codingPatterns: readOptional("docs/agentic-coding-patterns.md"),
-    decisions: readOptional("docs/decisions.md")
+    decisions: readOptional("docs/decisions.md"),
+    mvp: readOptional("docs/mvp.md"),
+    userStories: readOptional("docs/user-stories.md"),
+    safetyContract: readOptional("docs/specification/mvp-safety-contract.md", 36000),
+    testPlan: readOptional("tests/test-plan.md")
   });
   const review = await createReview(input);
   const completenessWarning = preparedDiff.truncated
