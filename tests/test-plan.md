@@ -67,7 +67,15 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Retrying an identical approved goal allocation returns the existing allocation, while reusing its action ID for different allocation details is rejected.
 - Victoria keeps mocked ledger entries separate from real transfer state.
 - Victoria preserves historical events, suggestions, approvals, and ledger entries instead of mutating them.
+- Returned event, suggestion, proposal, approval, correction, allocation, and entry snapshots cannot be mutated by callers; changing a habit only affects later suggestions.
 - Victoria represents a correction or reversal as a new record linked to the original.
+- Correcting a recorded amount requires exact approval, appends a signed adjustment, and leaves the original entry unchanged.
+- Corrections reject invalid, no-op, cross-user, non-completed, or non-mocked targets, and effective weekly totals retain the original entry's week.
+- Model classifications and estimated suggestions are runtime-validated; malformed values and model-supplied approval fields cannot create proposals or ledger entries.
+- If a save, correction, or goal allocation succeeds but its reply is lost, repeating the approval reuses the same approval record and returns the existing mocked result without duplicating history.
+- Each recorded entry links to the same user, proposal, action, approval, and ledger entry shown in its proposal transition.
+- Estimated amounts explain their basis briefly, such as the user's usual spend at a named merchant.
+- Monetary conversions, formatting, totals, and calculated projections reject values or results outside safe integer cents.
 
 ## Memory Behavior
 
@@ -97,6 +105,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria prevents an approval from being replayed after the action completes.
 - Victoria can cancel or decline a pending savings suggestion.
 - A clear decline marks its pending proposal declined, clears the pending action, and creates no ledger entry.
+- Proposal approval, decline, and replacement create explicit transition records bound to the proposal, user, and action; terminal proposals cannot transition again.
 - A clear decline such as “No, not today” also clears a pending goal allocation without recording an allocation.
 - A failed ledger write does not produce success wording, leaves the approved action retryable, and a retry with the same user/action ID creates at most one entry even if the first response was lost after persistence.
 - Changing a pending proposal's amount, reason, or goal creates a linked replacement proposal and requires fresh approval; unsupported currency edits leave the USD mock-ledger proposal unchanged.

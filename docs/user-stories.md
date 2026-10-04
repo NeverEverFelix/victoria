@@ -264,6 +264,26 @@ Acceptance criteria:
 
 ## Priority Order
 
+## Story 11: Correct A Recorded Savings Amount
+
+As a user, I want to correct an amount Victoria recorded so the ledger reflects updated information without losing the original history.
+
+Example:
+
+```text
+Victoria: I recorded $27 in your Victoria savings ledger.
+User: Correct that recorded entry to $24.
+Victoria: I can reduce the recorded amount by $3, making the corrected total $24. The original entry will stay in the history. Please confirm this correction.
+```
+
+Acceptance criteria:
+
+- A correction targets a completed mocked entry belonging to the user.
+- Victoria asks for explicit approval before recording the correction.
+- Approval appends a signed adjustment linked to the original entry; the original remains unchanged.
+- Effective weekly totals use the corrected amount while retaining the original entry's reporting week.
+- If the target entry is unclear, Victoria asks which entry and makes no change.
+
 The first implementation should focus on:
 
 1. Avoided spend with user-provided amount.

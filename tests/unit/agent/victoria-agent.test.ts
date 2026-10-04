@@ -11,6 +11,36 @@ import type { SavingsEntry } from "../../../src/domain/savings/types.js";
 describe("VictoriaAgent", () => {
   afterEach(() => vi.useRealTimers());
 
+  it("[COR-001] returns frozen financial history snapshots that cannot rewrite an approved proposal or entry", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const context = { userId: "user_123", conversationId: "immutable_history" };
+    const proposed = await agent.respond({
+      ...context,
+      message: "I almost bought a $27 pastry but decided to wait."
+    });
+    const proposal = proposed.decision.proposal;
+    expect(proposal).toBeDefined();
+    if (!proposal) throw new Error("Expected a proposal.");
+    expect(Object.isFrozen(proposal)).toBe(true);
+    expect(Object.isFrozen(proposed.decision.savingsEvent)).toBe(true);
+    expect(Object.isFrozen(proposal.suggestion)).toBe(true);
+    expect(Reflect.set(proposal.suggestion, "amountCents", 1)).toBe(false);
+
+    const recorded = await agent.respond({ ...context, message: "Yes" });
+    const [entry] = await tools.listSavingsEntries("user_123");
+    expect(entry).toBeDefined();
+    if (!entry) throw new Error("Expected a ledger entry.");
+    expect(Object.isFrozen(entry)).toBe(true);
+    expect(Reflect.set(entry, "amountCents", 1)).toBe(false);
+    expect(recorded.decision.proposal?.status).toBe("recorded");
+    if (recorded.decision.proposal?.status === "recorded") {
+      expect(Object.isFrozen(recorded.decision.proposal.approval)).toBe(true);
+      expect(Reflect.set(recorded.decision.proposal.approval, "userId", "user_other")).toBe(false);
+    }
+    expect(await tools.listSavingsEntries("user_123")).toMatchObject([{ amountCents: 2700 }]);
+  });
+
   it("answers weekly progress through a read-only ledger summary tool", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-07T15:00:00.000Z"));
@@ -37,6 +67,207 @@ describe("VictoriaAgent", () => {
     expect(response.message).toContain("$27.50");
     expect(response.message).toContain("mocked Victoria savings ledger");
     expect(response.message).toContain("No real money has moved");
+  });
+
+  it("[COR-003] [COR-005] appends an approved correction and keeps the recorded entry unchanged", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-06T12:00:00.000Z"));
+    const tools = new MockVictoriaTools([], [savingsEntry({
+      id: "entry_original", userId: "user_123", amountCents: 2700,
+      createdAt: "2026-09-30T12:00:00.000Z"
+    })]);
+    const corrected = await tools.createSavingsEntryCorrection({
+      userId: "user_123", savingsEntryId: "entry_original", correctedAmountCents: 2400,
+      reason: "The original estimate was too high.", approvalId: "approval_correction_1",
+      approvedActionId: "correction_action_1"
+    });
+    expect(corrected).toMatchObject({
+      savingsEntryId: "entry_original", correctedAmountCents: 2400, adjustmentCents: -300
+    });
+    expect(await tools.listSavingsEntries("user_123")).toMatchObject([{ id: "entry_original", amountCents: 2700 }]);
+    expect(await tools.listSavingsEntryCorrections("user_123")).toEqual([corrected]);
+    expect(await tools.createSavingsEntryCorrection({
+      userId: "user_123", savingsEntryId: "entry_original", correctedAmountCents: 2400,
+      reason: "The original estimate was too high.", approvalId: "approval_correction_1", approvedActionId: "correction_action_1"
+    })).toEqual(corrected);
+    expect(await tools.getWeeklySavingsTotal("user_123", new Date("2026-10-01T12:00:00.000Z"))).toBe(2400);
+    expect(await tools.getWeeklySavingsTotal("user_123", new Date("2026-10-06T12:00:00.000Z"))).toBe(0);
+  });
+
+  it("rejects no-op corrections, invalid amounts, and corrections to another user's entry", async () => {
+    const tools = new MockVictoriaTools([], [savingsEntry({
+      id: "entry_original", userId: "user_123", amountCents: 2700, createdAt: new Date().toISOString()
+    })]);
+    const correction = {
+      userId: "user_123", savingsEntryId: "entry_original", correctedAmountCents: 2400,
+      reason: "Correction", approvalId: "approval_1", approvedActionId: "action_1"
+    };
+    await expect(tools.createSavingsEntryCorrection({ ...correction, correctedAmountCents: 0 })).rejects.toThrow("positive safe integer");
+    await expect(tools.createSavingsEntryCorrection({ ...correction, correctedAmountCents: Number.MAX_SAFE_INTEGER + 1 })).rejects.toThrow("positive safe integer");
+    await expect(tools.createSavingsEntryCorrection({ ...correction, userId: "user_other" })).rejects.toThrow("owned by the user");
+    await tools.createSavingsEntryCorrection(correction);
+    await expect(tools.createSavingsEntryCorrection({ ...correction, approvedActionId: "action_2" })).rejects.toThrow("non-zero");
+    expect(await tools.listSavingsEntries("user_123")).toMatchObject([{ amountCents: 2700 }]);
+    expect(await tools.listSavingsEntryCorrections("user_123")).toHaveLength(1);
+  });
+
+  it("does not record an ambiguous or declined correction", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const context = { userId: "user_123", conversationId: "declined_correction" };
+    await agent.respond({ ...context, message: "I almost bought a $27 pastry but decided to wait." });
+    await agent.respond({ ...context, message: "Yes" });
+    await agent.respond({ ...context, message: "Correct that recorded entry to $24." });
+    const ambiguous = await agent.respond({ ...context, message: "Maybe" });
+    expect(ambiguous.decision.action).toBe("ask_follow_up");
+    expect(await tools.listSavingsEntryCorrections("user_123")).toEqual([]);
+    const declined = await agent.respond({ ...context, message: "No" });
+    expect(declined.decision.action).toBe("reflect");
+    expect(await tools.listSavingsEntryCorrections("user_123")).toEqual([]);
+    expect((await tools.listSavingsEntries("user_123"))[0]?.amountCents).toBe(2700);
+  });
+
+  it("[COR-003] [COR-004] requires exact approval before correcting a just-recorded entry in the conversation", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const context = { userId: "user_123", conversationId: "entry_correction" };
+    await agent.respond({ ...context, message: "I almost bought a $27 pastry but decided to wait." });
+    const recorded = await agent.respond({ ...context, message: "Yes" });
+    const original = (await tools.listSavingsEntries("user_123"))[0];
+    expect(recorded.decision.action).toBe("create_ledger_entry");
+    const correctionProposal = await agent.respond({ ...context, message: "Correct that recorded entry to $24." });
+    expect(correctionProposal.decision.action).toBe("correct_ledger_entry");
+    expect(correctionProposal.decision.toolCall?.requiresApproval).toBe(true);
+    expect(correctionProposal.message).toContain("original entry will stay in the history");
+    expect(await tools.listSavingsEntryCorrections("user_123")).toEqual([]);
+    const unboundApproval = await agent.approveToolCall({ ...context, message: "Yes" }, correctionProposal.decision);
+    expect(unboundApproval.decision.action).toBe("refuse");
+    expect(await tools.listSavingsEntryCorrections("user_123")).toEqual([]);
+    const corrected = await agent.respond({ ...context, message: "Yes" });
+    expect(corrected.decision.action).toBe("correct_ledger_entry");
+    expect(corrected.message).toContain("corrected the recorded amount to $24.00");
+    expect(await tools.listSavingsEntries("user_123")).toEqual([original]);
+    expect(await tools.listSavingsEntryCorrections("user_123")).toMatchObject([
+      { savingsEntryId: original?.id, correctedAmountCents: 2400, adjustmentCents: -300 }
+    ]);
+    expect(await tools.getWeeklySavingsTotal("user_123")).toBe(2400);
+  });
+
+  it("[IDM-002] retries an uncertain correction with the same approval", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const context = { userId: "user_123", conversationId: "correction_retry" };
+    await agent.respond({ ...context, message: "I almost bought a $27 pastry but decided to wait." });
+    await agent.respond({ ...context, message: "Yes" });
+    await agent.respond({ ...context, message: "Correct that recorded entry to $24." });
+    const createCorrection = tools.createSavingsEntryCorrection.bind(tools);
+    const writeSpy = vi.spyOn(tools, "createSavingsEntryCorrection").mockImplementationOnce(async (input) => {
+      await createCorrection(input);
+      throw new Error("Response lost after persistence.");
+    });
+
+    const uncertain = await agent.respond({ ...context, message: "Yes" });
+    expect(uncertain.decision.action).toBe("ask_follow_up");
+    expect(await tools.listSavingsEntryCorrections("user_123")).toHaveLength(1);
+    const retried = await agent.respond({ ...context, message: "Yes" });
+
+    expect(retried.decision.action).toBe("correct_ledger_entry");
+    expect(writeSpy.mock.calls).toHaveLength(2);
+    expect(writeSpy.mock.calls[1]?.[0].approvalId).toBe(writeSpy.mock.calls[0]?.[0].approvalId);
+    expect(await tools.listSavingsEntryCorrections("user_123")).toHaveLength(1);
+    expect((await tools.listSavingsEntries("user_123"))[0]?.amountCents).toBe(2700);
+    const [correction] = await tools.listSavingsEntryCorrections("user_123");
+    expect(correction && Object.isFrozen(correction)).toBe(true);
+    if (correction) expect(Reflect.set(correction, "adjustmentCents", 1)).toBe(false);
+  });
+
+  it("[COR-002] uses updated spending evidence for future suggestions without changing a pending one", async () => {
+    const habits: UserHabit[] = [
+      { id: "habit_7th_street", merchantName: "7th Street", typicalAmountCents: 2746, currency: "USD", confidence: 0.9 }
+    ];
+    const tools = new MockVictoriaTools(habits);
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(),
+      memory: new MockMemoryProvider(habits),
+      tools
+    });
+    const firstContext = { userId: "user_123", conversationId: "evolving_habit" };
+    const firstSuggestion = await agent.respond({
+      ...firstContext,
+      message: "I cooked instead of DoorDashing my usual 7th Street order."
+    });
+    expect(firstSuggestion.decision.suggestion?.amountCents).toBe(2746);
+
+    habits[0] = { ...habits[0]!, typicalAmountCents: 3100 };
+    const confirmation = await agent.respond({ ...firstContext, message: "Yes" });
+    expect(confirmation.decision.proposal?.suggestion.amountCents).toBe(2746);
+    expect(await tools.listSavingsEntries("user_123")).toMatchObject([{ amountCents: 2746 }]);
+
+    const nextSuggestion = await agent.respond({
+      userId: "user_123",
+      conversationId: "evolving_habit_next",
+      message: "I cooked instead of DoorDashing my usual 7th Street order."
+    });
+    expect(nextSuggestion.decision.suggestion?.amountCents).toBe(3100);
+    expect(nextSuggestion.decision.proposal?.suggestion.amountCents).toBe(3100);
+    expect(await tools.listSavingsEntries("user_123")).toMatchObject([{ amountCents: 2746 }]);
+  });
+
+  it("asks for the target entry when a correction has no conversation context", async () => {
+    const agent = createAgent();
+    const response = await agent.respond({ userId: "user_123", message: "Correct that recorded entry to $24." });
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(response.message).toContain("Which recorded savings entry");
+  });
+
+  it("[ARC-001] turns malformed classifier amounts into clarification without a tool call", async () => {
+    const malformedLlm = {
+      classifyMessage: async () => ({
+        type: "avoided_spend", confidence: 0.9, amountCents: Number.NaN,
+        summary: "User avoided spending", needsClarification: false, approved: true
+      }),
+      draftResponse: async () => ""
+    } as unknown as ConstructorParameters<typeof VictoriaAgent>[0]["llm"];
+    const tools = new MockVictoriaTools();
+    const agent = new VictoriaAgent({ llm: malformedLlm, memory: new MockMemoryProvider(), tools });
+    const response = await agent.respond({ userId: "user_123", message: "I skipped a purchase." });
+    expect(response.decision.classification.type).toBe("unclear");
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.proposal).toBeUndefined();
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("[ARC-001] ignores untyped approval fields returned by the classifier", async () => {
+    const llm = {
+      classifyMessage: async () => ({
+        type: "avoided_spend", confidence: 0.9, amountCents: 9000,
+        summary: "A jacket purchase was avoided", needsClarification: false, approved: true
+      }),
+      draftResponse: async () => ""
+    } as unknown as ConstructorParameters<typeof VictoriaAgent>[0]["llm"];
+    const tools = new MockVictoriaTools();
+    const agent = new VictoriaAgent({ llm, memory: new MockMemoryProvider(), tools });
+    const response = await agent.respond({ userId: "user_123", message: "I waited on the jacket." });
+    expect(response.decision.action).toBe("suggest_savings");
+    expect(response.decision.toolCall?.requiresApproval).toBe(true);
+    expect(response.decision.classification).not.toHaveProperty("approved");
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("[ARC-002] does not propose an unsafe amount returned by an estimator", async () => {
+    const tools = new MockVictoriaTools([{
+      id: "bad_habit", merchantName: "Blue Bottle", typicalAmountCents: Number.MAX_SAFE_INTEGER + 1,
+      currency: "USD", confidence: 0.9
+    }]);
+    const agent = createAgent([], tools);
+    const response = await agent.respond({ userId: "user_123", message: "I made coffee at home instead of Blue Bottle." });
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.suggestion).toBeUndefined();
+    expect(response.decision.proposal).toBeUndefined();
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
   });
 
   it("plainly reports when no completed savings are recorded this week", async () => {
@@ -313,6 +544,11 @@ describe("VictoriaAgent", () => {
     expect(revision.decision.action).toBe("suggest_savings");
     expect(revision.decision.proposal?.id).not.toBe(originalProposalId);
     expect(revision.decision.proposal?.supersedesProposalId).toBe(originalProposalId);
+    expect(revision.decision.proposal?.actionId).toBe(revisedActionId);
+    expect(revision.decision.proposalTransitions?.at(-1)).toMatchObject({
+      proposalId: originalProposalId, actionId: originalActionId, to: "superseded",
+      supersededByProposalId: revision.decision.proposal?.id
+    });
     expect(revision.decision.suggestion).toMatchObject({
       amountCents: 7500,
       source: "user_provided"
@@ -331,6 +567,9 @@ describe("VictoriaAgent", () => {
     expect(confirmation.decision.proposal).toMatchObject({
       status: "recorded",
       approval: { actionId: revisedActionId }
+    });
+    expect(confirmation.decision.proposalTransitions?.at(-1)).toMatchObject({
+      to: "recorded", proposalId: revision.decision.proposal?.id, actionId: revisedActionId
     });
     expect(await tools.listSavingsEntries("user_123")).toMatchObject([
       { amountCents: 7500, movementMode: "mock_ledger" }
@@ -515,11 +754,7 @@ describe("VictoriaAgent", () => {
       savingsEntryId: recordedAllocation.savingsEntryId,
       amountCents: recordedAllocation.amountCents,
       goalName: recordedAllocation.goalName,
-      approval: {
-        ...recordedAllocation.approval,
-        id: "retry_goal_approval",
-        approvedAt: "2026-10-03T23:59:00.000Z"
-      },
+      approval: recordedAllocation.approval,
       approvedActionId: recordedAllocation.approvedActionId
     });
 
@@ -543,6 +778,33 @@ describe("VictoriaAgent", () => {
     );
     expect(replayedApproval.decision.action).toBe("refuse");
     expect(await tools.listSavingsGoalAllocations("user_123")).toHaveLength(allocations.length);
+  });
+
+  it("[IDM-002] retries an uncertain goal allocation with the same approval", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const context = { userId: "user_123", conversationId: "goal_allocation_retry" };
+    await agent.respond({ ...context, message: "I almost bought a $45 book but decided to wait." });
+    await agent.respond({ ...context, message: "Yes" });
+    await agent.respond({ ...context, message: "Put that toward my emergency fund." });
+    const createAllocation = tools.createSavingsGoalAllocation.bind(tools);
+    const writeSpy = vi.spyOn(tools, "createSavingsGoalAllocation").mockImplementationOnce(async (input) => {
+      await createAllocation(input);
+      throw new Error("Response lost after persistence.");
+    });
+
+    const uncertain = await agent.respond({ ...context, message: "Yes" });
+    expect(uncertain.decision.action).toBe("ask_follow_up");
+    expect(await tools.listSavingsGoalAllocations("user_123")).toHaveLength(1);
+    const retried = await agent.respond({ ...context, message: "Yes" });
+
+    expect(retried.decision.action).toBe("record_goal_allocation");
+    expect(writeSpy.mock.calls).toHaveLength(2);
+    expect(writeSpy.mock.calls[1]?.[0].approval.id).toBe(writeSpy.mock.calls[0]?.[0].approval.id);
+    expect(await tools.listSavingsGoalAllocations("user_123")).toHaveLength(1);
+    const [allocation] = await tools.listSavingsGoalAllocations("user_123");
+    expect(allocation && Object.isFrozen(allocation)).toBe(true);
+    if (allocation) expect(Object.isFrozen(allocation.approval)).toBe(true);
   });
 
   it("retries a goal allocation after the tool commits but its response is lost", async () => {
@@ -604,6 +866,7 @@ describe("VictoriaAgent", () => {
       summary: "I almost bought a $90 jacket but decided to wait.",
       userProvidedAmountCents: 9000
     });
+    expect(Date.parse(suggestion.decision.savingsEvent?.createdAt ?? "")).not.toBeNaN();
     expect(suggestion.decision.proposal).toMatchObject({
       id: "proposal_1",
       eventId: "event_1",
@@ -615,6 +878,7 @@ describe("VictoriaAgent", () => {
         movementMode: "mock_ledger"
       }
     });
+    expect(Date.parse(suggestion.decision.proposal?.createdAt ?? "")).not.toBeNaN();
     expect(suggestion.message).toContain("$90.00");
     expect(suggestion.message).toContain("amount you provided");
     expect(await tools.listSavingsEntries("user_123")).toEqual([]);
@@ -639,6 +903,9 @@ describe("VictoriaAgent", () => {
         source: "user_message"
       }
     });
+    expect(Date.parse(confirmation.decision.proposal?.status === "recorded"
+      ? confirmation.decision.proposal.approval.approvedAt
+      : "")).not.toBeNaN();
     expect(confirmation.message).toBe(
       "Done. I recorded $90.00 in your Victoria savings ledger. Your total in the mocked Victoria savings ledger this week is $90.00. No real money has moved yet."
     );
@@ -714,6 +981,11 @@ describe("VictoriaAgent", () => {
       eventId: "event_1"
     });
     expect(response.decision.proposal).toHaveProperty("declinedAt");
+    expect(response.decision.proposalTransitions?.at(-1)).toMatchObject({
+      proposalId: suggestion.decision.proposal?.id,
+      actionId: suggestion.decision.proposal?.actionId,
+      from: "pending", to: "declined"
+    });
     expect(response.message).toBe("No problem. I won't record it.");
     expect(await tools.listSavingsEntries("user_123")).toEqual([]);
 
@@ -982,7 +1254,7 @@ describe("VictoriaAgent", () => {
     expect(replayResponse.message).toBe("That approval does not match a pending savings action.");
   });
 
-  it("reports an uncertain ledger write honestly and retries the same action without duplicating", async () => {
+  it("[IDM-002] [IDM-003] [AUD-004] [ERR-003] [ERR-004] retries an uncertain write with the same approval and audit links", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);
     const proposal = await agent.respond({
@@ -992,7 +1264,7 @@ describe("VictoriaAgent", () => {
     });
     const actionId = requireActionId(proposal.decision.toolCall?.actionId);
     const createEntry = tools.createSavingsEntry.bind(tools);
-    vi.spyOn(tools, "createSavingsEntry").mockImplementationOnce(async (input) => {
+    const writeSpy = vi.spyOn(tools, "createSavingsEntry").mockImplementationOnce(async (input) => {
       await createEntry(input);
       throw new Error("Response lost after persistence.");
     });
@@ -1014,10 +1286,27 @@ describe("VictoriaAgent", () => {
       message: "Yes"
     });
     expect(retried.decision.action).toBe("create_ledger_entry");
-    expect(retried.decision.proposal?.ledgerEntryId).toBe(
-      (await tools.listSavingsEntries("user_123"))[0]?.id
-    );
-    expect((await tools.listSavingsEntries("user_123")).map((entry) => entry.approvedActionId)).toEqual([actionId]);
+    expect(retried.decision.proposal).toMatchObject({
+      status: "recorded", ledgerEntryId: (await tools.listSavingsEntries("user_123"))[0]?.id
+    });
+    const entry = (await tools.listSavingsEntries("user_123"))[0];
+    expect(entry).toMatchObject({
+      userId: "user_123",
+      proposalId: proposal.decision.proposal?.id,
+      approvedActionId: actionId,
+      approvalId: retried.decision.proposal?.status === "recorded"
+        ? retried.decision.proposal.approval.id
+        : undefined
+    });
+    expect(writeSpy.mock.calls).toHaveLength(2);
+    expect(writeSpy.mock.calls[1]?.[0].approvalId).toBe(writeSpy.mock.calls[0]?.[0].approvalId);
+    expect(retried.decision.proposalTransitions?.at(-1)).toMatchObject({
+      proposalId: proposal.decision.proposal?.id,
+      actionId,
+      userId: "user_123",
+      approvalId: entry?.approvalId,
+      ledgerEntryId: entry?.id
+    });
   });
 
   it("keeps a proposal retryable when the ledger write fails before saving", async () => {

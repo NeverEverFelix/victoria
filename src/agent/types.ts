@@ -8,6 +8,8 @@ import type {
   SavingsGoalAllocation,
   SavingsGoal,
   SavingsEvent,
+  SavingsEntryCorrection,
+  SavingsProposalTransition,
   SavingsProposal,
   SavingsSuggestion
 } from "../domain/savings/types.js";
@@ -22,6 +24,8 @@ export type {
   SavingsGoalAllocation,
   SavingsGoal,
   SavingsEvent,
+  SavingsEntryCorrection,
+  SavingsProposalTransition,
   SavingsProposal,
   SavingsSuggestion
 } from "../domain/savings/types.js";
@@ -32,6 +36,7 @@ export type AgentActionType =
   | "create_ledger_entry"
   | "update_goal"
   | "record_goal_allocation"
+  | "correct_ledger_entry"
   | "summarize_progress"
   | "reflect"
   | "refuse";
@@ -74,10 +79,23 @@ export interface AgentDecision {
   classification: ClassifiedMessage;
   savingsEvent?: SavingsEvent;
   proposal?: SavingsProposal;
+  proposalTransitions?: readonly SavingsProposalTransition[];
   goalAllocation?: PendingSavingsGoalAllocation | SavingsGoalAllocation;
+  entryCorrection?: SavingsEntryCorrection | PendingSavingsEntryCorrection;
   suggestion?: SavingsSuggestion;
   toolCall?: ToolCallRequest;
   userFacingMessage: string;
+}
+
+export interface PendingSavingsEntryCorrection {
+  id: string;
+  userId: string;
+  savingsEntryId: string;
+  correctedAmountCents: number;
+  adjustmentCents: number;
+  reason: string;
+  status: "pending";
+  createdAt: string;
 }
 
 export interface AgentResponse {
@@ -101,4 +119,5 @@ export type VictoriaToolName =
   | "scheduleReminder"
   | "getWeeklySavingsTotal"
   | "createSavingsGoalAllocation"
+  | "createSavingsEntryCorrection"
   | "eventuallyMoveMoney";

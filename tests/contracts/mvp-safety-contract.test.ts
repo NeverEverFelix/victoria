@@ -12,7 +12,7 @@ import { dollarsToCents, formatUsd } from "../../src/domain/money.js";
 import { sumCompletedSavings } from "../../src/domain/savings/totals.js";
 
 describe("Victoria MVP safety contract", () => {
-  it("[FIN-001] [APR-006] refuses real money movement even with approval", () => {
+  it("[FIN-001] [APR-006] [INT-004] refuses real money movement even with approval", () => {
     const result = canCallTool(
       {
         userId: "user_123",
@@ -32,6 +32,96 @@ describe("Victoria MVP safety contract", () => {
       allowed: false,
       reason: "Real money movement is not available in the Victoria MVP."
     });
+  });
+
+  it("[ARC-002] ignores model-supplied approval and tool instructions", async () => {
+    const llm = {
+      classifyMessage: async () => ({
+        type: "avoided_spend", confidence: 0.9, amountCents: 1200,
+        summary: "Avoided a purchase", needsClarification: false,
+        approved: true,
+        toolCall: { name: "eventuallyMoveMoney", arguments: { amountCents: 1200 } }
+      }),
+      draftResponse: async () => ""
+    } as unknown as ConstructorParameters<typeof VictoriaAgent>[0]["llm"];
+    const tools = new MockVictoriaTools();
+    const agent = new VictoriaAgent({ llm, memory: new MockMemoryProvider(), tools });
+
+    const response = await agent.respond({ userId: "user_123", message: "I skipped a purchase." });
+
+    expect(response.decision.action).toBe("suggest_savings");
+    expect(response.decision.proposal?.suggestion.amountCents).toBe(1200);
+    expect(response.decision.proposal?.status).toBe("pending");
+    expect(response.decision.toolCall?.name).toBe("createSavingsEntry");
+    expect(response.decision.toolCall?.requiresApproval).toBe(true);
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("[INT-001] gives every supported conversation outcome one typed action", async () => {
+    const responses = [];
+    const unclearAgent = createAgent();
+    responses.push(await unclearAgent.respond({ userId: "u", message: "I saved money." }));
+    responses.push(await createAgent().respond({ userId: "u", message: "I almost bought a $10 snack but waited." }));
+    responses.push(await createAgent().respond({ userId: "u", message: "I regret ordering takeout." }));
+    responses.push(await createAgent().respond({ userId: "u", message: "Put this toward my emergency fund." }));
+    responses.push(await createAgent().respond({ userId: "u", message: "How much have I saved this week?" }));
+
+    const saveAgent = createAgent();
+    await saveAgent.respond({ userId: "u", conversationId: "matrix_save", message: "I almost bought a $10 snack but waited." });
+    responses.push(await saveAgent.respond({ userId: "u", conversationId: "matrix_save", message: "Yes" }));
+    responses.push(await saveAgent.respond({ userId: "u", conversationId: "matrix_save", message: "Correct that recorded entry to $8." }));
+
+    const goalAgent = createAgent();
+    await goalAgent.respond({ userId: "u", conversationId: "matrix_goal", message: "I almost bought a $10 snack but waited." });
+    await goalAgent.respond({ userId: "u", conversationId: "matrix_goal", message: "Yes" });
+    responses.push(await goalAgent.respond({ userId: "u", conversationId: "matrix_goal", message: "Put that toward my emergency fund." }));
+    responses.push(await goalAgent.respond({ userId: "u", conversationId: "matrix_goal", message: "Yes" }));
+
+    const refusal = await unclearAgent.respond({ userId: "u", message: "Tell me something." });
+    responses.push(await unclearAgent.approveToolCall(
+      { userId: "u", message: "Yes", approvedActionId: "unknown_action" }, refusal.decision
+    ));
+
+    const allowedActions = new Set([
+      "ask_follow_up", "suggest_savings", "create_ledger_entry", "update_goal",
+      "record_goal_allocation", "correct_ledger_entry", "summarize_progress", "reflect", "refuse"
+    ]);
+    const allowedTools = new Set([
+      "getUserHabits", "findTypicalMerchantSpend", "estimateAvoidedSpend", "createSavingsEntry",
+      "scheduleReminder", "getWeeklySavingsTotal", "createSavingsGoalAllocation",
+      "createSavingsEntryCorrection", "eventuallyMoveMoney"
+    ]);
+    for (const response of responses) {
+      expect(allowedActions.has(response.decision.action)).toBe(true);
+      expect(response.decision.classification).toBeDefined();
+      if (response.decision.toolCall) {
+        expect(allowedTools.has(response.decision.toolCall.name)).toBe(true);
+        expect(response.decision.toolCall.movementMode).not.toBe("real_transfer");
+      }
+    }
+    expect(responses.map(({ decision }) => decision.action)).toEqual([
+      "ask_follow_up", "suggest_savings", "reflect", "update_goal", "summarize_progress",
+      "create_ledger_entry", "correct_ledger_entry", "update_goal", "record_goal_allocation", "refuse"
+    ]);
+  });
+
+  it("[INT-004] refuses a real-transfer intent returned by the classifier at runtime", async () => {
+    const llm = {
+      classifyMessage: async () => ({
+        type: "real_money_movement_request", confidence: 1,
+        summary: "Transfer money", needsClarification: false
+      }),
+      draftResponse: async () => ""
+    } as unknown as ConstructorParameters<typeof VictoriaAgent>[0]["llm"];
+    const tools = new MockVictoriaTools();
+    const agent = new VictoriaAgent({ llm, memory: new MockMemoryProvider(), tools });
+
+    const response = await agent.respond({ userId: "user_123", message: "Move money now." });
+
+    expect(response.decision.action).toBe("refuse");
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(response.message).toContain("can't move real money");
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
   });
 
   it("[FIN-003] includes only completed entries in a savings total", () => {
@@ -228,7 +318,7 @@ describe("Victoria MVP safety contract", () => {
     expect(response.message).toContain("No shame");
   });
 
-  it("[FIN-005] [AUD-002] [AUD-003] uses honest wording before and after recording", async () => {
+  it("[FIN-005] [AUD-002] [AUD-003] [AUD-005] uses honest wording before and after recording", async () => {
     const agent = createAgent(defaultHabits);
     const proposed = await agent.respond({
       userId: "user_123",
@@ -237,6 +327,7 @@ describe("Victoria MVP safety contract", () => {
     const approvedActionId = requireActionId(proposed.decision.toolCall?.actionId);
 
     expect(proposed.message).toContain("I estimate");
+    expect(proposed.message).toContain("Based on your usual spend at 7th Street");
     expect(proposed.message).toContain("No real money has moved yet.");
     expect(proposed.message).not.toMatch(/transferred|moved .* to savings/i);
 

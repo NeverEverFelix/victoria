@@ -1,6 +1,7 @@
 import type {
   MoneyMovementMode,
   SavingsEntry,
+  SavingsEntryCorrection,
   SavingsGoalAllocation,
   SavingsSuggestion
 } from "../../domain/savings/types.js";
@@ -40,6 +41,15 @@ export interface CreateSavingsGoalAllocationInput {
   approvedActionId: string;
 }
 
+export interface CreateSavingsEntryCorrectionInput {
+  userId: string;
+  savingsEntryId: string;
+  correctedAmountCents: number;
+  reason: string;
+  approvalId: string;
+  approvedActionId: string;
+}
+
 export interface VictoriaTools {
   findTypicalMerchantSpend(input: FindTypicalMerchantSpendInput): Promise<number | null>;
   estimateAvoidedSpend(input: EstimateAvoidedSpendInput): Promise<SavingsSuggestion | null>;
@@ -48,6 +58,9 @@ export interface VictoriaTools {
    * identical retry and reject reuse of that key for a different proposed entry.
    */
   createSavingsEntry(input: CreateSavingsEntryInput): Promise<SavingsEntry>;
+  /** Must be idempotent for (userId, approvedActionId), returning the committed correction on an identical retry. */
+  createSavingsEntryCorrection(input: CreateSavingsEntryCorrectionInput): Promise<SavingsEntryCorrection>;
+  getEffectiveSavingsEntryAmount(userId: string, savingsEntryId: string): Promise<number | null>;
   getWeeklySavingsTotal(userId: string, asOf?: Date): Promise<number>;
   /** Must be idempotent for (userId, approvedActionId), returning the existing allocation on an identical retry. */
   createSavingsGoalAllocation(input: CreateSavingsGoalAllocationInput): Promise<SavingsGoalAllocation>;

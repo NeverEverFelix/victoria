@@ -10,6 +10,7 @@ export class MockLlmAdapter implements LlmAdapter {
     const amountIssue = amountParse.status === "invalid_value" || amountParse.status === "multiple_amounts" || amountParse.status === "invalid_precision" || amountParse.status === "unsupported_currency"
       ? amountParse.status
       : undefined;
+    const revisionReason = parseRevisionReason(input.userMessage);
     const merchantName = inferMerchantName(message);
 
     if (isRealMoneyMovementRequest(message)) {
@@ -20,6 +21,19 @@ export class MockLlmAdapter implements LlmAdapter {
         ...(amountIssue ? { amountIssue } : {}),
         summary: input.userMessage,
         needsClarification: false
+      };
+    }
+
+    if (/\b(correct|correction|fix|change|revise)\b/.test(message) &&
+        /\b(entry|recorded|saved amount|savings amount)\b/.test(message)) {
+      return {
+        type: "entry_correction",
+        confidence: 0.9,
+        ...(amountCents !== undefined ? { amountCents } : {}),
+        ...(amountIssue ? { amountIssue } : {}),
+        ...(revisionReason ? { revisionReason } : {}),
+        summary: input.userMessage,
+        needsClarification: amountIssue !== undefined || amountCents === undefined
       };
     }
 
@@ -76,7 +90,6 @@ export class MockLlmAdapter implements LlmAdapter {
       };
     }
 
-    const revisionReason = parseRevisionReason(input.userMessage);
     if (
       revisionReason !== undefined ||
       /\b(change|correct|correction|update|revise|replace|make that|make it)\b/.test(message) ||

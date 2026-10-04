@@ -1,5 +1,6 @@
 import type { AgentMemory, FinancialDecision, SavingsGoal, UserHabit } from "../types.js";
 import type { MemoryProvider } from "./types.js";
+import { immutableSnapshot } from "../../domain/immutable.js";
 
 export class MockMemoryProvider implements MemoryProvider {
   private readonly decisions: FinancialDecision[] = [];
@@ -13,7 +14,7 @@ export class MockMemoryProvider implements MemoryProvider {
     return {
       habits: await this.listHabits(userId),
       goals: await this.listGoals(userId),
-      recentDecisions: this.decisions
+      recentDecisions: immutableSnapshot(this.decisions)
     };
   }
 
@@ -21,11 +22,11 @@ export class MockMemoryProvider implements MemoryProvider {
     _userId: string,
     decision: Omit<FinancialDecision, "id" | "createdAt">
   ): Promise<FinancialDecision> {
-    const rememberedDecision: FinancialDecision = {
+    const rememberedDecision: FinancialDecision = immutableSnapshot({
       ...decision,
       id: `decision_${this.decisions.length + 1}`,
       createdAt: new Date().toISOString()
-    };
+    });
 
     this.decisions.push(rememberedDecision);
     return rememberedDecision;
@@ -39,4 +40,3 @@ export class MockMemoryProvider implements MemoryProvider {
     return this.goals;
   }
 }
-

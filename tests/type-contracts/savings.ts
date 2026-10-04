@@ -18,6 +18,7 @@ const proposalFields = {
   id: "proposal_123",
   eventId: "event_123",
   userId: "user_123",
+  actionId: "action_123",
   suggestion,
   createdAt: "2026-09-28T12:00:00.000Z"
 } as const;
