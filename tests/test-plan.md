@@ -89,6 +89,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 ## Safety And Approval
 
 - Victoria does not perform irreversible actions from a single ambiguous message.
+- Replies such as “okay,” “sure,” or “sounds good” to a pending savings or goal-allocation proposal ask for an explicit yes or no and create no record.
 - Victoria treats real money movement as a separate approved action.
 - Victoria records an approval timestamp and source when the user confirms.
 - Victoria binds approval to the exact pending action and user.

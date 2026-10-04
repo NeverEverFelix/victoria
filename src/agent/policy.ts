@@ -25,7 +25,8 @@ export function interpretApprovalResponse(message: string): ApprovalResponse {
     return "explicit_decline";
   }
 
-  if (/\b(maybe|guess|probably)\b/.test(normalized)) {
+  if (["ok", "okay", "sure", "sounds good"].includes(normalized) ||
+    /\b(maybe|guess|probably)\b/.test(normalized)) {
     return "ambiguous";
   }
 

@@ -601,6 +601,25 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsEntries("user_123")).toEqual([]);
   });
 
+  it.each(["Okay", "Sure", "Sounds good"])(
+    "[APR-008] asks for clear approval after the ambiguous reply %s",
+    async (message) => {
+      const tools = new MockVictoriaTools();
+      const agent = createAgent([], tools);
+      const context = { userId: "user_123", conversationId: "conversation_123" };
+
+      await agent.respond({
+        ...context,
+        message: "I almost bought a $90 jacket but decided to wait."
+      });
+      const response = await agent.respond({ ...context, message });
+
+      expect(response.decision.action).toBe("ask_follow_up");
+      expect(response.message).toContain("clear yes or no");
+      expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+    }
+  );
+
   it("[APR-004] declines a pending savings proposal without pressure or a ledger entry", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);
