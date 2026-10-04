@@ -568,6 +568,24 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsGoalAllocations("user_123")).toHaveLength(1);
   });
 
+  it("clears a declined goal allocation without recording it", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const context = { userId: "user_123", conversationId: "goal_decline" };
+
+    await agent.respond({ ...context, message: "I almost bought a $45 book but decided to wait." });
+    await agent.respond({ ...context, message: "Yes" });
+    await agent.respond({ ...context, message: "Put that toward my emergency fund." });
+
+    const declined = await agent.respond({ ...context, message: "No, not today." });
+    expect(declined.decision.action).toBe("reflect");
+    expect(await tools.listSavingsGoalAllocations("user_123")).toEqual([]);
+
+    const laterApproval = await agent.respond({ ...context, message: "Yes" });
+    expect(laterApproval.decision.action).not.toBe("record_goal_allocation");
+    expect(await tools.listSavingsGoalAllocations("user_123")).toEqual([]);
+  });
+
   it("[INT-002] [AUD-001] [AUD-004] completes the explicit-amount savings loop through conversation", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);

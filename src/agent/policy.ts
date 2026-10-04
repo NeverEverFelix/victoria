@@ -15,13 +15,15 @@ export function interpretApprovalResponse(message: string): ApprovalResponse {
   const normalized = message
     .trim()
     .toLowerCase()
-    .replace(/[.!?]+$/g, "");
+    .replace(/[.!?]+$/g, "")
+    .replace(/,/g, "")
+    .replace(/\s+/g, " ");
 
   if (["yes", "yes save it", "record it", "please do", "do it"].includes(normalized)) {
     return "explicit_approval";
   }
 
-  if (["no", "no thanks", "not today", "i'd rather not"].includes(normalized)) {
+  if (/^(?:no(?: thanks| thank you)?(?: not today)?|nope|nah|not today|i(?:'|’)d rather not)$/.test(normalized)) {
     return "explicit_decline";
   }
 

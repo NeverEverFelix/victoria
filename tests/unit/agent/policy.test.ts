@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { canCallTool, canUseMovementMode } from "../../../src/agent/policy.js";
-import type { AgentRequest, ToolCallRequest } from "../../../src/agent/types.js";
+import { canCallTool, canUseMovementMode, interpretApprovalResponse } from "../../../src/agent/policy.js";
+import type { AgentRequest } from "../../../src/agent/types.js";
 
 describe("agent policy", () => {
+  it.each(["No, not today.", "No thanks, not today.", "I'd rather not.", "Nope.", "Nah."])(
+    "recognizes the clear decline %s",
+    (message) => {
+      expect(interpretApprovalResponse(message)).toBe("explicit_decline");
+    }
+  );
+
+  it.each(["not yet", "not sure", "maybe later"])(
+    "does not treat %s as a clear decline",
+    (message) => {
+      expect(interpretApprovalResponse(message)).not.toBe("explicit_decline");
+    }
+  );
+
   it("blocks real money movement without explicit approval", () => {
     const decision = canCallTool(baseRequest(), {
       name: "eventuallyMoveMoney",

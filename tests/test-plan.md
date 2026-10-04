@@ -97,6 +97,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria prevents an approval from being replayed after the action completes.
 - Victoria can cancel or decline a pending savings suggestion.
 - A clear decline marks its pending proposal declined, clears the pending action, and creates no ledger entry.
+- A clear decline such as “No, not today” also clears a pending goal allocation without recording an allocation.
 - A failed ledger write does not produce success wording, leaves the approved action retryable, and a retry with the same user/action ID creates at most one entry even if the first response was lost after persistence.
 - Changing a pending proposal's amount, reason, or goal creates a linked replacement proposal and requires fresh approval; unsupported currency edits leave the USD mock-ledger proposal unchanged.
 - Approval from another user cannot approve a proposal, and goal allocation cannot reuse the prior proposal's approval.
