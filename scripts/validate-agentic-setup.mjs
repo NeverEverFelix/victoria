@@ -196,6 +196,7 @@ requireIncludes("scripts/ai-code-review.mjs", [
   "pull_request?.base?.sha",
   "chunkDiffForReview",
   "resolveReviewOutputTokenLimit",
+  "splitReviewChunkForRetry",
   "buildCompleteReviewComment",
   "process.exitCode = 1"
 ]);
@@ -205,6 +206,7 @@ requireIncludes("scripts/ai-code-review-core.mjs", [
   "No real money movement in the MVP",
   "Trusted repository instructions from the trusted review commit",
   "chunkDiffForReview",
+  "splitReviewChunkForRetry",
   "coveredDiffChars",
   "coverage mismatch"
 ]);
