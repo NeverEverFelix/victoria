@@ -4,7 +4,8 @@ import {
   buildCompleteReviewComment,
   buildReviewInput,
   chunkDiffForReview,
-  resolveReviewOutputTokenLimit
+  resolveReviewOutputTokenLimit,
+  splitReviewChunkForRetry
 } from "./ai-code-review-core.mjs";
 
 const {
@@ -21,8 +22,8 @@ const {
   OPENAI_CODE_REVIEW_MODEL = "gpt-5"
 } = process.env;
 
-const maxDiffChars = Number(process.env.AI_REVIEW_MAX_DIFF_CHARS ?? 60000);
-const maxChunks = Number(process.env.AI_REVIEW_MAX_CHUNKS ?? 12);
+const maxDiffChars = Number(process.env.AI_REVIEW_MAX_DIFF_CHARS ?? 18000);
+const maxChunks = Number(process.env.AI_REVIEW_MAX_CHUNKS ?? 24);
 const maxCommentChars = Number(process.env.AI_REVIEW_MAX_COMMENT_CHARS ?? 60000);
 const maxTrustedFileChars = 12000;
 
@@ -162,7 +163,12 @@ async function createReview(input, maxOutputTokens) {
 
   const data = await response.json();
   if (data.status === "incomplete") {
-    throw new Error(`OpenAI review response was incomplete: ${data.incomplete_details?.reason ?? "unknown reason"}. No partial review will be posted.`);
+    const reason = data.incomplete_details?.reason ?? "unknown reason";
+    const error = new Error(`OpenAI review response was incomplete: ${reason}. No partial review will be posted.`);
+    if (reason === "max_output_tokens") {
+      error.code = "AI_REVIEW_OUTPUT_LIMIT";
+    }
+    throw error;
   }
   const outputText = data.output_text;
 
@@ -260,22 +266,44 @@ async function main() {
   const maxOutputTokens = resolveReviewOutputTokenLimit(
     process.env.AI_REVIEW_MAX_OUTPUT_TOKENS
   );
+  const reviewChunks = [...partition.chunks];
   const reviews = [];
-  for (let index = 0; index < partition.chunks.length; index += 1) {
-    const chunk = partition.chunks[index];
+  let index = 0;
+  while (index < reviewChunks.length) {
+    const chunk = reviewChunks[index];
     const scope = [
-      `Review pass ${index + 1} of ${partition.chunks.length}.`,
       `This pass covers ${chunk.paths.length} changed path(s): ${chunk.paths.join(", ")}.`,
-      "The entire PR diff is partitioned across all passes. Review only the supplied segment, and do not infer that files outside this pass are unchanged or absent."
+      "Review only this bounded segment of the PR diff. The complete diff is covered across all passes; do not infer that files outside this segment are unchanged or absent."
     ].join(" ");
     const input = buildReviewInput({
       diff: chunk.text,
       reviewScope: scope,
       ...trustedContext
     });
-    reviews.push(await createReview(input, maxOutputTokens));
+    try {
+      reviews.push(await createReview(input, maxOutputTokens));
+      index += 1;
+    } catch (error) {
+      if (error.code !== "AI_REVIEW_OUTPUT_LIMIT") {
+        throw error;
+      }
+
+      const smallerChunks = splitReviewChunkForRetry(chunk);
+      if (!smallerChunks) {
+        throw error;
+      }
+      if (reviewChunks.length + smallerChunks.length - 1 > maxChunks) {
+        throw new Error(
+          `AI review stopped without posting a partial result: a response exceeded AI_REVIEW_MAX_OUTPUT_TOKENS and adaptive splitting would exceed AI_REVIEW_MAX_CHUNKS (${maxChunks}).`
+        );
+      }
+
+      reviewChunks.splice(index, 1, ...smallerChunks);
+      log(`A review pass exceeded the output-token budget; split it into ${smallerChunks.length} smaller passes (${reviewChunks.length} total).`);
+    }
   }
 
+  partition.chunks = reviewChunks;
   const body = buildCompleteReviewComment(partition, reviews, trustedRef, maxCommentChars);
 
   if (GITHUB_EVENT_NAME === "pull_request_target") {

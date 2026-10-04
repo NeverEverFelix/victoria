@@ -3,7 +3,8 @@ import {
   buildCompleteReviewComment,
   buildReviewInput,
   chunkDiffForReview,
-  resolveReviewOutputTokenLimit
+  resolveReviewOutputTokenLimit,
+  splitReviewChunkForRetry
 } from "../../../scripts/ai-code-review-core.mjs";
 
 describe("AI code review core", () => {
@@ -78,6 +79,20 @@ describe("AI code review core", () => {
       expect(segments[index].start).toBe(segments[index - 1].end);
     }
     expect(segments.map((segment) => diff.slice(segment.start, segment.end)).join("")).toBe(diff);
+  });
+
+  it("splits a pass in half when its response needs an adaptive retry", () => {
+    const diff = fileDiff("src/agent/large.ts", "+line\n".repeat(2000));
+    const chunk = chunkDiffForReview(diff, 20_000).chunks[0];
+    const smaller = splitReviewChunkForRetry(chunk);
+
+    expect(smaller.length).toBeGreaterThan(1);
+    expect(smaller.every((part) => part.text.length <= Math.floor(chunk.text.length / 2))).toBe(true);
+    expect(
+      smaller.flatMap((part) => part.segments).reduce((total, segment) => total + segment.end - segment.start, 0)
+    ).toBe(chunk.text.length);
+    expect(smaller.flatMap((part) => part.paths)).toContain("src/agent/large.ts");
+    expect(splitReviewChunkForRetry({ text: "too small", paths: [] })).toBeNull();
   });
 
   it("covers the previously recurring 256k-character PR size in bounded passes", () => {

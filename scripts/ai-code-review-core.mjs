@@ -132,6 +132,16 @@ export function chunkDiffForReview(diff, maxChars) {
   };
 }
 
+export function splitReviewChunkForRetry(chunk) {
+  if (!chunk?.text || chunk.text.length <= 2000) {
+    return null;
+  }
+
+  const maxChars = Math.max(2000, Math.floor(chunk.text.length / 2));
+  const split = chunkDiffForReview(chunk.text, maxChars).chunks;
+  return split.length > 1 ? split : null;
+}
+
 export function buildCompleteReviewComment(partition, reviews, trustedRef, maxChars = 60000) {
   if (!Number.isInteger(maxChars) || maxChars < 1) {
     throw new Error("AI_REVIEW_MAX_COMMENT_CHARS must be a positive integer.");
