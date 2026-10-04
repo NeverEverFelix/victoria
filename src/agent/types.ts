@@ -55,6 +55,7 @@ export interface AgentMemory {
 }
 
 export interface UserHabit {
+  userId: string;
   id: string;
   merchantName: string;
   typicalAmountCents: number;

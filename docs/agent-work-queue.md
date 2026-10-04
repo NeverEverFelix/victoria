@@ -491,7 +491,7 @@ Done when:
 
 Status: Complete for the current mock, in-memory MVP. Durable storage uniqueness remains future work.
 
-Source rules: `docs/specification/mvp-safety-contract.md` rules ARC-002, INT-001, INT-002, INT-004, COR-001, and COR-002
+Source rules: `docs/specification/mvp-safety-contract.md` rules ARC-002, INT-001, INT-002, INT-004, COR-001, COR-002, and MEM-001
 
 Goal:
 
@@ -504,6 +504,8 @@ Expected behavior:
 - Proposals carry their event, user, suggestion, mock-only mode, creation time, and state.
 - Callers receive detached, frozen snapshots of agent results and mock-ledger records.
 - Updated spending evidence is used for later suggestions and does not change an existing proposal or entry.
+- Habits, goals, and remembered decisions are isolated by user.
+- Goal allocations use the corrected effective entry amount, not the original amount before adjustments.
 
 Done when:
 

@@ -32,7 +32,8 @@ export class MockVictoriaTools implements VictoriaTools {
 
   async findTypicalMerchantSpend(input: FindTypicalMerchantSpendInput): Promise<number | null> {
     const habit = this.habits.find(
-      (candidate) => candidate.merchantName.toLowerCase() === input.merchantName.toLowerCase()
+      (candidate) => candidate.userId === input.userId &&
+        candidate.merchantName.toLowerCase() === input.merchantName.toLowerCase()
     );
 
     return habit?.typicalAmountCents ?? null;
@@ -221,8 +222,9 @@ export class MockVictoriaTools implements VictoriaTools {
     if (entry.movementMode !== "mock_ledger") {
       throw new Error("A goal can only be linked to a mocked savings entry.");
     }
-    if (input.amountCents !== entry.amountCents) {
-      throw new Error("A goal allocation must match the linked savings entry amount.");
+    const effectiveAmount = await this.getEffectiveSavingsEntryAmount(input.userId, entry.id);
+    if (input.amountCents !== effectiveAmount) {
+      throw new Error("A goal allocation must match the linked savings entry's current effective amount.");
     }
     if (input.approval.actionId !== input.approvedActionId) {
       throw new Error("A goal allocation approval must match its approved action.");

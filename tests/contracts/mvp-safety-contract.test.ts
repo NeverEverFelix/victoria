@@ -356,6 +356,7 @@ const defaultHabits: UserHabit[] = [
   {
     id: "habit_7th_street",
     merchantName: "7th Street",
+    userId: "user_123",
     typicalAmountCents: 2746,
     currency: "USD",
     confidence: 0.9

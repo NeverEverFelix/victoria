@@ -18,6 +18,7 @@ export interface SavingsEvent {
 }
 
 export interface SavingsGoal {
+  readonly userId: string;
   id: string;
   name: string;
   targetAmountCents?: number;

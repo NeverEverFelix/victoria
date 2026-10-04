@@ -51,6 +51,7 @@ Victoria should:
 Acceptance criteria:
 
 - Given Victoria knows the user's typical DoorDash order, Victoria suggests that amount.
+- Given Victoria knows another user's typical DoorDash order, Victoria does not use or reveal it.
 - Given Victoria does not know the typical amount, Victoria asks what the user usually spends.
 - Given the user provides an amount, Victoria can propose a savings action.
 - Given the user confirms, Victoria creates a mocked ledger entry.
@@ -76,6 +77,7 @@ Victoria should:
 Acceptance criteria:
 
 - Given Victoria has a known Blue Bottle amount, Victoria uses it.
+- Given that amount belongs to another user, Victoria does not use or reveal it.
 - Given Victoria only knows a generic coffee amount, Victoria may use that estimate.
 - Given Victoria has no relevant amount, Victoria asks for the typical spend.
 - Given the user declines, no ledger entry is created.
@@ -235,6 +237,7 @@ Acceptance criteria:
 - Given there is a pending savings suggestion, Victoria can attach the emergency fund goal to it.
 - Given there is no clear pending or recent saved amount, Victoria asks what amount the user means.
 - Given the user confirms an allocation for a completed entry, Victoria creates a separate immutable goal-allocation record linked to that entry.
+- Given the entry was corrected, the allocation uses its currently effective amount.
 - Given a goal allocation is recorded, the original savings entry remains unchanged.
 - Given the goal is recorded, Victoria still makes clear that no real money moved.
 

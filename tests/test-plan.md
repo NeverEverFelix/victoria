@@ -68,6 +68,8 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria keeps mocked ledger entries separate from real transfer state.
 - Victoria preserves historical events, suggestions, approvals, and ledger entries instead of mutating them.
 - Returned event, suggestion, proposal, approval, correction, allocation, and entry snapshots cannot be mutated by callers; changing a habit only affects later suggestions.
+- Habits, goals, and remembered decisions supplied for one user never appear in another user's memory or affect their merchant estimates.
+- A goal allocation after a correction uses the entry's current effective amount, while preserving the original entry amount in history.
 - Victoria represents a correction or reversal as a new record linked to the original.
 - Correcting a recorded amount requires exact approval, appends a signed adjustment, and leaves the original entry unchanged.
 - Corrections reject invalid, no-op, cross-user, non-completed, or non-mocked targets, and effective weekly totals retain the original entry's week.

@@ -214,6 +214,12 @@ Real-transfer idempotency and provider retry policies are deferred because real 
 | COR-004 | Audit views **MUST** retain both the original record and every linked correction.                     | Enforced by mock ledger correction listing   |
 | COR-005 | Totals **MUST** use the effective ledger impact after corrections without erasing original history.   | Enforced for weekly mocked-ledger total       |
 
+### User-scoped memory
+
+| ID      | Normative rule                                                                                                         | Status                       | Executable coverage                                  |
+| ------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------- |
+| MEM-001 | User-specific habits, goals, and remembered decisions **MUST** be returned only to the user they belong to.            | Enforced in mock memory and estimates | `tests/unit/agent/victoria-agent.test.ts` |
+
 Example: an approved $27 entry later corrected to $24 retains the $27 entry and appends a linked adjustment of -300 cents. The corrected effective amount is $24.
 
 Counterexample: updating the original entry's `amountCents` from `2700` to `2400`.
@@ -270,7 +276,7 @@ The executable contract suite is `tests/contracts/mvp-safety-contract.test.ts`. 
 
 | Rule group                                      | Primary current test location                      | Completion gate                                                      |
 | ----------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------- |
-| `FIN`, `ARC`, `INT`, `APR`, `STA`, `ERR`, `AUD` | Agent contract and unit tests                      | Relevant agent slice cannot complete without applicable tests        |
+| `FIN`, `ARC`, `INT`, `APR`, `STA`, `ERR`, `AUD`, `MEM` | Agent contract and unit tests                      | Relevant agent slice cannot complete without applicable tests        |
 | `AMT`                                           | Domain money and parser tests                      | Amount-handling slice cannot complete while rules remain `Specified` |
 | `IDM`                                           | Agent replay test; future ledger integration tests | Persistent ledger slice requires durable idempotency coverage        |
 | `COR`                                           | Type contracts; future ledger integration tests    | Correction slice requires linked-record and effective-total tests    |

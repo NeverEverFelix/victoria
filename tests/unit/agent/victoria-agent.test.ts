@@ -153,6 +153,67 @@ describe("VictoriaAgent", () => {
     expect(await tools.getWeeklySavingsTotal("user_123")).toBe(2400);
   });
 
+  it("[COR-005] allocates a corrected entry using its current effective amount", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const context = { userId: "user_123", conversationId: "correct_then_allocate" };
+    await agent.respond({ ...context, message: "I almost bought a $27 pastry but decided to wait." });
+    await agent.respond({ ...context, message: "Yes" });
+    await agent.respond({ ...context, message: "Correct that recorded entry to $24." });
+    const correction = await agent.respond({ ...context, message: "Yes" });
+    expect(correction.decision.entryCorrection?.correctedAmountCents).toBe(2400);
+
+    const proposal = await agent.respond({ ...context, message: "Put that toward my emergency fund." });
+    expect(proposal.decision.goalAllocation).toMatchObject({
+      status: "pending",
+      amountCents: 2400,
+      goalName: "Emergency fund"
+    });
+    expect(proposal.message).toContain("$24.00");
+
+    const recorded = await agent.respond({ ...context, message: "Yes" });
+    expect(recorded.decision.goalAllocation).toMatchObject({
+      status: "recorded",
+      amountCents: 2400,
+      goalName: "Emergency fund"
+    });
+    expect(await tools.listSavingsEntries("user_123")).toMatchObject([{ amountCents: 2700 }]);
+    expect(await tools.getEffectiveSavingsEntryAmount("user_123", "entry_1")).toBe(2400);
+    expect(await tools.getWeeklySavingsTotal("user_123")).toBe(2400);
+  });
+
+  it("requires fresh approval if an entry changes after the goal proposal", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const context = { userId: "user_123", conversationId: "stale_goal_amount" };
+    await agent.respond({ ...context, message: "I almost bought a $27 pastry but decided to wait." });
+    await agent.respond({ ...context, message: "Yes" });
+    const proposal = await agent.respond({ ...context, message: "Put that toward my emergency fund." });
+    const [entry] = await tools.listSavingsEntries("user_123");
+    expect(entry).toBeDefined();
+    if (!entry) throw new Error("Expected the recent entry to exist.");
+
+    await tools.createSavingsEntryCorrection({
+      userId: "user_123",
+      savingsEntryId: entry.id,
+      correctedAmountCents: 2400,
+      reason: "Updated amount",
+      approvalId: "approval_external_correction",
+      approvedActionId: "action_external_correction"
+    });
+    const refreshed = await agent.respond({ ...context, message: "Yes" });
+
+    expect(refreshed.decision.action).toBe("update_goal");
+    expect(refreshed.decision.goalAllocation).toMatchObject({ status: "pending", amountCents: 2400 });
+    expect(refreshed.message).toContain("please confirm again");
+    expect(refreshed.decision.toolCall?.actionId).not.toBe(proposal.decision.toolCall?.actionId);
+    expect(await tools.listSavingsGoalAllocations("user_123")).toEqual([]);
+
+    const recorded = await agent.respond({ ...context, message: "Yes" });
+    expect(recorded.decision.goalAllocation).toMatchObject({ status: "recorded", amountCents: 2400 });
+    expect(await tools.listSavingsGoalAllocations("user_123")).toHaveLength(1);
+  });
+
   it("[IDM-002] retries an uncertain correction with the same approval", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);
@@ -183,7 +244,7 @@ describe("VictoriaAgent", () => {
 
   it("[COR-002] uses updated spending evidence for future suggestions without changing a pending one", async () => {
     const habits: UserHabit[] = [
-      { id: "habit_7th_street", merchantName: "7th Street", typicalAmountCents: 2746, currency: "USD", confidence: 0.9 }
+      { userId: "user_123", id: "habit_7th_street", merchantName: "7th Street", typicalAmountCents: 2746, currency: "USD", confidence: 0.9 }
     ];
     const tools = new MockVictoriaTools(habits);
     const agent = new VictoriaAgent({
@@ -211,6 +272,34 @@ describe("VictoriaAgent", () => {
     expect(nextSuggestion.decision.suggestion?.amountCents).toBe(3100);
     expect(nextSuggestion.decision.proposal?.suggestion.amountCents).toBe(3100);
     expect(await tools.listSavingsEntries("user_123")).toMatchObject([{ amountCents: 2746 }]);
+  });
+
+  it("[MEM-001] keeps habits, goals, and remembered decisions scoped to their user", async () => {
+    const habits: UserHabit[] = [
+      { userId: "user_123", id: "habit_user_123", merchantName: "7th Street", typicalAmountCents: 2746, currency: "USD", confidence: 0.9 },
+      { userId: "user_other", id: "habit_user_other", merchantName: "7th Street", typicalAmountCents: 1200, currency: "USD", confidence: 0.8 }
+    ];
+    const goals = [
+      { userId: "user_123", id: "goal_123", name: "Emergency fund", savedAmountCents: 0, currency: "USD" as const },
+      { userId: "user_other", id: "goal_other", name: "Trip", savedAmountCents: 0, currency: "USD" as const }
+    ];
+    const memory = new MockMemoryProvider(habits, goals);
+    await memory.rememberDecision("user_123", { type: "avoided_spend", summary: "Made coffee at home." });
+
+    expect(await memory.listHabits("user_123")).toMatchObject([{ id: "habit_user_123" }]);
+    expect(await memory.listHabits("user_other")).toMatchObject([{ id: "habit_user_other" }]);
+    expect(await memory.listGoals("user_123")).toMatchObject([{ id: "goal_123" }]);
+    expect(await memory.listGoals("user_other")).toMatchObject([{ id: "goal_other" }]);
+    expect((await memory.getMemoryForUser("user_other")).recentDecisions).toEqual([]);
+
+    const tools = new MockVictoriaTools(habits);
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools });
+    const response = await agent.respond({
+      userId: "user_other",
+      message: "I cooked instead of DoorDashing my usual 7th Street order."
+    });
+    expect(response.decision.suggestion?.amountCents).toBe(1200);
+    expect(response.message).toContain("$12.00");
   });
 
   it("asks for the target entry when a correction has no conversation context", async () => {
@@ -258,7 +347,7 @@ describe("VictoriaAgent", () => {
 
   it("[ARC-002] does not propose an unsafe amount returned by an estimator", async () => {
     const tools = new MockVictoriaTools([{
-      id: "bad_habit", merchantName: "Blue Bottle", typicalAmountCents: Number.MAX_SAFE_INTEGER + 1,
+      userId: "user_123", id: "bad_habit", merchantName: "Blue Bottle", typicalAmountCents: Number.MAX_SAFE_INTEGER + 1,
       currency: "USD", confidence: 0.9
     }]);
     const agent = createAgent([], tools);
@@ -1019,6 +1108,7 @@ describe("VictoriaAgent", () => {
       {
         id: "habit_7th_street",
         merchantName: "7th Street",
+        userId: "user_123",
         typicalAmountCents: 2746,
         currency: "USD",
         confidence: 0.9
@@ -1045,6 +1135,7 @@ describe("VictoriaAgent", () => {
       {
         id: "habit_doordash",
         merchantName: "DoorDash",
+        userId: "user_123",
         typicalAmountCents: 2746,
         currency: "USD",
         confidence: 0.9
@@ -1055,6 +1146,7 @@ describe("VictoriaAgent", () => {
         {
           id: "habit_doordash",
           merchantName: "DoorDash",
+          userId: "user_123",
           typicalAmountCents: 2746,
           currency: "USD",
           confidence: 0.9
@@ -1087,6 +1179,7 @@ describe("VictoriaAgent", () => {
       {
         id: "habit_7th_street",
         merchantName: "7th Street",
+        userId: "user_123",
         typicalAmountCents: 2746,
         currency: "USD",
         confidence: 0.9
@@ -1116,6 +1209,7 @@ describe("VictoriaAgent", () => {
       {
         id: "habit_7th_street",
         merchantName: "7th Street",
+        userId: "user_123",
         typicalAmountCents: 2746,
         currency: "USD",
         confidence: 0.9
@@ -1172,6 +1266,7 @@ describe("VictoriaAgent", () => {
       {
         id: "habit_7th_street",
         merchantName: "7th Street",
+        userId: "user_123",
         typicalAmountCents: 2746,
         currency: "USD",
         confidence: 0.9
@@ -1200,6 +1295,7 @@ describe("VictoriaAgent", () => {
       {
         id: "habit_7th_street",
         merchantName: "7th Street",
+        userId: "user_123",
         typicalAmountCents: 2746,
         currency: "USD",
         confidence: 0.9
@@ -1230,6 +1326,7 @@ describe("VictoriaAgent", () => {
       {
         id: "habit_7th_street",
         merchantName: "7th Street",
+        userId: "user_123",
         typicalAmountCents: 2746,
         currency: "USD",
         confidence: 0.9
@@ -1342,6 +1439,7 @@ describe("VictoriaAgent", () => {
       {
         id: "habit_7th_street",
         merchantName: "7th Street",
+        userId: "user_123",
         typicalAmountCents: 2746,
         currency: "USD",
         confidence: 0.9
@@ -1352,6 +1450,7 @@ describe("VictoriaAgent", () => {
         {
           id: "habit_7th_street",
           merchantName: "7th Street",
+          userId: "user_123",
           typicalAmountCents: 2746,
           currency: "USD",
           confidence: 0.9

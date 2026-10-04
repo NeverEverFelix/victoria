@@ -706,22 +706,32 @@ export class VictoriaAgent {
     return { message: revisedDecision.userFacingMessage, decision: revisedDecision };
   }
 
-  private proposeGoalAllocation(
+  private async proposeGoalAllocation(
     request: AgentRequest,
     classification: ClassifiedMessage,
     entry: SavingsEntry
-  ): AgentResponse {
+  ): Promise<AgentResponse> {
+    let effectiveAmountCents: number | null;
+    try {
+      effectiveAmountCents = await this.dependencies.tools.getEffectiveSavingsEntryAmount(request.userId, entry.id);
+    } catch {
+      effectiveAmountCents = null;
+    }
+    if (effectiveAmountCents === null) {
+      const message = "I couldn't verify the current amount for that saved entry, so I haven't linked it to a goal.";
+      return { message, decision: { action: "ask_follow_up", classification, userFacingMessage: message } };
+    }
     const actionId = `goal_allocation_action_${this.nextGoalAllocationNumber++}`;
     const goalAllocation: PendingSavingsGoalAllocation = {
       id: `goal_allocation_proposal_${this.nextGoalAllocationNumber - 1}`,
       userId: request.userId,
       savingsEntryId: entry.id,
-      amountCents: entry.amountCents,
+      amountCents: effectiveAmountCents,
       goalName: classification.goalName ?? "",
       status: "pending",
       createdAt: new Date().toISOString()
     };
-    const message = `I can link the recorded ${formatUsd(entry.amountCents)} entry to ${goalAllocation.goalName} in your mocked savings ledger. Please confirm this goal allocation. No real money has moved yet.`;
+    const message = `I can link the currently recorded ${formatUsd(effectiveAmountCents)} entry to ${goalAllocation.goalName} in your mocked savings ledger. Please confirm this goal allocation. No real money has moved yet.`;
     const decision: AgentDecision = {
       action: "update_goal",
       classification,
@@ -732,7 +742,7 @@ export class VictoriaAgent {
         arguments: {
           userId: request.userId,
           savingsEntryId: entry.id,
-          amountCents: entry.amountCents,
+          amountCents: effectiveAmountCents,
           goalName: goalAllocation.goalName
         },
         requiresApproval: true
@@ -1045,6 +1055,58 @@ export class VictoriaAgent {
         trustedDecision,
         policyDecision.reason ?? "That action needs approval first."
       );
+    }
+
+    let currentEffectiveAmount: number | null;
+    try {
+      currentEffectiveAmount = await this.dependencies.tools.getEffectiveSavingsEntryAmount(
+        request.userId,
+        allocation.savingsEntryId
+      );
+    } catch {
+      const message = "I couldn't verify the saved amount just now, so I haven't linked it to the goal. Please say yes to try again.";
+      return {
+        message,
+        decision: { ...trustedDecision, action: "ask_follow_up", userFacingMessage: message }
+      };
+    }
+    if (currentEffectiveAmount === null) {
+      this.pendingGoalAllocationActions.delete(actionId);
+      this.pendingGoalAllocationIdsByConversation.delete(pendingAction.conversationKey);
+      const message = "I couldn't find that saved entry, so I haven't linked it to the goal.";
+      return {
+        message,
+        decision: { ...trustedDecision, action: "ask_follow_up", userFacingMessage: message }
+      };
+    }
+    if (currentEffectiveAmount !== allocation.amountCents) {
+      const replacementActionId = `goal_allocation_action_${this.nextGoalAllocationNumber++}`;
+      const replacementAllocation: PendingSavingsGoalAllocation = {
+        ...allocation,
+        id: `goal_allocation_proposal_${this.nextGoalAllocationNumber - 1}`,
+        amountCents: currentEffectiveAmount,
+        createdAt: new Date().toISOString()
+      };
+      const message = `The saved amount changed to ${formatUsd(currentEffectiveAmount)} after that proposal. I haven't linked anything. I can link the current amount to ${allocation.goalName}; please confirm again.`;
+      const replacementDecision: AgentDecision = {
+        ...trustedDecision,
+        action: "update_goal",
+        goalAllocation: replacementAllocation,
+        toolCall: {
+          ...toolCall,
+          actionId: replacementActionId,
+          arguments: { ...toolCall.arguments, amountCents: currentEffectiveAmount }
+        },
+        userFacingMessage: message
+      };
+      this.pendingGoalAllocationActions.delete(actionId);
+      this.pendingGoalAllocationActions.set(replacementActionId, {
+        userId: request.userId,
+        conversationKey: pendingAction.conversationKey,
+        decision: replacementDecision
+      });
+      this.pendingGoalAllocationIdsByConversation.set(pendingAction.conversationKey, replacementActionId);
+      return { message, decision: replacementDecision };
     }
 
     const approval = pendingAction.approval ?? {

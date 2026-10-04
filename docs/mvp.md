@@ -162,7 +162,9 @@ Victoria must:
 - Keep the tone encouraging, practical, and nonjudgmental.
 - Track weekly and monthly saved totals from mocked ledger entries.
 - Allow memory and learned habits to evolve without rewriting historical events, suggestions, approvals, or ledger entries.
+- Keep each user's habits, goals, and remembered decisions separate from other users' context.
 - Correct a completed mocked-ledger amount only through a newly approved adjustment linked to the original entry.
+- Use the corrected effective amount when allocating a corrected entry to a goal.
 
 Victoria must not:
 
