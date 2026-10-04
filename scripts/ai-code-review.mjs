@@ -148,7 +148,7 @@ async function createReview(input, maxOutputTokens) {
       model: OPENAI_CODE_REVIEW_MODEL,
       input,
       text: {
-        verbosity: "medium"
+        verbosity: "low"
       },
       max_output_tokens: maxOutputTokens,
       store: false
