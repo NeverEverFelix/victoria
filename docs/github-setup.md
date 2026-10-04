@@ -24,7 +24,7 @@ AI_REVIEW_REQUIRED=true
 
 If `OPENAI_API_KEY` is not set, the AI review workflow skips cleanly by default. If `AI_REVIEW_REQUIRED=true`, a missing key fails the workflow.
 
-For pull requests, the workflow uses `pull_request_target`, explicitly checks out the default branch, and downloads the proposed patch through the GitHub API. It must never check out or execute the pull request head while `OPENAI_API_KEY` or a write-capable token is available. The diff is untrusted review input, not executable code. If GitHub requires an Actions event policy for `pull_request_target`, allow this workflow only after confirming those constraints remain intact.
+For pull requests, the workflow uses `pull_request_target`, explicitly checks out the default branch, and downloads the proposed patch through the GitHub API. The review receives `AGENTS.md`, `docs/agentic-coding-patterns.md`, `docs/decisions.md`, `docs/mvp.md`, `docs/user-stories.md`, `docs/specification/mvp-safety-contract.md`, and `tests/test-plan.md` as trusted context. The pull request diff remains untrusted evidence. The workflow must never check out or execute the pull request head while `OPENAI_API_KEY` or a write-capable token is available. If GitHub requires an Actions event policy for `pull_request_target`, allow this workflow only after confirming those constraints remain intact.
 
 The AI prompt keeps trusted instructions separate from the untrusted diff. If a diff exceeds `AI_REVIEW_MAX_DIFF_CHARS`, the review lists all changed paths, prioritizes safety-sensitive excerpts, and posts a prominent incomplete-review warning. With `AI_REVIEW_REQUIRED=true`, an oversized or empty diff fails rather than satisfying the review job.
 

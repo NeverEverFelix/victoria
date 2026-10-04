@@ -5,19 +5,30 @@ export interface PolicyDecision {
   reason?: string;
 }
 
-export type ApprovalResponse = "explicit_approval" | "ambiguous" | "not_approval";
+export type ApprovalResponse =
+  | "explicit_approval"
+  | "explicit_decline"
+  | "ambiguous"
+  | "not_approval";
 
 export function interpretApprovalResponse(message: string): ApprovalResponse {
   const normalized = message
     .trim()
     .toLowerCase()
-    .replace(/[.!?]+$/g, "");
+    .replace(/[.!?]+$/g, "")
+    .replace(/,/g, "")
+    .replace(/\s+/g, " ");
 
   if (["yes", "yes save it", "record it", "please do", "do it"].includes(normalized)) {
     return "explicit_approval";
   }
 
-  if (/\b(maybe|guess|probably)\b/.test(normalized)) {
+  if (/^(?:no(?: thanks| thank you)?(?: not today)?|nope|nah|not today|i(?:'|’)d rather not)$/.test(normalized)) {
+    return "explicit_decline";
+  }
+
+  if (["ok", "okay", "sure", "sounds good"].includes(normalized) ||
+    /\b(maybe|guess|probably)\b/.test(normalized)) {
     return "ambiguous";
   }
 
@@ -37,6 +48,21 @@ export function canCallTool(request: AgentRequest, toolCall: ToolCallRequest): P
       request,
       toolCall.actionId,
       "Savings ledger entries require approval for this exact action."
+    );
+  }
+
+  if (toolCall.name === "createSavingsGoalAllocation") {
+    if (!toolCall.requiresApproval) {
+      return {
+        allowed: false,
+        reason: "Savings goal allocations require approval for this exact action."
+      };
+    }
+
+    return requireApproval(
+      request,
+      toolCall.actionId,
+      "Savings goal allocations require approval for this exact action."
     );
   }
 

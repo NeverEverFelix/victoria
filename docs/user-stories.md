@@ -25,6 +25,7 @@ Victoria should:
 Acceptance criteria:
 
 - Given the message includes a clear dollar amount, Victoria uses that amount.
+- Given the amount has more than two decimal places or uses a recognized non-USD currency, Victoria asks for a valid USD amount and creates no proposal.
 - Given the user has not confirmed, no savings ledger entry is created.
 - Given the user confirms, Victoria creates a mocked ledger entry for 9000 cents.
 - Given the entry is mocked, Victoria does not claim real money moved.
@@ -146,7 +147,8 @@ Victoria should:
 - Recognize the user's confirmation.
 - Create a mocked ledger entry for the pending suggestion.
 - Show the saved amount.
-- Show updated progress if available.
+- Show the updated current-week total from the mocked ledger when available.
+- Still confirm the recorded amount if the progress summary cannot be loaded.
 - Make it clear that no real money moved.
 
 Acceptance criteria:
@@ -224,7 +226,7 @@ Put this toward my emergency fund.
 Victoria should:
 
 - Recognize the message as a goal-allocation request.
-- Apply it to a pending or recent savings suggestion when context is clear.
+- Apply it to a pending suggestion or a clearly identified recent confirmed entry.
 - Ask a follow-up question when context is unclear.
 - Avoid moving real money.
 
@@ -232,7 +234,8 @@ Acceptance criteria:
 
 - Given there is a pending savings suggestion, Victoria can attach the emergency fund goal to it.
 - Given there is no clear pending or recent saved amount, Victoria asks what amount the user means.
-- Given the user confirms, the mocked ledger entry includes the goal destination.
+- Given the user confirms an allocation for a completed entry, Victoria creates a separate immutable goal-allocation record linked to that entry.
+- Given a goal allocation is recorded, the original savings entry remains unchanged.
 - Given the goal is recorded, Victoria still makes clear that no real money moved.
 
 ## Story 10: No Real Money Movement

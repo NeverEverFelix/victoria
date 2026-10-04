@@ -5,6 +5,8 @@ const specificationPath = "docs/specification/mvp-safety-contract.md";
 const scenarioPaths = [
   "tests/contracts/mvp-safety-contract.test.ts",
   "tests/contracts/mvp-safety-contract.pending.test.ts",
+  "tests/unit/agent/victoria-agent.test.ts",
+  "tests/unit/agent/policy.test.ts",
   "tests/type-contracts/savings.ts"
 ] as const;
 

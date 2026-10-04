@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { canCallTool, canUseMovementMode } from "../../../src/agent/policy.js";
-import type { AgentRequest, ToolCallRequest } from "../../../src/agent/types.js";
+import { canCallTool, canUseMovementMode, interpretApprovalResponse } from "../../../src/agent/policy.js";
+import type { AgentRequest } from "../../../src/agent/types.js";
 
 describe("agent policy", () => {
+  it.each(["No, not today.", "No thanks, not today.", "I'd rather not.", "Nope.", "Nah."])(
+    "recognizes the clear decline %s",
+    (message) => {
+      expect(interpretApprovalResponse(message)).toBe("explicit_decline");
+    }
+  );
+
+  it.each(["not yet", "not sure", "maybe later"])(
+    "does not treat %s as a clear decline",
+    (message) => {
+      expect(interpretApprovalResponse(message)).not.toBe("explicit_decline");
+    }
+  );
+
   it("blocks real money movement without explicit approval", () => {
     const decision = canCallTool(baseRequest(), {
       name: "eventuallyMoveMoney",
@@ -43,6 +57,29 @@ describe("agent policy", () => {
 
     expect(decision.allowed).toBe(false);
     expect(decision.reason).toBe("Savings ledger entries require approval for this exact action.");
+  });
+
+  it("blocks savings goal allocations without approval for the exact action", () => {
+    const decision = canCallTool(baseRequest(), {
+      name: "createSavingsGoalAllocation",
+      actionId: "goal_action_123",
+      arguments: {},
+      requiresApproval: false
+    });
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe("Savings goal allocations require approval for this exact action.");
+  });
+
+  it("allows a savings goal allocation only when approval matches its action", () => {
+    const decision = canCallTool(baseRequest({ approvedActionId: "goal_action_123" }), {
+      name: "createSavingsGoalAllocation",
+      actionId: "goal_action_123",
+      arguments: {},
+      requiresApproval: true
+    });
+
+    expect(decision.allowed).toBe(true);
   });
 
   it("blocks approval for a different savings action", () => {

@@ -8,6 +8,7 @@ out/
 coverage/
 .coverage/
 .nyc_output/
+.playwright-cli/
 
 # Environment secrets
 .env*

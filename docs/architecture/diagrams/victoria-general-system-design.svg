@@ -1,0 +1,216 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1260" viewBox="0 0 1800 1260" role="img" aria-labelledby="title description">
+  <title id="title">Victoria general system design</title>
+  <desc id="description">Victoria runs as a horizontally scaled modular monolith on Vercel with durable PostgreSQL and pgvector state on Neon, a bounded turn queue, OpenAI and Gmail integrations, user-scoped memory retrieval, specialist agents, deterministic financial policy, and ordered idempotent turn processing.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#162033" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#526078"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#27845E"/>
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#A76715"/>
+    </marker>
+    <style>
+      .title { font: 700 34px Inter, ui-sans-serif, system-ui, sans-serif; fill: #172033; }
+      .subtitle { font: 400 16px Inter, ui-sans-serif, system-ui, sans-serif; fill: #59657A; }
+      .panelTitle { font: 700 17px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.3px; fill: #2D415F; }
+      .nodeTitle { font: 700 17px Inter, ui-sans-serif, system-ui, sans-serif; fill: #172033; text-anchor: middle; }
+      .nodeCopy { font: 400 13px Inter, ui-sans-serif, system-ui, sans-serif; fill: #59657A; text-anchor: middle; }
+      .smallCopy { font: 500 12px Inter, ui-sans-serif, system-ui, sans-serif; fill: #59657A; text-anchor: middle; }
+      .edge { fill: none; stroke: #526078; stroke-width: 2.5; marker-end: url(#arrow); }
+      .edgeGreen { fill: none; stroke: #27845E; stroke-width: 2.5; marker-end: url(#arrowGreen); }
+      .edgeAmber { fill: none; stroke: #A76715; stroke-width: 2.5; marker-end: url(#arrowAmber); }
+      .edgeDashed { fill: none; stroke: #526078; stroke-width: 2.3; stroke-dasharray: 8 7; marker-end: url(#arrow); }
+      .edgeLabel { font: 600 12px Inter, ui-sans-serif, system-ui, sans-serif; fill: #526078; text-anchor: middle; }
+      .pillText { font: 650 13px Inter, ui-sans-serif, system-ui, sans-serif; fill: #29415F; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1260" fill="#F8FAFD"/>
+  <text x="60" y="58" class="title">Victoria General System Design</text>
+  <text x="60" y="88" class="subtitle">A cost-conscious modular monolith that admits bursts safely, scales horizontally, and builds a different Victoria for every user.</text>
+
+  <rect x="45" y="120" width="1710" height="470" rx="24" fill="#FFFFFF" stroke="#D9E1EC" stroke-width="2"/>
+  <text x="75" y="157" class="panelTitle">DEPLOYMENT AND DURABLE INFRASTRUCTURE</text>
+
+  <g filter="url(#shadow)">
+    <rect x="80" y="235" width="205" height="96" rx="48" fill="#EDF5FF" stroke="#5D9FD7" stroke-width="2.5"/>
+    <text x="182" y="274" class="nodeTitle">Victoria Client</text>
+    <text x="182" y="299" class="nodeCopy">Web or PWA</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="350" y="225" width="235" height="116" rx="18" fill="#EDF5FF" stroke="#5D9FD7" stroke-width="2.5"/>
+    <text x="467" y="268" class="nodeTitle">Vercel Edge and CDN</text>
+    <text x="467" y="294" class="nodeCopy">Routing, connection handling</text>
+    <text x="467" y="315" class="nodeCopy">and horizontal admission</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="665" y="195" width="395" height="176" rx="22" fill="#EAF8F0" stroke="#45A577" stroke-width="3"/>
+    <text x="862" y="240" class="nodeTitle">Victoria Modular Monolith</text>
+    <text x="862" y="269" class="nodeCopy">Stateless, horizontally scaled instances</text>
+    <text x="862" y="300" class="smallCopy">Turn admission • Memory retrieval • Orchestrator</text>
+    <text x="862" y="323" class="smallCopy">Specialist agents • Financial policy • Streaming</text>
+    <text x="862" y="346" class="smallCopy">One codebase and shared contracts</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <path d="M 1445 230 C 1445 203, 1695 203, 1695 230 L 1695 323 C 1695 350, 1445 350, 1445 323 Z" fill="#F5F1FF" stroke="#7A70C8" stroke-width="2.5"/>
+    <ellipse cx="1570" cy="230" rx="125" ry="20" fill="#F5F1FF" stroke="#7A70C8" stroke-width="2.5"/>
+    <text x="1570" y="270" class="nodeTitle">Neon PostgreSQL</text>
+    <text x="1570" y="295" class="nodeCopy">Financial state and turn state</text>
+    <text x="1570" y="317" class="nodeCopy">Structured memory and pgvector</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="705" y="435" width="315" height="102" rx="18" fill="#FFF5DF" stroke="#D49A3D" stroke-width="2.5"/>
+    <text x="862" y="476" class="nodeTitle">Durable Turn Queue</text>
+    <text x="862" y="501" class="nodeCopy">Backpressure and configurable dispatch</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1125" y="167" width="225" height="82" rx="16" fill="#FFF5DF" stroke="#D49A3D" stroke-width="2.2"/>
+    <text x="1237" y="202" class="nodeTitle">OpenAI API</text>
+    <text x="1237" y="225" class="nodeCopy">Models and embeddings</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1125" y="283" width="225" height="82" rx="16" fill="#FFF5DF" stroke="#D49A3D" stroke-width="2.2"/>
+    <text x="1237" y="318" class="nodeTitle">Gmail API</text>
+    <text x="1237" y="341" class="nodeCopy">Incremental receipt sync</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1125" y="399" width="225" height="82" rx="16" fill="#FFF5DF" stroke="#D49A3D" stroke-width="2.2"/>
+    <text x="1237" y="434" class="nodeTitle">Monitoring</text>
+    <text x="1237" y="457" class="nodeCopy">Latency, errors, spend</text>
+  </g>
+
+  <path class="edge" d="M 285 283 L 350 283"/>
+  <text x="317" y="267" class="edgeLabel">HTTPS + SSE</text>
+  <path class="edgeGreen" d="M 585 283 L 665 283"/>
+  <text x="625" y="267" class="edgeLabel">Route</text>
+  <path class="edgeGreen" d="M 1060 283 L 1445 283"/>
+  <text x="1382" y="267" class="edgeLabel">Transactional state</text>
+  <path class="edgeAmber" d="M 810 371 L 810 435"/>
+  <text x="770" y="408" class="edgeLabel">Enqueue</text>
+  <path class="edgeAmber" d="M 920 435 L 920 371"/>
+  <text x="965" y="408" class="edgeLabel">Dispatch</text>
+  <path class="edgeDashed" d="M 1060 232 L 1125 208"/>
+  <path class="edgeDashed" d="M 1060 292 L 1125 324"/>
+  <path class="edgeDashed" d="M 1010 371 L 1125 430"/>
+
+  <rect x="45" y="620" width="1710" height="535" rx="24" fill="#FFFFFF" stroke="#D9E1EC" stroke-width="2"/>
+  <text x="75" y="657" class="panelTitle">ONE ACCEPTED TURN: DURABLE, ORDERED, PERSONALIZED</text>
+
+  <g filter="url(#shadow)">
+    <rect x="75" y="705" width="220" height="105" rx="18" fill="#EDF5FF" stroke="#5D9FD7" stroke-width="2.3"/>
+    <text x="185" y="744" class="nodeTitle">Admit Turn</text>
+    <text x="185" y="770" class="nodeCopy">Authenticate and rate limit</text>
+    <text x="185" y="792" class="nodeCopy">Validate idempotency key</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="345" y="705" width="235" height="105" rx="18" fill="#F5F1FF" stroke="#7A70C8" stroke-width="2.3"/>
+    <text x="462" y="744" class="nodeTitle">Persist Before Ack</text>
+    <text x="462" y="770" class="nodeCopy">Turn and conversation IDs</text>
+    <text x="462" y="792" class="nodeCopy">Exact proposal and action IDs</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="630" y="705" width="220" height="105" rx="18" fill="#FFF5DF" stroke="#D49A3D" stroke-width="2.3"/>
+    <text x="740" y="744" class="nodeTitle">Queue Turn</text>
+    <text x="740" y="770" class="nodeCopy">Expose waiting status</text>
+    <text x="740" y="792" class="nodeCopy">Retry by durable turn ID</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="900" y="705" width="245" height="105" rx="18" fill="#FFF5DF" stroke="#D49A3D" stroke-width="2.3"/>
+    <text x="1022" y="744" class="nodeTitle">Sequence and Limit</text>
+    <text x="1022" y="770" class="nodeCopy">One mutating turn per conversation</text>
+    <text x="1022" y="792" class="nodeCopy">Bound global AI concurrency</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1195" y="685" width="270" height="145" rx="18" fill="#F5F1FF" stroke="#7A70C8" stroke-width="2.5"/>
+    <text x="1330" y="722" class="nodeTitle">Memory Retrieval Coordinator</text>
+    <text x="1330" y="750" class="smallCopy">Conversation state • User profile</text>
+    <text x="1330" y="773" class="smallCopy">Exact financial history • Habits and goals</text>
+    <text x="1330" y="796" class="smallCopy">Semantic episodic memories</text>
+    <text x="1330" y="817" class="nodeCopy">Strict user scope</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1510" y="705" width="205" height="105" rx="18" fill="#F5F1FF" stroke="#7A70C8" stroke-width="2.3"/>
+    <text x="1612" y="744" class="nodeTitle">Bounded Context</text>
+    <text x="1612" y="770" class="nodeCopy">Relevant evidence only</text>
+    <text x="1612" y="792" class="nodeCopy">Fixed token budget</text>
+  </g>
+
+  <path class="edge" d="M 295 757 L 345 757"/>
+  <path class="edge" d="M 580 757 L 630 757"/>
+  <path class="edgeAmber" d="M 850 757 L 900 757"/>
+  <path class="edgeAmber" d="M 1145 757 L 1195 757"/>
+  <path class="edge" d="M 1465 757 L 1510 757"/>
+
+  <g filter="url(#shadow)">
+    <rect x="1340" y="910" width="375" height="158" rx="22" fill="#EAF8F0" stroke="#45A577" stroke-width="3"/>
+    <text x="1527" y="948" class="nodeTitle">Victoria Orchestrator</text>
+    <text x="1527" y="976" class="smallCopy">Financial Moment • Savings Reasoning</text>
+    <text x="1527" y="999" class="smallCopy">Memory Curator • Companion Voice</text>
+    <text x="1527" y="1025" class="nodeCopy">Invoke only the specialists needed</text>
+    <text x="1527" y="1047" class="nodeCopy">Return one proposed decision</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1020" y="925" width="260" height="128" rx="18" fill="#FFF5DF" stroke="#D49A3D" stroke-width="2.5"/>
+    <text x="1150" y="966" class="nodeTitle">Deterministic Authority</text>
+    <text x="1150" y="992" class="nodeCopy">Validate schema and policy</text>
+    <text x="1150" y="1015" class="nodeCopy">Bind exact approval</text>
+    <text x="1150" y="1038" class="nodeCopy">Authorize tools</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="700" y="925" width="260" height="128" rx="18" fill="#FFF5DF" stroke="#D49A3D" stroke-width="2.5"/>
+    <text x="830" y="966" class="nodeTitle">Commit Verified Result</text>
+    <text x="830" y="992" class="nodeCopy">Append immutable records</text>
+    <text x="830" y="1015" class="nodeCopy">Persist curated memory</text>
+    <text x="830" y="1038" class="nodeCopy">Enforce idempotency</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="390" y="925" width="250" height="128" rx="18" fill="#EDF5FF" stroke="#5D9FD7" stroke-width="2.5"/>
+    <text x="515" y="966" class="nodeTitle">Publish Turn Status</text>
+    <text x="515" y="992" class="nodeCopy">Queued → running → complete</text>
+    <text x="515" y="1015" class="nodeCopy">Stream verified response</text>
+    <text x="515" y="1038" class="nodeCopy">State failure honestly</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="75" y="940" width="255" height="98" rx="49" fill="#EDF5FF" stroke="#5D9FD7" stroke-width="2.5"/>
+    <text x="202" y="980" class="nodeTitle">User Receives Victoria</text>
+    <text x="202" y="1006" class="nodeCopy">Personalized, ordered, verified</text>
+  </g>
+
+  <path class="edgeGreen" d="M 1612 810 L 1612 910"/>
+  <path class="edgeGreen" d="M 1340 989 L 1280 989"/>
+  <path class="edgeAmber" d="M 1020 989 L 960 989"/>
+  <path class="edgeAmber" d="M 700 989 L 640 989"/>
+  <path class="edge" d="M 390 989 L 330 989"/>
+
+  <rect x="75" y="1185" width="285" height="42" rx="21" fill="#EDF5FF" stroke="#8FBAE2"/>
+  <text x="217" y="1211" class="pillText">2,000 connected sessions</text>
+  <rect x="390" y="1185" width="285" height="42" rx="21" fill="#FFF5DF" stroke="#E0B66E"/>
+  <text x="532" y="1211" class="pillText">2,000-turn burst admitted</text>
+  <rect x="705" y="1185" width="315" height="42" rx="21" fill="#FFF5DF" stroke="#E0B66E"/>
+  <text x="862" y="1211" class="pillText">Configurable AI concurrency</text>
+  <rect x="1050" y="1185" width="315" height="42" rx="21" fill="#F5F1FF" stroke="#A89FDB"/>
+  <text x="1207" y="1211" class="pillText">Per-conversation ordering</text>
+  <rect x="1395" y="1185" width="320" height="42" rx="21" fill="#EAF8F0" stroke="#7CC39D"/>
+  <text x="1555" y="1211" class="pillText">Exact proposal identity retained</text>
+</svg>

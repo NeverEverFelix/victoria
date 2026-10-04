@@ -44,6 +44,25 @@ describe("Victoria MVP safety contract", () => {
     ).toBe(2746);
   });
 
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "[AMT-001] rejects invalid persisted cents: %s",
+    async (amountCents) => {
+      const tools = new MockVictoriaTools();
+      await expect(tools.createSavingsEntry({
+        userId: "user_123",
+        eventId: "event_123",
+        proposalId: "proposal_123",
+        approvalId: "approval_123",
+        suggestionId: "suggestion_123",
+        amountCents,
+        reason: "User-provided avoided spend.",
+        movementMode: "mock_ledger",
+        approvedActionId: "action_123"
+      })).rejects.toThrow("Savings amount must be a positive safe integer number of cents.");
+      expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+    }
+  );
+
   it.each([
     {
       name: "unclear savings statement",

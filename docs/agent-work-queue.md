@@ -258,6 +258,8 @@ Expected behavior:
 - Sums confirmed mocked ledger entries for the current week.
 - Excludes pending, declined, canceled, or previous-week entries.
 - Formats the total clearly.
+- Routes a weekly progress question through a read-only agent tool call.
+- Uses Monday 00:00 UTC as the current week's start until user-local timezone support exists.
 - Does not imply real money moved.
 
 Likely test area:
@@ -272,8 +274,8 @@ Likely code area:
 
 Done when:
 
-- Domain tests cover weekly total calculation.
-- Agent or tool tests cover summary behavior if implemented.
+- Domain tests cover weekly total calculation and exclude pending, canceled, and previous-week entries.
+- Agent tests cover the read-only tool call, user-scoped total, empty-week response, and mocked-ledger wording.
 - `npm run check` passes.
 
 ## Slice 8: Goal Allocation
@@ -287,9 +289,11 @@ Victoria should attach a savings goal to a pending or confirmed mocked savings e
 Expected behavior:
 
 - Recognizes a goal-allocation request.
-- Uses pending or recent savings context when available.
+- Uses a pending savings suggestion or a just-confirmed entry in the same conversation when available.
 - Asks a follow-up question when context is unclear.
 - Does not move real money.
+- Records an approved goal allocation as a new immutable record linked to a completed entry.
+- Leaves the original savings entry unchanged.
 
 Likely test area:
 
@@ -304,10 +308,13 @@ Likely code area:
 
 Done when:
 
-- A test covers goal allocation with clear context.
+- Tests cover goal allocation on pending suggestions and confirmed entries, with approval bound to the updated destination.
+- Adding a goal to a pending suggestion creates a linked replacement proposal with a fresh approval action.
 - A test covers unclear context.
-- Mocked ledger status remains explicit.
+- The confirmed entry remains unchanged and the allocation record is linked to it.
 - `npm run check` passes.
+
+Recent-entry context is limited to a confirmed entry in the same conversation. When that context is unavailable, Victoria asks which amount the user means.
 
 ## Slice 9: No Real Money Movement Boundary
 
@@ -329,6 +336,7 @@ Expected behavior:
 - Does not call `eventuallyMoveMoney`.
 - Offers mocked ledger recording if appropriate.
 - Preserves a clear boundary between mocked and real movement.
+- Recognizes natural-language transfer requests and does not treat them as approval for a pending mocked entry.
 
 Likely test area:
 
@@ -344,11 +352,73 @@ Likely code area:
 
 Done when:
 
+- Agent tests cover a direct transfer request with and without a pending savings suggestion.
+- Neither path creates an entry or requests a real transfer tool.
 - Tests prove real transfer tools are blocked in MVP conditions.
 - Victoria's message is clear and honest.
 - `npm run check` passes.
 
+## Slice 11: Show Weekly Progress After Saving
+
+Source story: `docs/user-stories.md` Story 6
+
+Goal:
+
+After a confirmed entry is recorded, Victoria should show how it changes the user's current-week mocked-ledger total.
+
+Expected behavior:
+
+- Read the completed current-week total after a successful ledger write.
+- Clearly describe the amount as recorded in the mocked Victoria ledger.
+- If the read-only summary fails, still confirm the successful write and say the total is unavailable.
+- A summary failure must not make the user retry the already completed savings action.
+
+Done when:
+
+- Tests cover a successful progress summary and a failed summary lookup after successful recording.
+- `npm run check` passes.
+
+## Slice 12: Validate Cents At The Ledger Boundary
+
+Source rule: `docs/specification/mvp-safety-contract.md` rule AMT-001
+
+Goal:
+
+The mocked ledger should reject invalid monetary values even if they bypass conversational amount parsing.
+
+Expected behavior:
+
+- Accept only positive safe integer amounts expressed in USD cents.
+- Reject zero, negative, fractional, non-finite, and unsafe integer values before creating an entry.
+- Leave the ledger unchanged after rejection.
+
+Done when:
+
+- Contract tests cover invalid amount shapes at the tool boundary.
+- `npm run check` passes.
+
 ## Backlog Notes
+
+## Slice 10: Honest Recovery From Ledger Write Failure
+
+Source rules: `docs/specification/mvp-safety-contract.md` rules IDM-001, IDM-003, ERR-003, and ERR-004
+
+Goal:
+
+Victoria should keep a confirmed mocked-ledger action safe and retryable when writing fails or the outcome is uncertain.
+
+Expected behavior:
+
+- Never say an entry was recorded when the tool reports an error.
+- Tell the user the result could not be confirmed and offer one safe retry step.
+- Keep the same approved action pending for retry.
+- Make retrying the same user/action identifier idempotent in the mock ledger.
+
+Done when:
+
+- Tests cover failure before persistence and an uncertain outcome after persistence.
+- Retrying after either outcome produces at most one mocked ledger entry.
+- `npm run check` passes.
 
 These are useful later, but should wait until the core loop works:
 
