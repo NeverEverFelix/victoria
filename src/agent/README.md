@@ -25,3 +25,5 @@ The agent should be proactive with reasoning, memory, suggestions, and reminders
 - `prompts/`: system instructions for Victoria's tone and behavior.
 
 The first implementation should use mock tools and deterministic tests. OpenAI, Prisma, Plaid, and real transfer APIs should be plugged in behind these interfaces later.
+
+`team-prototype.ts` contains an advisory-only headless specialist orchestration experiment. It sequences specialists and records call/latency instrumentation; `team-assessment-policy.ts` validates financial evidence, and `team-response-policy.ts` validates and finalizes user-facing wording. It is not the live conversation path and does not replace `VictoriaAgent`'s approval policy, proposal lifecycle, or tool boundary.

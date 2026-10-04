@@ -119,6 +119,16 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 
 ## Agentic Coding Setup
 
+- The headless agent-team prototype routes a turn through typed Financial Moment, Savings Reasoning, and Companion Voice handoffs in order.
+- Orchestration is separated from deterministic handoff validation and final response wording policy.
+- Invalid moment output, specialist exceptions, or conflicting savings amounts resolve to a safe clarification/reflection and never to a financial mutation.
+- Suggested user-provided amounts must match the validated finding; habit estimates must match the user's own USD habit record.
+- The deterministic response policy restores mandatory confirmation, mocked-ledger, and no-transfer disclosures when voice output omits them or falsely claims an action completed.
+- Habit-based savings wording remains explicitly estimated after companion voice drafting.
+- The curated specialist readiness corpus preserves expected baseline and advisory-team outcomes for explicit amounts, known estimates, missing amounts, vague savings, regretful spend, transfer requests, and multiple amounts.
+- The readiness harness calculates nearest-rank p50/p95 summaries across multiple turns and rejects invalid latency observations; mock timings are not treated as provider SLA evidence.
+- The prototype records per-specialist and total elapsed time, the evaluation harness summarizes multi-turn p50/p95, and the orchestrator never invokes more than three specialists in a turn.
+
 - `npm run agent:validate` fails when required agent instructions, task briefs, workflows, PR templates, or CODEOWNERS files are missing.
 - `npm run agent:validate` fails when MVP-facing docs drift back toward real money movement language.
 - The AI review script skips cleanly when optional and `OPENAI_API_KEY` is missing.

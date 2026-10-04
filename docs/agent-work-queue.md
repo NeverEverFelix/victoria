@@ -522,6 +522,14 @@ These are useful later, but should wait until the core loop works:
 - Notification reminders.
 - Production deployment.
 
+## Multi-Agent Prototype Status
+
+The non-UI, in-memory behavior queue is implemented; the only pending contract TODO is durable-adapter uniqueness (`IDM-004`), which requires persistence. A mock-backed specialist orchestration prototype now exists in `src/agent/team-prototype.ts`. It is deliberately advisory and is not wired into the live `VictoriaAgent`. It enforces confirmation, estimate, mocked-ledger, and no-transfer wording, resolves conflicting financial advice to clarification, falls back safely on specialist failure, and measures local latency with a three-call cap. These checks do not validate model quality or provider cost. Before runtime migration, evaluate with a real adapter behind the existing interfaces, gather token/cost data, and complete server-boundary work. This prototype does not authorize skipping that work.
+
+See [`multi-agent-readiness.md`](architecture/multi-agent-readiness.md) for staged prerequisites and acceptance evidence. The deterministic cases under `tests/evaluation/` are scripted smoke checks, not a benchmark of real specialist models.
+
+Use [`multi-agent-evaluation-protocol.md`](architecture/multi-agent-evaluation-protocol.md) to plan provider-backed comparison; its proposed thresholds have not been accepted.
+
 ## Final Phase: Victoria UI
 
 Do not begin this phase until every non-UI MVP slice above is complete and `npm run check` passes.

@@ -113,3 +113,15 @@ Highly testable, but too rigid for the varied language, emotional context, and e
 ## Acceptance Condition
 
 Change this record from `Proposed` to `Accepted` only after the product owner confirms the responsibility boundaries and the initial specialist set. Any later material change should be recorded in a new ADR that supersedes this one.
+
+## Prototype Status (2026-10-04)
+
+The product owner requested a headless prototype using Financial Moment, Savings Reasoning, and Companion Voice specialists. This confirms the initial role roster for the prototype. It does not yet accept this ADR as the production runtime architecture: the current `VictoriaAgent` remains authoritative, and model selection, call/latency budget, durable tracing, and production runtime migration remain unresolved.
+
+The prototype in `src/agent/team-prototype.ts` tests sequential, typed, advisory handoffs with injected mock specialists. The orchestrator routes and measures calls; deterministic handoff validation is in `team-assessment-policy.ts`, and final disclosure/claim checks are in `team-response-policy.ts`. It cannot call tools, approve proposals, or write ledger records. Inconsistent financial advice downgrades to clarification; specialist failures use safe fallbacks; timings are reported with a three-call cap.
+
+The prototype records raw local elapsed times only. Percentiles are calculated across evaluation runs; provider tokens and dollar cost are not measured because no provider adapter is connected. The proposed latency targets live in `multi-agent-evaluation-protocol.md` and have not been measured or accepted. The prototype is an architecture seam and evaluation target, not the live conversation path.
+
+Production readiness gates are tracked in [`multi-agent-readiness.md`](../multi-agent-readiness.md). The scripted evaluation corpus is a contract-parity smoke test only; provider quality and cost remain unmeasured.
+
+Proposed provider-evaluation criteria are in [`multi-agent-evaluation-protocol.md`](../multi-agent-evaluation-protocol.md). Its numeric latency and cost thresholds remain proposals pending review and measurement.

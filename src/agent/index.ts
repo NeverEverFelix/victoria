@@ -1,6 +1,7 @@
 export * from "./types.js";
 export * from "./policy.js";
 export * from "./validation.js";
+export * from "./team-prototype.js";
 export * from "./victoria-agent.js";
 export * from "./llm/types.js";
 export * from "./llm/mock-llm.js";
