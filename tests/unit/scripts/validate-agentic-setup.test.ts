@@ -62,6 +62,37 @@ describe("agentic setup validation", () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("pull_request:");
   });
+
+  it("fails when AI review checks out the PR head instead of its trusted base", () => {
+    const fixture = createRepositoryFixture();
+    const workflowPath = join(fixture, ".github/workflows/ai-code-review.yml");
+    const workflow = readFileSync(workflowPath, "utf8");
+    writeFileSync(
+      workflowPath,
+      workflow.replace(
+        "ref: ${{ github.event.pull_request.base.sha }}",
+        "ref: ${{ github.event.pull_request.head.sha }}"
+      ),
+      "utf8"
+    );
+
+    const result = runValidator(fixture);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("unsafe or out-of-scope text");
+  });
+
+  it("fails when trusted review documents are no longer read from a commit", () => {
+    const fixture = createRepositoryFixture();
+    const scriptPath = join(fixture, "scripts/ai-code-review.mjs");
+    const script = readFileSync(scriptPath, "utf8");
+    writeFileSync(scriptPath, script.replace('runGit(["show",', 'readFileSync('), "utf8");
+
+    const result = runValidator(fixture);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('runGit(["show"');
+  });
 });
 
 function createRepositoryFixture(): string {

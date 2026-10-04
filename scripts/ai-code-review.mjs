@@ -1,6 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, appendFileSync } from "node:fs";
-import { buildReviewInput, prepareDiffForReview } from "./ai-code-review-core.mjs";
+import {
+  buildCompleteReviewComment,
+  buildReviewInput,
+  chunkDiffForReview
+} from "./ai-code-review-core.mjs";
 
 const {
   BASE_SHA,
@@ -17,18 +21,12 @@ const {
 } = process.env;
 
 const maxDiffChars = Number(process.env.AI_REVIEW_MAX_DIFF_CHARS ?? 60000);
+const maxChunks = Number(process.env.AI_REVIEW_MAX_CHUNKS ?? 12);
+const maxCommentChars = Number(process.env.AI_REVIEW_MAX_COMMENT_CHARS ?? 60000);
+const maxTrustedFileChars = 12000;
 
 function log(message) {
   console.log(`[ai-code-review] ${message}`);
-}
-
-function readOptional(path, maxChars = 12000) {
-  if (!existsSync(path)) {
-    return "";
-  }
-
-  const text = readFileSync(path, "utf8");
-  return text.length > maxChars ? `${text.slice(0, maxChars)}\n\n[truncated]` : text;
 }
 
 function runGit(args) {
@@ -36,6 +34,43 @@ function runGit(args) {
     encoding: "utf8",
     maxBuffer: 20 * 1024 * 1024
   });
+}
+
+function readTrustedFileAtRef(ref, path, maxChars = maxTrustedFileChars) {
+  if (!/^[a-f0-9]{40}$/i.test(ref)) {
+    throw new Error(`Trusted review ref must be a full commit SHA; received an invalid ref.`);
+  }
+
+  let text;
+  try {
+    text = runGit(["show", `${ref}:${path}`]);
+  } catch {
+    throw new Error(`Required trusted review context is missing at base commit: ${path}`);
+  }
+
+  return text.length > maxChars ? `${text.slice(0, maxChars)}\n\n[truncated at ${maxChars} characters]` : text;
+}
+
+function getTrustedRef(event) {
+  const ref = GITHUB_EVENT_NAME === "pull_request_target"
+    ? event.pull_request?.base?.sha ?? BASE_SHA
+    : HEAD_SHA;
+  if (!ref || !/^[a-f0-9]{40}$/i.test(ref)) {
+    throw new Error("A full trusted base commit SHA is required to load AI review context.");
+  }
+  return ref;
+}
+
+function loadTrustedContext(ref) {
+  return {
+    agentInstructions: readTrustedFileAtRef(ref, "AGENTS.md"),
+    codingPatterns: readTrustedFileAtRef(ref, "docs/agentic-coding-patterns.md"),
+    decisions: readTrustedFileAtRef(ref, "docs/decisions.md"),
+    mvp: readTrustedFileAtRef(ref, "docs/mvp.md"),
+    userStories: readTrustedFileAtRef(ref, "docs/user-stories.md"),
+    safetyContract: readTrustedFileAtRef(ref, "docs/specification/mvp-safety-contract.md", 24000),
+    testPlan: readTrustedFileAtRef(ref, "tests/test-plan.md")
+  };
 }
 
 function getEvent() {
@@ -114,6 +149,7 @@ async function createReview(input) {
       text: {
         verbosity: "medium"
       },
+      max_output_tokens: 700,
       store: false
     })
   });
@@ -124,6 +160,9 @@ async function createReview(input) {
   }
 
   const data = await response.json();
+  if (data.status === "incomplete") {
+    throw new Error(`OpenAI review response was incomplete: ${data.incomplete_details?.reason ?? "unknown reason"}. No partial review will be posted.`);
+  }
   const outputText = data.output_text;
 
   if (typeof outputText === "string" && outputText.trim()) {
@@ -141,7 +180,7 @@ async function createReview(input) {
     return fallback;
   }
 
-  return "AI review completed, but no review text was returned.";
+  throw new Error("OpenAI review response contained no review text. No partial review will be posted.");
 }
 
 async function postPullRequestComment(event, body) {
@@ -201,22 +240,39 @@ async function main() {
     return;
   }
 
-  const preparedDiff = prepareDiffForReview(rawDiff, maxDiffChars);
-  const input = buildReviewInput({
-    diff: preparedDiff.text,
-    agentInstructions: readOptional("AGENTS.md"),
-    codingPatterns: readOptional("docs/agentic-coding-patterns.md"),
-    decisions: readOptional("docs/decisions.md"),
-    mvp: readOptional("docs/mvp.md"),
-    userStories: readOptional("docs/user-stories.md"),
-    safetyContract: readOptional("docs/specification/mvp-safety-contract.md", 36000),
-    testPlan: readOptional("tests/test-plan.md")
-  });
-  const review = await createReview(input);
-  const completenessWarning = preparedDiff.truncated
-    ? `> **Incomplete automated review:** the diff was ${preparedDiff.originalChars} characters and exceeded the ${maxDiffChars}-character limit. Safety-sensitive files were prioritized, but a human must review the complete diff.\n\n`
-    : "";
-  const body = `## AI Code Review\n\n${completenessWarning}${review}`;
+  if (!Number.isInteger(maxChunks) || maxChunks < 1) {
+    throw new Error("AI_REVIEW_MAX_CHUNKS must be a positive integer.");
+  }
+  if (!Number.isInteger(maxCommentChars) || maxCommentChars < 1) {
+    throw new Error("AI_REVIEW_MAX_COMMENT_CHARS must be a positive integer.");
+  }
+
+  const partition = chunkDiffForReview(rawDiff, maxDiffChars);
+  if (partition.chunks.length > maxChunks) {
+    throw new Error(
+      `AI review stopped without posting a partial result: ${partition.chunks.length} chunks are required, but AI_REVIEW_MAX_CHUNKS is ${maxChunks}. Split the PR or raise the configured cap.`
+    );
+  }
+
+  const trustedRef = getTrustedRef(event);
+  const trustedContext = loadTrustedContext(trustedRef);
+  const reviews = [];
+  for (let index = 0; index < partition.chunks.length; index += 1) {
+    const chunk = partition.chunks[index];
+    const scope = [
+      `Review pass ${index + 1} of ${partition.chunks.length}.`,
+      `This pass covers ${chunk.paths.length} changed path(s): ${chunk.paths.join(", ")}.`,
+      "The entire PR diff is partitioned across all passes. Review only the supplied segment, and do not infer that files outside this pass are unchanged or absent."
+    ].join(" ");
+    const input = buildReviewInput({
+      diff: chunk.text,
+      reviewScope: scope,
+      ...trustedContext
+    });
+    reviews.push(await createReview(input));
+  }
+
+  const body = buildCompleteReviewComment(partition, reviews, trustedRef, maxCommentChars);
 
   if (GITHUB_EVENT_NAME === "pull_request_target") {
     const posted = await postPullRequestComment(event, body);
@@ -226,16 +282,10 @@ async function main() {
       log("Could not post PR comment; writing summary instead.");
       writeSummary(body);
     }
-    if (preparedDiff.truncated && AI_REVIEW_REQUIRED === "true") {
-      throw new Error("Required AI review was incomplete because the diff exceeded the review limit.");
-    }
     return;
   }
 
   writeSummary(body);
-  if (preparedDiff.truncated && AI_REVIEW_REQUIRED === "true") {
-    throw new Error("Required AI review was incomplete because the diff exceeded the review limit.");
-  }
 }
 
 main().catch((error) => {

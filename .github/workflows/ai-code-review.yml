@@ -16,7 +16,7 @@ jobs:
     if: github.event_name == 'pull_request_target'
     name: Review PR
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
       contents: read
       issues: write
@@ -26,7 +26,8 @@ jobs:
       - name: Checkout trusted review code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Set up Node.js
@@ -40,6 +41,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          AI_REVIEW_MAX_CHUNKS: ${{ vars.AI_REVIEW_MAX_CHUNKS || '12' }}
+          AI_REVIEW_MAX_COMMENT_CHARS: ${{ vars.AI_REVIEW_MAX_COMMENT_CHARS || '60000' }}
           AI_REVIEW_REQUIRED: ${{ vars.AI_REVIEW_REQUIRED || 'false' }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_CODE_REVIEW_MODEL: ${{ vars.OPENAI_CODE_REVIEW_MODEL || 'gpt-5' }}
