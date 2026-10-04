@@ -52,6 +52,8 @@ interface SavingsProposalBase {
   eventId: string;
   userId: string;
   suggestion: SavingsProposalSuggestion;
+  goalName?: string;
+  supersedesProposalId?: string;
   createdAt: string;
 }
 
@@ -90,6 +92,7 @@ export interface SavingsEntry {
   amountCents: number;
   currency: "USD";
   reason: string;
+  goalName?: string;
   movementMode: MoneyMovementMode;
   status: SavingsEntryStatus;
   createdAt: string;
@@ -99,3 +102,29 @@ export interface SavingsEntryLike {
   amountCents: number;
   status: SavingsEntryStatus;
 }
+
+export interface SavingsGoalAllocationApproval {
+  readonly id: string;
+  readonly actionId: string;
+  readonly approvedAt: string;
+  readonly source: "user_message";
+}
+
+interface SavingsGoalAllocationBase {
+  readonly id: string;
+  readonly userId: string;
+  readonly savingsEntryId: string;
+  readonly amountCents: number;
+  readonly goalName: string;
+  readonly createdAt: string;
+}
+
+export type PendingSavingsGoalAllocation = Readonly<SavingsGoalAllocationBase & {
+  status: "pending";
+}>;
+
+export type SavingsGoalAllocation = Readonly<SavingsGoalAllocationBase & {
+  status: "recorded";
+  approvedActionId: string;
+  approval: SavingsGoalAllocationApproval;
+}>;

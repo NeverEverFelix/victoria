@@ -45,6 +45,29 @@ describe("agent policy", () => {
     expect(decision.reason).toBe("Savings ledger entries require approval for this exact action.");
   });
 
+  it("blocks savings goal allocations without approval for the exact action", () => {
+    const decision = canCallTool(baseRequest(), {
+      name: "createSavingsGoalAllocation",
+      actionId: "goal_action_123",
+      arguments: {},
+      requiresApproval: false
+    });
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe("Savings goal allocations require approval for this exact action.");
+  });
+
+  it("allows a savings goal allocation only when approval matches its action", () => {
+    const decision = canCallTool(baseRequest({ approvedActionId: "goal_action_123" }), {
+      name: "createSavingsGoalAllocation",
+      actionId: "goal_action_123",
+      arguments: {},
+      requiresApproval: true
+    });
+
+    expect(decision.allowed).toBe(true);
+  });
+
   it("blocks approval for a different savings action", () => {
     const decision = canCallTool(
       baseRequest({ approvedActionId: "action_other" }),

@@ -16,17 +16,8 @@ describe("Victoria MVP safety contract scenarios not yet fully executable", () =
   );
   it.todo("[INT-004] makes a real-transfer MVP proposal impossible at the runtime boundary");
 
-  it.todo("[APR-005] requires a new proposal and approval when an approved payload changes");
-
   it.todo("[STA-001] rejects every proposal state transition absent from the transition table");
   it.todo("[STA-003] preserves terminal proposals instead of reopening them");
-
-  it.todo("[AMT-001] accepts only positive safe integers as persisted USD cents");
-  it.todo(
-    "[AMT-002] clarifies zero, negative, over-precision, unsupported-currency, and multi-amount inputs"
-  );
-  it.todo("[AMT-004] refuses to silently round over-precision user input");
-  it.todo("[AMT-005] refuses implicit currency conversion");
 
   it.todo("[IDM-002] returns the committed result when a client retries after a lost response");
   it.todo("[IDM-003] never reports a failed ledger write as recorded");

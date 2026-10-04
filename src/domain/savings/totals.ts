@@ -1,8 +1,30 @@
 import type { SavingsEntryLike } from "./types.js";
 
+type DatedSavingsEntryLike = SavingsEntryLike & { createdAt: string };
+
 export function sumCompletedSavings(entries: SavingsEntryLike[]): number {
   return entries.reduce((totalCents, entry) => {
     if (entry.status !== "completed") {
+      return totalCents;
+    }
+
+    return totalCents + entry.amountCents;
+  }, 0);
+}
+
+export function sumCompletedSavingsForWeek(
+  entries: DatedSavingsEntryLike[],
+  asOf: Date = new Date()
+): number {
+  const weekStart = new Date(asOf);
+  weekStart.setUTCHours(0, 0, 0, 0);
+  weekStart.setUTCDate(weekStart.getUTCDate() - ((weekStart.getUTCDay() + 6) % 7));
+  const nextWeekStart = new Date(weekStart);
+  nextWeekStart.setUTCDate(nextWeekStart.getUTCDate() + 7);
+
+  return entries.reduce((totalCents, entry) => {
+    const createdAt = new Date(entry.createdAt);
+    if (entry.status !== "completed" || createdAt < weekStart || createdAt >= nextWeekStart) {
       return totalCents;
     }
 

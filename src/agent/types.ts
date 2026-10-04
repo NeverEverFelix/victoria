@@ -4,6 +4,8 @@ import type {
 } from "../domain/financial-events/types.js";
 import type {
   MoneyMovementMode,
+  PendingSavingsGoalAllocation,
+  SavingsGoalAllocation,
   SavingsGoal,
   SavingsEvent,
   SavingsProposal,
@@ -16,6 +18,8 @@ export type {
 } from "../domain/financial-events/types.js";
 export type {
   MoneyMovementMode,
+  PendingSavingsGoalAllocation,
+  SavingsGoalAllocation,
   SavingsGoal,
   SavingsEvent,
   SavingsProposal,
@@ -27,6 +31,8 @@ export type AgentActionType =
   | "suggest_savings"
   | "create_ledger_entry"
   | "update_goal"
+  | "record_goal_allocation"
+  | "summarize_progress"
   | "reflect"
   | "refuse";
 
@@ -57,6 +63,8 @@ export interface ClassifiedMessage {
   merchantName?: string;
   amountCents?: number;
   goalName?: string;
+  revisionReason?: string;
+  amountIssue?: "invalid_value" | "multiple_amounts" | "invalid_precision" | "unsupported_currency";
   summary: string;
   needsClarification: boolean;
 }
@@ -66,6 +74,7 @@ export interface AgentDecision {
   classification: ClassifiedMessage;
   savingsEvent?: SavingsEvent;
   proposal?: SavingsProposal;
+  goalAllocation?: PendingSavingsGoalAllocation | SavingsGoalAllocation;
   suggestion?: SavingsSuggestion;
   toolCall?: ToolCallRequest;
   userFacingMessage: string;
@@ -91,4 +100,6 @@ export type VictoriaToolName =
   | "createSavingsEntry"
   | "updateSavingsGoal"
   | "scheduleReminder"
+  | "getWeeklySavingsTotal"
+  | "createSavingsGoalAllocation"
   | "eventuallyMoveMoney";

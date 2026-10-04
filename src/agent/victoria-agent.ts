@@ -4,6 +4,10 @@ import { canCallTool, interpretApprovalResponse } from "./policy.js";
 import type { VictoriaTools } from "./tools/contracts.js";
 import { formatUsd } from "../domain/money.js";
 import type {
+  PendingSavingsGoalAllocation,
+  SavingsEntry
+} from "../domain/savings/types.js";
+import type {
   AgentDecision,
   AgentRequest,
   AgentResponse,
@@ -22,9 +26,15 @@ export interface VictoriaAgentDependencies {
 export class VictoriaAgent {
   private readonly pendingSavingsActions = new Map<
     string,
-    { userId: string; conversationKey: string; decision: AgentDecision }
+    { userId: string; conversationKey: string; decision: AgentDecision; awaitingValidRevision?: boolean }
   >();
   private readonly pendingActionIdsByConversation = new Map<string, string>();
+  private readonly pendingGoalAllocationActions = new Map<
+    string,
+    { userId: string; conversationKey: string; decision: AgentDecision }
+  >();
+  private readonly pendingGoalAllocationIdsByConversation = new Map<string, string>();
+  private readonly recentSavingsEntriesByConversation = new Map<string, SavingsEntry>();
   private readonly pendingAmountClarifications = new Map<
     string,
     { userId: string; classification: ClassifiedMessage; savingsEvent: SavingsEvent }
@@ -33,17 +43,74 @@ export class VictoriaAgent {
   private nextEventNumber = 1;
   private nextProposalNumber = 1;
   private nextApprovalNumber = 1;
+  private nextGoalAllocationNumber = 1;
+  private nextGoalApprovalNumber = 1;
 
   constructor(private readonly dependencies: VictoriaAgentDependencies) {}
 
   async respond(request: AgentRequest): Promise<AgentResponse> {
-    const pendingActionId = this.pendingActionIdsByConversation.get(this.conversationKey(request));
+    const conversationKey = this.conversationKey(request);
+    const pendingGoalActionId = this.pendingGoalAllocationIdsByConversation.get(conversationKey);
+    const pendingGoalAction = pendingGoalActionId
+      ? this.pendingGoalAllocationActions.get(pendingGoalActionId)
+      : undefined;
+
+    if (pendingGoalAction && pendingGoalActionId) {
+      const approvalResponse = interpretApprovalResponse(request.message);
+      if (approvalResponse === "explicit_approval") {
+        return this.approveGoalAllocation(
+          { ...request, approvedActionId: pendingGoalActionId },
+          pendingGoalAction.decision
+        );
+      }
+      if (approvalResponse === "explicit_decline") {
+        const message = "No problem. The savings entry will stay as recorded without a goal allocation.";
+        this.pendingGoalAllocationActions.delete(pendingGoalActionId);
+        this.pendingGoalAllocationIdsByConversation.delete(conversationKey);
+        return {
+          message,
+          decision: {
+            action: "reflect",
+            classification: pendingGoalAction.decision.classification,
+            userFacingMessage: message
+          }
+        };
+      }
+      if (approvalResponse === "ambiguous") {
+        const message = "Please give me a clear yes or no before I link this entry to the goal.";
+        return {
+          message,
+          decision: {
+            action: "ask_follow_up",
+            classification: pendingGoalAction.decision.classification,
+            userFacingMessage: message
+          }
+        };
+      }
+    }
+
+    const pendingActionId = this.pendingActionIdsByConversation.get(conversationKey);
     const pendingAction = pendingActionId
       ? this.pendingSavingsActions.get(pendingActionId)
       : undefined;
 
     if (pendingAction && pendingActionId) {
       const approvalResponse = interpretApprovalResponse(request.message);
+
+      if (
+        pendingAction.awaitingValidRevision &&
+        (approvalResponse === "explicit_approval" || approvalResponse === "ambiguous")
+      ) {
+        const message = "I need a valid USD amount for that correction before asking you to confirm. Please provide one unambiguous amount or decline the pending suggestion.";
+        return {
+          message,
+          decision: {
+            ...pendingAction.decision,
+            action: "ask_follow_up",
+            userFacingMessage: message
+          }
+        };
+      }
 
       if (approvalResponse === "explicit_approval") {
         return this.approveToolCall(
@@ -101,6 +168,155 @@ export class VictoriaAgent {
       memory
     });
 
+    if (classification.type === "real_money_movement_request") {
+      const pendingAmountCents = pendingAction?.decision.suggestion?.amountCents;
+      const pendingGoalAllocation = pendingGoalAction?.decision.goalAllocation;
+      const pendingAmount = pendingGoalAllocation?.status === "pending"
+        ? pendingGoalAllocation.amountCents
+        : pendingAmountCents;
+      const message = pendingGoalAllocation?.status === "pending"
+        ? `I can't move real money in the Victoria MVP. I can record the ${formatUsd(pendingGoalAllocation.amountCents)} goal allocation toward ${pendingGoalAllocation.goalName} in the mocked Victoria savings ledger after you explicitly confirm. No transfer has been made.`
+        : pendingAmount === undefined
+        ? "I can't move real money in the Victoria MVP. I can only record savings in the mocked Victoria savings ledger after we identify an amount and you explicitly confirm. No transfer has been made."
+        : `I can't move real money in the Victoria MVP. I can record ${formatUsd(pendingAmount)} in the mocked Victoria savings ledger after you confirm. No transfer has been made.`;
+
+      return {
+        message,
+        decision: {
+          action: "refuse",
+          classification,
+          userFacingMessage: message
+        }
+      };
+    }
+
+    if (pendingGoalAction) {
+      const message = "Please confirm or decline linking this savings entry to the goal.";
+      return {
+        message,
+        decision: {
+          action: "ask_follow_up",
+          classification: pendingGoalAction.decision.classification,
+          userFacingMessage: message
+        }
+      };
+    }
+
+    if (
+      pendingActionId &&
+      pendingAction &&
+      pendingAction.userId === request.userId &&
+      classification.type === "goal_allocation"
+    ) {
+      if (!classification.goalName) {
+        const message = "Which savings goal should I use for this amount?";
+        return {
+          message,
+          decision: {
+            ...pendingAction.decision,
+            action: "ask_follow_up",
+            classification,
+            userFacingMessage: message
+          }
+        };
+      }
+
+      return this.attachGoalToPendingAction(request, pendingAction.decision, classification);
+    }
+
+    if (
+      pendingActionId &&
+      pendingAction &&
+      pendingAction.userId === request.userId &&
+      classification.type === "proposal_revision"
+    ) {
+      if (classification.amountIssue) {
+        this.pendingSavingsActions.set(pendingActionId, {
+          ...pendingAction,
+          awaitingValidRevision: true
+        });
+        const message = classification.amountIssue === "invalid_value"
+          ? "A savings amount must be positive, so I haven't changed the pending suggestion. What positive amount in USD should I use?"
+          : classification.amountIssue === "multiple_amounts"
+          ? "I found more than one dollar amount, so I haven't changed the pending suggestion. Which single amount in USD should I use?"
+          : classification.amountIssue === "invalid_precision"
+          ? "That revised amount has more than two decimal places, so I haven't changed the pending suggestion. What amount in USD should I use?"
+          : "I can only record USD amounts, so I haven't changed the pending suggestion. What amount in USD should I use?";
+        return {
+          message,
+          decision: {
+            ...pendingAction.decision,
+            action: "ask_follow_up",
+            classification,
+            userFacingMessage: message
+          }
+        };
+      }
+      if (
+        classification.amountCents !== undefined ||
+        classification.revisionReason !== undefined ||
+        pendingAction.awaitingValidRevision
+      ) {
+        if (pendingAction.awaitingValidRevision && classification.amountCents === undefined) {
+          const message = "Please provide a valid USD amount for the correction and make it unambiguous, or decline the pending suggestion.";
+          return {
+            message,
+            decision: {
+              ...pendingAction.decision,
+              action: "ask_follow_up",
+              classification,
+              userFacingMessage: message
+            }
+          };
+        }
+        return this.replacePendingSavingsProposal(request, pendingAction.decision, classification);
+      }
+
+      const currentAmount = pendingAction.decision.proposal?.suggestion.amountCents;
+      const message = currentAmount === undefined
+        ? "I couldn't identify a supported change. The current savings suggestion is unchanged and still pending. Please confirm or decline it."
+        : `I can only revise the amount or reason here. The current suggestion remains ${formatUsd(currentAmount)} in USD in the mocked ledger and is still pending. Please confirm or decline that exact suggestion.`;
+      return {
+        message,
+        decision: {
+          ...pendingAction.decision,
+          action: "ask_follow_up",
+          classification,
+          userFacingMessage: message
+        }
+      };
+    }
+
+    if (pendingAction?.awaitingValidRevision && classification.amountCents !== undefined) {
+      return this.replacePendingSavingsProposal(request, pendingAction.decision, {
+        ...classification,
+        type: "proposal_revision"
+      });
+    }
+
+    if (pendingAction) {
+      const amountCents = pendingAction.decision.proposal?.suggestion.amountCents;
+      const message = amountCents === undefined
+        ? "A savings suggestion is still pending. Please confirm or decline it before starting another savings action."
+        : `The ${formatUsd(amountCents)} savings suggestion is still pending. Please confirm or decline it before starting another savings action.`;
+      return {
+        message,
+        decision: {
+          ...pendingAction.decision,
+          action: "ask_follow_up",
+          classification,
+          userFacingMessage: message
+        }
+      };
+    }
+
+    if (classification.type === "goal_allocation" && classification.goalName) {
+      const recentEntry = this.recentSavingsEntriesByConversation.get(conversationKey);
+      if (recentEntry?.userId === request.userId) {
+        return this.proposeGoalAllocation(request, classification, recentEntry);
+      }
+    }
+
     const pendingClarification = this.pendingAmountClarifications.get(this.conversationKey(request));
     let resolvedSavingsEvent: SavingsEvent | undefined;
     const resolvedClassification =
@@ -134,12 +350,38 @@ export class VictoriaAgent {
     classification: ClassifiedMessage,
     savingsEvent?: SavingsEvent
   ): Promise<AgentDecision> {
+    if (classification.type === "savings_progress") {
+      const amountCents = await this.dependencies.tools.getWeeklySavingsTotal(request.userId);
+      const message = amountCents === 0
+        ? "No savings have been recorded in your mocked Victoria savings ledger this week. No real money has moved."
+        : `You have ${formatUsd(amountCents)} recorded in your mocked Victoria savings ledger this week. No real money has moved.`;
+
+      return {
+        action: "summarize_progress",
+        classification,
+        toolCall: {
+          name: "getWeeklySavingsTotal",
+          arguments: { userId: request.userId },
+          requiresApproval: false
+        },
+        userFacingMessage: message
+      };
+    }
+
     if (classification.needsClarification || classification.type === "unclear") {
+      const amountClarification = classification.amountIssue === "invalid_value"
+        ? "A savings amount must be positive. What positive amount in USD should I use?"
+        : classification.amountIssue === "multiple_amounts"
+        ? "I found more than one dollar amount. Which single amount in USD should I use?"
+        : classification.amountIssue === "invalid_precision"
+        ? "That amount has more than two decimal places. What amount in USD should I use?"
+        : classification.amountIssue === "unsupported_currency"
+        ? "I can only record USD amounts in the MVP. What is the amount in USD?"
+        : "I can help with that. What did you avoid spending on, and about how much would it have cost?";
       return {
         action: "ask_follow_up",
         classification,
-        userFacingMessage:
-          "I can help with that. What did you avoid spending on, and about how much would it have cost?"
+        userFacingMessage: amountClarification
       };
     }
 
@@ -160,7 +402,9 @@ export class VictoriaAgent {
       return {
         action: "update_goal",
         classification,
-        userFacingMessage: "Got it. Which saved amount should I put toward that goal?"
+        userFacingMessage: classification.goalName
+          ? "Which saved amount should I link to that goal?"
+          : "Which savings goal and saved amount do you mean?"
       };
     }
 
@@ -178,6 +422,7 @@ export class VictoriaAgent {
     existingSavingsEvent?: SavingsEvent
   ): Promise<AgentDecision> {
     const savingsEvent = existingSavingsEvent ?? this.buildSavingsEvent(request, classification);
+    this.recentSavingsEntriesByConversation.delete(this.conversationKey(request));
     const suggestion = await this.dependencies.tools.estimateAvoidedSpend({
       userId: request.userId,
       ...(classification.merchantName ? { merchantName: classification.merchantName } : {}),
@@ -216,6 +461,170 @@ export class VictoriaAgent {
     }
 
     return decision;
+  }
+
+  private attachGoalToPendingAction(
+    request: AgentRequest,
+    pendingDecision: AgentDecision,
+    classification: ClassifiedMessage
+  ): AgentResponse {
+    const previousActionId = pendingDecision.toolCall?.actionId;
+    const goalName = classification.goalName;
+    const proposal = pendingDecision.proposal;
+    const toolCall = pendingDecision.toolCall;
+
+    if (!previousActionId || !goalName || !proposal || proposal.status !== "pending" || !toolCall) {
+      const message = "I couldn't match that goal to a pending savings suggestion.";
+      return {
+        message,
+        decision: { ...pendingDecision, action: "ask_follow_up", userFacingMessage: message }
+      };
+    }
+
+    const nextActionId = `savings_action_${this.nextActionNumber++}`;
+    const amountCents = pendingDecision.suggestion?.amountCents ?? proposal.suggestion.amountCents;
+    const message = `I can record ${formatUsd(amountCents)} in your mocked Victoria savings ledger toward ${goalName}. Please confirm: should I record it? No real money has moved.`;
+    const updatedProposal: SavingsProposal = {
+      ...proposal,
+      id: `proposal_${this.nextProposalNumber++}`,
+      supersedesProposalId: proposal.id,
+      goalName,
+      createdAt: new Date().toISOString()
+    };
+    const updatedDecision: AgentDecision = {
+      ...pendingDecision,
+      action: "update_goal",
+      classification,
+      proposal: updatedProposal,
+      toolCall: {
+        ...toolCall,
+        actionId: nextActionId,
+        arguments: { ...toolCall.arguments, proposalId: updatedProposal.id, goalName }
+      },
+      userFacingMessage: message
+    };
+
+    const conversationKey = this.conversationKey(request);
+    this.pendingSavingsActions.delete(previousActionId);
+    this.pendingSavingsActions.set(nextActionId, {
+      userId: request.userId,
+      conversationKey,
+      decision: updatedDecision
+    });
+    this.pendingActionIdsByConversation.set(conversationKey, nextActionId);
+
+    return { message, decision: updatedDecision };
+  }
+
+  private replacePendingSavingsProposal(
+    request: AgentRequest,
+    pendingDecision: AgentDecision,
+    classification: ClassifiedMessage
+  ): AgentResponse {
+    const previousActionId = pendingDecision.toolCall?.actionId;
+    const previousProposal = pendingDecision.proposal;
+    const savingsEvent = pendingDecision.savingsEvent;
+    const currentSuggestion = pendingDecision.suggestion;
+    if (
+      !previousActionId ||
+      !previousProposal ||
+      previousProposal.status !== "pending" ||
+      !savingsEvent ||
+      !currentSuggestion
+    ) {
+      const message = "I couldn't match that change to a pending savings suggestion.";
+      return { message, decision: { ...pendingDecision, action: "ask_follow_up", userFacingMessage: message } };
+    }
+
+    const suggestion: SavingsSuggestion = {
+      ...currentSuggestion,
+      id: `suggestion_${this.nextProposalNumber}`,
+      ...(classification.amountCents !== undefined
+        ? { amountCents: classification.amountCents, source: "user_provided" as const }
+        : {}),
+      ...(classification.revisionReason !== undefined
+        ? { reason: classification.revisionReason }
+        : {})
+    };
+    const nextDecision = this.buildSavingsSuggestionDecision(classification, savingsEvent, suggestion);
+    const nextActionId = nextDecision.toolCall?.actionId;
+    const nextProposal = nextDecision.proposal;
+    const nextToolCall = nextDecision.toolCall;
+    if (!nextActionId || !nextProposal || !nextToolCall) {
+      const message = "I couldn't prepare a replacement suggestion. The original remains pending.";
+      return { message, decision: { ...pendingDecision, action: "ask_follow_up", userFacingMessage: message } };
+    }
+
+    const linkedProposal: SavingsProposal = {
+      ...nextProposal,
+      supersedesProposalId: previousProposal.id,
+      ...(previousProposal.goalName ? { goalName: previousProposal.goalName } : {})
+    };
+    const revisedDecision: AgentDecision = {
+      ...nextDecision,
+      proposal: linkedProposal,
+      toolCall: {
+        ...nextToolCall,
+        arguments: {
+          ...nextToolCall.arguments,
+          proposalId: linkedProposal.id,
+          ...(linkedProposal.goalName ? { goalName: linkedProposal.goalName } : {})
+        }
+      }
+    };
+    const conversationKey = this.conversationKey(request);
+    this.pendingSavingsActions.delete(previousActionId);
+    this.pendingSavingsActions.set(nextActionId, {
+      userId: request.userId,
+      conversationKey,
+      decision: revisedDecision
+    });
+    this.pendingActionIdsByConversation.set(conversationKey, nextActionId);
+    return { message: revisedDecision.userFacingMessage, decision: revisedDecision };
+  }
+
+  private proposeGoalAllocation(
+    request: AgentRequest,
+    classification: ClassifiedMessage,
+    entry: SavingsEntry
+  ): AgentResponse {
+    const actionId = `goal_allocation_action_${this.nextGoalAllocationNumber++}`;
+    const goalAllocation: PendingSavingsGoalAllocation = {
+      id: `goal_allocation_proposal_${this.nextGoalAllocationNumber - 1}`,
+      userId: request.userId,
+      savingsEntryId: entry.id,
+      amountCents: entry.amountCents,
+      goalName: classification.goalName ?? "",
+      status: "pending",
+      createdAt: new Date().toISOString()
+    };
+    const message = `I can link the recorded ${formatUsd(entry.amountCents)} entry to ${goalAllocation.goalName} in your mocked savings ledger. Please confirm this goal allocation. No real money has moved.`;
+    const decision: AgentDecision = {
+      action: "update_goal",
+      classification,
+      goalAllocation,
+      toolCall: {
+        name: "createSavingsGoalAllocation",
+        actionId,
+        arguments: {
+          userId: request.userId,
+          savingsEntryId: entry.id,
+          amountCents: entry.amountCents,
+          goalName: goalAllocation.goalName
+        },
+        requiresApproval: true
+      },
+      userFacingMessage: message
+    };
+    const conversationKey = this.conversationKey(request);
+    this.pendingGoalAllocationActions.set(actionId, {
+      userId: request.userId,
+      conversationKey,
+      decision
+    });
+    this.pendingGoalAllocationIdsByConversation.set(conversationKey, actionId);
+
+    return { message, decision };
   }
 
   private buildSavingsSuggestionDecision(
@@ -289,6 +698,10 @@ export class VictoriaAgent {
   }
 
   async approveToolCall(request: AgentRequest, decision: AgentDecision): Promise<AgentResponse> {
+    if (decision.toolCall?.name === "createSavingsGoalAllocation") {
+      return this.approveGoalAllocation(request, decision);
+    }
+
     if (!decision.toolCall || !decision.suggestion) {
       return {
         message: "There is no savings action waiting for approval.",
@@ -364,11 +777,26 @@ export class VictoriaAgent {
       suggestionId: trustedSuggestion.id,
       amountCents: trustedSuggestion.amountCents,
       reason: trustedSuggestion.reason,
+      ...(trustedProposal.goalName ? { goalName: trustedProposal.goalName } : {}),
       movementMode: trustedSuggestion.movementMode,
       approvedActionId: approvedActionIdForEntry
     };
 
-    const entry = await this.dependencies.tools.createSavingsEntry(createSavingsEntryInput);
+    let entry: SavingsEntry;
+    try {
+      entry = await this.dependencies.tools.createSavingsEntry(createSavingsEntryInput);
+    } catch {
+      const message = "I couldn't confirm whether the entry was recorded, so I haven't marked this action complete. You can say yes to safely retry the same entry. No real money has moved.";
+      return {
+        message,
+        decision: {
+          ...trustedDecision,
+          action: "ask_follow_up",
+          userFacingMessage: message
+        }
+      };
+    }
+    this.recentSavingsEntriesByConversation.set(this.conversationKey(request), entry);
     const completedActionId = trustedToolCall.actionId ?? "";
     const completedAction = this.pendingSavingsActions.get(completedActionId);
     this.pendingSavingsActions.delete(completedActionId);
@@ -376,7 +804,15 @@ export class VictoriaAgent {
       this.pendingActionIdsByConversation.delete(completedAction.conversationKey);
     }
 
-    const message = `Done. I recorded ${formatUsd(entry.amountCents)} in your Victoria savings ledger. No real money has moved yet.`;
+    const goalText = entry.goalName ? ` toward ${entry.goalName}` : "";
+    let weeklyProgress: string;
+    try {
+      const weeklyTotalCents = await this.dependencies.tools.getWeeklySavingsTotal(request.userId);
+      weeklyProgress = ` Your total in the mocked Victoria savings ledger this week is ${formatUsd(weeklyTotalCents)}.`;
+    } catch {
+      weeklyProgress = " I couldn't load your weekly total just now.";
+    }
+    const message = `Done. I recorded ${formatUsd(entry.amountCents)}${goalText} in your Victoria savings ledger.${weeklyProgress} No real money has moved yet.`;
 
     return {
       message,
@@ -390,6 +826,71 @@ export class VictoriaAgent {
           ledgerEntryId: entry.id,
           recordedAt: entry.createdAt
         },
+        userFacingMessage: message
+      }
+    };
+  }
+
+  private async approveGoalAllocation(
+    request: AgentRequest,
+    decision: AgentDecision
+  ): Promise<AgentResponse> {
+    const actionId = request.approvedActionId;
+    const pendingAction = actionId
+      ? this.pendingGoalAllocationActions.get(actionId)
+      : undefined;
+    if (!actionId || !pendingAction || pendingAction.userId !== request.userId) {
+      return this.refuseApproval(decision, "That approval does not match a pending goal allocation.");
+    }
+
+    const trustedDecision = pendingAction.decision;
+    const toolCall = trustedDecision.toolCall;
+    const allocation = trustedDecision.goalAllocation;
+    if (
+      !toolCall ||
+      toolCall.name !== "createSavingsGoalAllocation" ||
+      allocation?.status !== "pending"
+    ) {
+      return this.refuseApproval(decision, "There is no goal allocation waiting for approval.");
+    }
+
+    const policyDecision = canCallTool(request, toolCall);
+    if (!policyDecision.allowed) {
+      return this.refuseApproval(
+        trustedDecision,
+        policyDecision.reason ?? "That action needs approval first."
+      );
+    }
+
+    const approval = {
+      id: `goal_approval_${this.nextGoalApprovalNumber++}`,
+      actionId,
+      approvedAt: new Date().toISOString(),
+      source: "user_message" as const
+    };
+    const recordedAllocation = await this.dependencies.tools.createSavingsGoalAllocation({
+      userId: request.userId,
+      savingsEntryId: allocation.savingsEntryId,
+      amountCents: allocation.amountCents,
+      goalName: allocation.goalName,
+      approval,
+      approvedActionId: actionId
+    });
+
+    this.pendingGoalAllocationActions.delete(actionId);
+    this.pendingGoalAllocationIdsByConversation.delete(pendingAction.conversationKey);
+    const recentEntry = this.recentSavingsEntriesByConversation.get(pendingAction.conversationKey);
+    if (recentEntry?.id === allocation.savingsEntryId) {
+      this.recentSavingsEntriesByConversation.delete(pendingAction.conversationKey);
+    }
+
+    const message = `Done. I linked the recorded ${formatUsd(recordedAllocation.amountCents)} entry to ${recordedAllocation.goalName} in your mocked Victoria savings ledger. No real money has moved.`;
+    return {
+      message,
+      decision: {
+        ...trustedDecision,
+        action: "record_goal_allocation",
+        goalAllocation: recordedAllocation,
         userFacingMessage: message
       }
     };
