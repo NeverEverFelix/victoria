@@ -5,7 +5,8 @@ import type { VictoriaTools } from "./tools/contracts.js";
 import { formatUsd } from "../domain/money.js";
 import type {
   PendingSavingsGoalAllocation,
-  SavingsEntry
+  SavingsEntry,
+  SavingsGoalAllocation
 } from "../domain/savings/types.js";
 import type {
   AgentDecision,
@@ -351,10 +352,15 @@ export class VictoriaAgent {
     savingsEvent?: SavingsEvent
   ): Promise<AgentDecision> {
     if (classification.type === "savings_progress") {
-      const amountCents = await this.dependencies.tools.getWeeklySavingsTotal(request.userId);
-      const message = amountCents === 0
-        ? "No savings have been recorded in your mocked Victoria savings ledger this week. No real money has moved yet."
-        : `You have ${formatUsd(amountCents)} recorded in your mocked Victoria savings ledger this week. No real money has moved yet.`;
+      let message: string;
+      try {
+        const amountCents = await this.dependencies.tools.getWeeklySavingsTotal(request.userId);
+        message = amountCents === 0
+          ? "No savings have been recorded in your mocked Victoria savings ledger this week. No real money has moved yet."
+          : `You have ${formatUsd(amountCents)} recorded in your mocked Victoria savings ledger this week. No real money has moved yet.`;
+      } catch {
+        message = "I couldn't load your weekly total just now. No real money has moved yet.";
+      }
 
       return {
         action: "summarize_progress",
@@ -868,14 +874,27 @@ export class VictoriaAgent {
       approvedAt: new Date().toISOString(),
       source: "user_message" as const
     };
-    const recordedAllocation = await this.dependencies.tools.createSavingsGoalAllocation({
-      userId: request.userId,
-      savingsEntryId: allocation.savingsEntryId,
-      amountCents: allocation.amountCents,
-      goalName: allocation.goalName,
-      approval,
-      approvedActionId: actionId
-    });
+    let recordedAllocation: SavingsGoalAllocation;
+    try {
+      recordedAllocation = await this.dependencies.tools.createSavingsGoalAllocation({
+        userId: request.userId,
+        savingsEntryId: allocation.savingsEntryId,
+        amountCents: allocation.amountCents,
+        goalName: allocation.goalName,
+        approval,
+        approvedActionId: actionId
+      });
+    } catch {
+      const message = "I couldn't confirm whether the goal allocation was recorded. You can say yes to safely retry the same approved allocation. No real money has moved yet.";
+      return {
+        message,
+        decision: {
+          ...trustedDecision,
+          action: "ask_follow_up",
+          userFacingMessage: message
+        }
+      };
+    }
 
     this.pendingGoalAllocationActions.delete(actionId);
     this.pendingGoalAllocationIdsByConversation.delete(pendingAction.conversationKey);

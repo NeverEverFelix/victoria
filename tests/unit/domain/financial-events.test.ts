@@ -30,6 +30,11 @@ describe("financial event domain", () => {
     }
   });
 
+  it("rejects amounts that cannot be represented safely in integer cents", () => {
+    expect(parseExplicitDollarAmount("I avoided spending $999999999999999999999999."))
+      .toEqual({ status: "invalid_value" });
+  });
+
   it("asks for disambiguation when multiple dollar amounts are explicit", () => {
     expect(parseExplicitDollarAmount("I chose between a $20 and a $30 order.")).toEqual({
       status: "multiple_amounts"

@@ -14,6 +14,7 @@ export class MockVictoriaTools implements VictoriaTools {
   private readonly savingsGoalAllocations: SavingsGoalAllocation[] = [];
   private readonly entriesByApprovedAction = new Map<string, SavingsEntry>();
   private readonly goalAllocationsByApprovedAction = new Map<string, SavingsGoalAllocation>();
+  private nextSavingsEntryNumber = 1;
 
   constructor(
     private readonly habits: UserHabit[] = [],
@@ -89,7 +90,7 @@ export class MockVictoriaTools implements VictoriaTools {
     }
 
     const entry: SavingsEntry = {
-      id: `entry_${Date.now()}`,
+      id: `entry_${this.nextSavingsEntryNumber++}`,
       userId: input.userId,
       eventId: input.eventId,
       proposalId: input.proposalId,
@@ -129,7 +130,7 @@ export class MockVictoriaTools implements VictoriaTools {
       const sameAction = existingAllocation.savingsEntryId === input.savingsEntryId &&
         existingAllocation.amountCents === input.amountCents &&
         existingAllocation.goalName === input.goalName &&
-        JSON.stringify(existingAllocation.approval) === JSON.stringify(input.approval);
+        existingAllocation.approval.actionId === input.approval.actionId;
       if (!sameAction) {
         throw new Error("An approved action cannot be reused for a different goal allocation.");
       }

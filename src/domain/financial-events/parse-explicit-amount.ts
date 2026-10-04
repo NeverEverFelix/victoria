@@ -31,7 +31,7 @@ export function parseExplicitDollarAmount(message: string): ExplicitDollarAmount
   }
 
   const amountCents = Math.round(Number(amountText) * 100);
-  return amountCents <= 0
+  return !Number.isSafeInteger(amountCents) || amountCents <= 0
     ? { status: "invalid_value" }
     : { status: "valid", amountCents };
 }

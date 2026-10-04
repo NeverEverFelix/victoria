@@ -53,6 +53,37 @@ describe("VictoriaAgent", () => {
     expect(response.message).toContain("No real money has moved");
   });
 
+  it("does not mistake a future savings intention for a progress question", async () => {
+    const tools = new MockVictoriaTools();
+    const weeklyTotal = vi.spyOn(tools, "getWeeklySavingsTotal");
+    const agent = createAgent([], tools);
+
+    const response = await agent.respond({
+      userId: "user_123",
+      message: "I plan to save more this week."
+    });
+
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.classification.type).toBe("unclear");
+    expect(weeklyTotal).not.toHaveBeenCalled();
+  });
+
+  it("reports a weekly progress lookup failure without crashing", async () => {
+    const tools = new MockVictoriaTools();
+    vi.spyOn(tools, "getWeeklySavingsTotal").mockRejectedValueOnce(
+      new Error("Ledger summary unavailable.")
+    );
+    const agent = createAgent([], tools);
+
+    const response = await agent.respond({
+      userId: "user_123",
+      message: "How much have I saved this week?"
+    });
+
+    expect(response.decision.action).toBe("summarize_progress");
+    expect(response.message).toContain("couldn't load your weekly total");
+  });
+
   it("[FIN-001] refuses a natural-language request to move money", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);
@@ -484,7 +515,11 @@ describe("VictoriaAgent", () => {
       savingsEntryId: recordedAllocation.savingsEntryId,
       amountCents: recordedAllocation.amountCents,
       goalName: recordedAllocation.goalName,
-      approval: recordedAllocation.approval,
+      approval: {
+        ...recordedAllocation.approval,
+        id: "retry_goal_approval",
+        approvedAt: "2026-10-03T23:59:00.000Z"
+      },
       approvedActionId: recordedAllocation.approvedActionId
     });
 
@@ -508,6 +543,29 @@ describe("VictoriaAgent", () => {
     );
     expect(replayedApproval.decision.action).toBe("refuse");
     expect(await tools.listSavingsGoalAllocations("user_123")).toHaveLength(allocations.length);
+  });
+
+  it("retries a goal allocation after the tool commits but its response is lost", async () => {
+    const tools = new MockVictoriaTools();
+    const createAllocation = tools.createSavingsGoalAllocation.bind(tools);
+    vi.spyOn(tools, "createSavingsGoalAllocation").mockImplementationOnce(async (input) => {
+      await createAllocation(input);
+      throw new Error("Response lost after commit.");
+    });
+    const agent = createAgent([], tools);
+    const context = { userId: "user_123", conversationId: "goal_retry" };
+
+    await agent.respond({ ...context, message: "I almost bought a $45 book but decided to wait." });
+    await agent.respond({ ...context, message: "Yes" });
+    await agent.respond({ ...context, message: "Put that toward my emergency fund." });
+
+    const retryPrompt = await agent.respond({ ...context, message: "Yes" });
+    expect(retryPrompt.decision.action).toBe("ask_follow_up");
+    expect(await tools.listSavingsGoalAllocations("user_123")).toHaveLength(1);
+
+    const recovered = await agent.respond({ ...context, message: "Yes" });
+    expect(recovered.decision.action).toBe("record_goal_allocation");
+    expect(await tools.listSavingsGoalAllocations("user_123")).toHaveLength(1);
   });
 
   it("[INT-002] [AUD-001] [AUD-004] completes the explicit-amount savings loop through conversation", async () => {

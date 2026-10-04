@@ -23,7 +23,11 @@ export class MockLlmAdapter implements LlmAdapter {
       };
     }
 
-    if (/\b(this|the) week\b/.test(message) && /\b(saved|save|savings)\b/.test(message)) {
+    if (
+      /\b(this|the) week\b/.test(message) &&
+      /\b(saved|savings)\b/.test(message) &&
+      /\b(how much|what(?:'s| is| did)?|show me|tell me)\b/.test(message)
+    ) {
       return {
         type: "savings_progress",
         confidence: 0.9,
