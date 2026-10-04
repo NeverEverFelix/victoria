@@ -166,6 +166,7 @@ requireIncludes(".github/workflows/ai-code-review.yml", [
   "github.event.pull_request.base.sha",
   "persist-credentials: false",
   "BASE_SHA",
+  "AI_REVIEW_MAX_DIFF_CHARS",
   "AI_REVIEW_MAX_OUTPUT_TOKENS",
   "AI_REVIEW_MAX_CHUNKS",
   "AI_REVIEW_MAX_COMMENT_CHARS",
