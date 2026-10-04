@@ -353,8 +353,8 @@ export class VictoriaAgent {
     if (classification.type === "savings_progress") {
       const amountCents = await this.dependencies.tools.getWeeklySavingsTotal(request.userId);
       const message = amountCents === 0
-        ? "No savings have been recorded in your mocked Victoria savings ledger this week. No real money has moved."
-        : `You have ${formatUsd(amountCents)} recorded in your mocked Victoria savings ledger this week. No real money has moved.`;
+        ? "No savings have been recorded in your mocked Victoria savings ledger this week. No real money has moved yet."
+        : `You have ${formatUsd(amountCents)} recorded in your mocked Victoria savings ledger this week. No real money has moved yet.`;
 
       return {
         action: "summarize_progress",
@@ -483,7 +483,7 @@ export class VictoriaAgent {
 
     const nextActionId = `savings_action_${this.nextActionNumber++}`;
     const amountCents = pendingDecision.suggestion?.amountCents ?? proposal.suggestion.amountCents;
-    const message = `I can record ${formatUsd(amountCents)} in your mocked Victoria savings ledger toward ${goalName}. Please confirm: should I record it? No real money has moved.`;
+    const message = `I can record ${formatUsd(amountCents)} in your mocked Victoria savings ledger toward ${goalName}. Please confirm: should I record it? No real money has moved yet.`;
     const updatedProposal: SavingsProposal = {
       ...proposal,
       id: `proposal_${this.nextProposalNumber++}`,
@@ -598,7 +598,7 @@ export class VictoriaAgent {
       status: "pending",
       createdAt: new Date().toISOString()
     };
-    const message = `I can link the recorded ${formatUsd(entry.amountCents)} entry to ${goalAllocation.goalName} in your mocked savings ledger. Please confirm this goal allocation. No real money has moved.`;
+    const message = `I can link the recorded ${formatUsd(entry.amountCents)} entry to ${goalAllocation.goalName} in your mocked savings ledger. Please confirm this goal allocation. No real money has moved yet.`;
     const decision: AgentDecision = {
       action: "update_goal",
       classification,
@@ -786,7 +786,7 @@ export class VictoriaAgent {
     try {
       entry = await this.dependencies.tools.createSavingsEntry(createSavingsEntryInput);
     } catch {
-      const message = "I couldn't confirm whether the entry was recorded, so I haven't marked this action complete. You can say yes to safely retry the same entry. No real money has moved.";
+      const message = "I couldn't confirm whether the entry was recorded, so I haven't marked this action complete. You can say yes to safely retry the same entry. No real money has moved yet.";
       return {
         message,
         decision: {
@@ -884,7 +884,7 @@ export class VictoriaAgent {
       this.recentSavingsEntriesByConversation.delete(pendingAction.conversationKey);
     }
 
-    const message = `Done. I linked the recorded ${formatUsd(recordedAllocation.amountCents)} entry to ${recordedAllocation.goalName} in your mocked Victoria savings ledger. No real money has moved.`;
+    const message = `Done. I linked the recorded ${formatUsd(recordedAllocation.amountCents)} entry to ${recordedAllocation.goalName} in your mocked Victoria savings ledger. No real money has moved yet.`;
     return {
       message,
       decision: {
