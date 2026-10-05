@@ -66,6 +66,13 @@ export function canCallTool(request: AgentRequest, toolCall: ToolCallRequest): P
     );
   }
 
+  if (toolCall.name === "createSavingsEntryCorrection") {
+    if (!toolCall.requiresApproval) {
+      return { allowed: false, reason: "Savings entry corrections require approval for this exact action." };
+    }
+    return requireApproval(request, toolCall.actionId, "Savings entry corrections require approval for this exact action.");
+  }
+
   return { allowed: true };
 }
 

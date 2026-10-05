@@ -21,4 +21,9 @@ describe("money domain", () => {
       "Dollar amount must be a finite number."
     );
   });
+
+  it("rejects monetary values that cannot be represented as safe integer cents", () => {
+    expect(() => dollarsToCents(Number.MAX_VALUE)).toThrow("safe integer number of cents");
+    expect(() => formatUsd(Number.NaN)).toThrow("safe integer number of cents");
+  });
 });

@@ -25,6 +25,8 @@ Victoria should:
 Acceptance criteria:
 
 - Given the message includes a clear dollar amount, Victoria uses that amount.
+- Given the event classification confidence is below the provisional 0.70 floor, Victoria asks for clarification and creates no proposal.
+- Given Victoria asks because intent confidence is low, it uses that unresolved turn as context for the user's next reply and clears it when the user switches to a clear new intent.
 - Given the amount has more than two decimal places or uses a recognized non-USD currency, Victoria asks for a valid USD amount and creates no proposal.
 - Given the user has not confirmed, no savings ledger entry is created.
 - Given the user confirms, Victoria creates a mocked ledger entry for 9000 cents.
@@ -51,6 +53,7 @@ Victoria should:
 Acceptance criteria:
 
 - Given Victoria knows the user's typical DoorDash order, Victoria suggests that amount.
+- Given Victoria knows another user's typical DoorDash order, Victoria does not use or reveal it.
 - Given Victoria does not know the typical amount, Victoria asks what the user usually spends.
 - Given the user provides an amount, Victoria can propose a savings action.
 - Given the user confirms, Victoria creates a mocked ledger entry.
@@ -76,6 +79,7 @@ Victoria should:
 Acceptance criteria:
 
 - Given Victoria has a known Blue Bottle amount, Victoria uses it.
+- Given that amount belongs to another user, Victoria does not use or reveal it.
 - Given Victoria only knows a generic coffee amount, Victoria may use that estimate.
 - Given Victoria has no relevant amount, Victoria asks for the typical spend.
 - Given the user declines, no ledger entry is created.
@@ -235,6 +239,7 @@ Acceptance criteria:
 - Given there is a pending savings suggestion, Victoria can attach the emergency fund goal to it.
 - Given there is no clear pending or recent saved amount, Victoria asks what amount the user means.
 - Given the user confirms an allocation for a completed entry, Victoria creates a separate immutable goal-allocation record linked to that entry.
+- Given the entry was corrected, the allocation uses its currently effective amount.
 - Given a goal allocation is recorded, the original savings entry remains unchanged.
 - Given the goal is recorded, Victoria still makes clear that no real money moved.
 
@@ -263,6 +268,26 @@ Acceptance criteria:
 - Given any real transfer tool exists later, Victoria still requires explicit approval and production-safe configuration.
 
 ## Priority Order
+
+## Story 11: Correct A Recorded Savings Amount
+
+As a user, I want to correct an amount Victoria recorded so the ledger reflects updated information without losing the original history.
+
+Example:
+
+```text
+Victoria: I recorded $27 in your Victoria savings ledger.
+User: Correct that recorded entry to $24.
+Victoria: I can reduce the recorded amount by $3, making the corrected total $24. The original entry will stay in the history. Please confirm this correction.
+```
+
+Acceptance criteria:
+
+- A correction targets a completed mocked entry belonging to the user.
+- Victoria asks for explicit approval before recording the correction.
+- Approval appends a signed adjustment linked to the original entry; the original remains unchanged.
+- Effective weekly totals use the corrected amount while retaining the original entry's reporting week.
+- If the target entry is unclear, Victoria asks which entry and makes no change.
 
 The first implementation should focus on:
 

@@ -6,6 +6,9 @@ export interface Money {
 }
 
 export function formatUsd(amountCents: number): string {
+  if (!Number.isSafeInteger(amountCents)) {
+    throw new Error("USD formatting requires a safe integer number of cents.");
+  }
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD"
@@ -17,5 +20,9 @@ export function dollarsToCents(amountDollars: number): number {
     throw new Error("Dollar amount must be a finite number.");
   }
 
-  return Math.round(amountDollars * 100);
+  const amountCents = Math.round(amountDollars * 100);
+  if (!Number.isSafeInteger(amountCents)) {
+    throw new Error("Dollar amount must convert to a safe integer number of cents.");
+  }
+  return amountCents;
 }

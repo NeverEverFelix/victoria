@@ -6,7 +6,11 @@ const scenarioPaths = [
   "tests/contracts/mvp-safety-contract.test.ts",
   "tests/contracts/mvp-safety-contract.pending.test.ts",
   "tests/unit/agent/victoria-agent.test.ts",
+  "tests/unit/agent/team-prototype.test.ts",
   "tests/unit/agent/policy.test.ts",
+  "tests/unit/domain/money.test.ts",
+  "tests/unit/domain/savings.test.ts",
+  "tests/unit/domain/proposal-lifecycle.test.ts",
   "tests/type-contracts/savings.ts"
 ] as const;
 

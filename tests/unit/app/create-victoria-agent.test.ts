@@ -14,6 +14,7 @@ describe("createVictoriaAgent", () => {
         {
           id: "habit_7th_street",
           merchantName: "7th Street",
+          userId: "user_123",
           typicalAmountCents: 2746,
           currency: "USD",
           confidence: 0.9
@@ -36,6 +37,31 @@ describe("createVictoriaAgent", () => {
         env: parseVictoriaEnv(validEnv())
       })
     ).toThrow("Real AI adapter is not wired yet. Set OPENAI_MODEL=mock for this skeleton.");
+  });
+
+  it("uses the mock specialist team for a proposal while leaving confirmation to the core agent", async () => {
+    const agent = createVictoriaAgent({ env: parseVictoriaEnv(validEnv({ OPENAI_MODEL: "mock" })) });
+    const proposed = await agent.respond({
+      userId: "user_123",
+      conversationId: "team_product_flow",
+      message: "I almost bought a $90 jacket but decided to wait."
+    });
+
+    expect(proposed.decision.action).toBe("suggest_savings");
+    expect(proposed.decision.suggestion?.amountCents).toBe(9000);
+    expect(proposed.decision.toolCall?.requiresApproval).toBe(true);
+    expect(proposed.message).toContain("Would you like me to record");
+    expect(proposed.message).toContain("Please confirm");
+    expect(proposed.message).toContain("No real money has moved");
+
+    const recorded = await agent.respond({
+      userId: "user_123",
+      conversationId: "team_product_flow",
+      message: "Yes"
+    });
+    expect(recorded.decision.action).toBe("create_ledger_entry");
+    expect(recorded.message).toContain("Victoria savings ledger");
+    expect(recorded.message).toContain("No real money has moved");
   });
 
   it("fails clearly when real money movement is requested before it exists", () => {

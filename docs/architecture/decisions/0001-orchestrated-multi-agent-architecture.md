@@ -113,3 +113,15 @@ Highly testable, but too rigid for the varied language, emotional context, and e
 ## Acceptance Condition
 
 Change this record from `Proposed` to `Accepted` only after the product owner confirms the responsibility boundaries and the initial specialist set. Any later material change should be recorded in a new ADR that supersedes this one.
+
+## Prototype Status (2026-10-04)
+
+The product owner requested a headless prototype using Financial Moment, Savings Reasoning, and Companion Voice specialists. This confirms the initial role roster for the prototype. It does not yet accept this ADR as the production runtime architecture: the current `VictoriaAgent` remains authoritative, and model selection, call/latency budget, durable tracing, and production runtime migration remain unresolved.
+
+The prototype in `src/agent/team-prototype.ts` tests sequential, typed, advisory handoffs with injected mock specialists. The mock composition also wires `AgentTeamSpecialists` into `VictoriaAgent`: Financial Moment provides classification; validated Savings Reasoning and Companion Voice support avoided-spend, unclear, and regretful-spend responses. The existing deterministic core remains the authority for proposal creation, approvals, tool calls, and all ledger changes. Inconsistent advice downgrades to clarification; voice wording is checked for disclosures, completed-action claims, shaming, and unsupported amounts.
+
+The prototype records raw local elapsed times only. Percentiles are calculated across evaluation runs; provider tokens and dollar cost are not measured because no provider adapter is connected. The proposed latency targets live in `multi-agent-evaluation-protocol.md` and have not been measured or accepted. The integrated path currently uses deterministic mock specialists only; it does not represent provider-backed quality evidence or production runtime readiness.
+
+Production readiness gates are tracked in [`multi-agent-readiness.md`](../multi-agent-readiness.md). The scripted evaluation corpus is a contract-parity smoke test only; provider quality and cost remain unmeasured.
+
+Proposed provider-evaluation criteria are in [`multi-agent-evaluation-protocol.md`](../multi-agent-evaluation-protocol.md). Its numeric latency and cost thresholds remain proposals pending review and measurement.

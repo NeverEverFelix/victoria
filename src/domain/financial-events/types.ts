@@ -3,6 +3,7 @@ export type FinancialEventType =
   | "regretful_spend"
   | "goal_allocation"
   | "proposal_revision"
+  | "entry_correction"
   | "pattern_reflection"
   | "general_finance"
   | "savings_progress"
@@ -10,10 +11,10 @@ export type FinancialEventType =
   | "unclear";
 
 export interface FinancialDecision {
-  id: string;
-  type: FinancialEventType;
-  summary: string;
-  amountCents?: number;
-  merchantName?: string;
-  createdAt: string;
+  readonly id: string;
+  readonly type: FinancialEventType;
+  readonly summary: string;
+  readonly amountCents?: number;
+  readonly merchantName?: string;
+  readonly createdAt: string;
 }

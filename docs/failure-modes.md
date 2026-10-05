@@ -70,6 +70,22 @@ Safer behavior:
 
 ## Product Meaning Failures
 
+### Low Confidence Still Drives An Action
+
+Risk:
+
+A classifier or savings specialist returns a valid-looking amount with low confidence, and the system treats schema validity as enough evidence to propose it.
+
+Safer behavior:
+
+- Validate confidence as a finite score from 0 to 1.
+- Route action-oriented classification and savings suggestions below the provisional 0.70 floor to clarification.
+- Keep unresolved user context only while classification remains unclear; clear it as soon as a clear new intent arrives.
+- For an uncertain proposal revision, leave the current proposal pending and unchanged until a clear revision is made; a revised proposal still needs its own explicit approval.
+- For an uncertain goal allocation, leave the allocation unchanged and ask which saved amount and goal the user means; recording still requires explicit approval.
+- Treat the threshold as a product default until provider-backed evaluation can assess calibration.
+- Never treat confidence as approval.
+
 ### Regret Turns Into Fake Savings
 
 Risk:

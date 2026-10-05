@@ -107,6 +107,24 @@ Implications:
 - A correction, reversal, or superseding action creates a new linked record rather than deleting or overwriting the original.
 - Approvals remain bound to the exact historical proposal and user that were approved.
 
+### Recorded Amount Corrections Use Linked Adjustment Records
+
+Decision:
+
+A correction to a completed mocked savings entry appends a signed adjustment record linked to the original. The correction stores the corrected effective amount, signed difference, reason, approval identity, and timestamp. Every correction requires fresh explicit approval.
+
+Why:
+
+This records exactly what changed while preserving the original entry and keeping totals calculable in integer cents.
+
+Implications:
+
+- The original savings entry is never edited or removed.
+- A correction can target only a completed mocked entry belonging to the user.
+- The effective amount must remain positive; no-op or invalid corrections are rejected.
+- Progress totals apply adjustments to their original entry, preserving the entry's reporting week.
+- The initial conversation flow targets only a just-recorded entry in the same conversation; otherwise Victoria asks which entry the user means.
+
 ### UI Development Comes After The Headless MVP
 
 Decision:
@@ -159,22 +177,6 @@ Possible answers:
 Current default:
 
 Support optional goal language in contracts, but do not make goals required for the first loop.
-
-### How Should Corrections And Reversals Be Represented?
-
-Question:
-
-What linked record types should Victoria use when a user needs to correct or undo a mocked savings entry?
-
-Possible answers:
-
-- Append an adjustment entry for the difference.
-- Append a reversal that references the original entry.
-- Append a corrected replacement while retaining the original entry.
-
-Current default:
-
-Do not mutate or delete the original historical record. Defer the exact correction and reversal record shapes until that behavior is implemented.
 
 ### How Should Victoria Handle Saved Money That Gets Spent Later?
 

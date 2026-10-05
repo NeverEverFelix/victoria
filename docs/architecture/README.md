@@ -15,6 +15,8 @@ These documents describe how Victoria is intended to work. The narrower product 
 - [`Victoria General System Design`](./diagrams/victoria-general-system-design.md) shows the proposed horizontally scaled modular monolith, durable turn admission, personalized memory flow, and external providers.
 - [`ADR 0001`](./decisions/0001-orchestrated-multi-agent-architecture.md) records the proposed pattern, responsibilities, and tradeoffs.
 - [`ADR 0002`](./decisions/0002-horizontally-scaled-modular-monolith.md) records the proposed Vercel and Neon deployment shape, capacity contract, cost rationale, and exit triggers.
+- [`Multi-Agent Runtime Readiness`](./multi-agent-readiness.md) separates the mock prototype from provider evaluation and production gates.
+- [`Multi-Agent Evaluation Protocol`](./multi-agent-evaluation-protocol.md) proposes safety, quality, latency, and cost criteria for a provider-backed comparison.
 
 ## Conventions
 

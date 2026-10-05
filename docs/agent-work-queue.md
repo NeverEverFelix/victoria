@@ -399,6 +399,70 @@ Done when:
 
 ## Backlog Notes
 
+## Slice 13: Correct A Recorded Savings Amount
+
+Source story: `docs/user-stories.md` Story 11
+
+Goal:
+
+Let the user correct a just-recorded mocked savings amount without changing the original ledger entry.
+
+Expected behavior:
+
+- Resolve the target only from a completed entry in the same conversation and owned by the user.
+- Ask for a valid corrected USD amount and exact approval.
+- Append an immutable, linked signed adjustment record; keep the original entry intact.
+- Apply adjustments to the original entry's effective amount in weekly totals.
+- Make retries idempotent by user and approved action ID.
+
+Done when:
+
+- Agent tests cover proposal, exact approval, decline/ambiguity, unchanged original history, and no-context clarification.
+- Tool tests cover invalid amounts, wrong users, non-mocked targets, idempotent retries, and effective weekly totals.
+- `npm run check` passes.
+
+## Slice 14: Runtime Intent And Monetary Boundaries
+
+Source rules: `docs/specification/mvp-safety-contract.md` rules ARC-001, ARC-002, and FIN-004
+
+Goal:
+
+Keep malformed classifier output, unsupported estimate values, and unsafe monetary calculations from entering a proposal or reported total.
+
+Expected behavior:
+
+- Validate classifier values at runtime, even when an adapter satisfies the TypeScript interface.
+- Discard unknown classifier fields, including any model-supplied approval claim.
+- Route invalid classifications or estimated suggestions to clarification without proposing a ledger action.
+- Require money conversion, formatting, sums, and projections to stay in safe integer cents.
+
+Done when:
+
+- Agent tests prove malformed outputs cannot produce a proposal or mutation and an `approved` field is ignored.
+- Domain tests cover invalid cents and arithmetic overflow.
+- `npm run check` passes.
+
+## Slice 15: Explicit Proposal State Transitions
+
+Source rules: `docs/specification/mvp-safety-contract.md` rules STA-001 and STA-003
+
+Goal:
+
+Represent approval, decline, and replacement as deterministic, action-bound transitions while preserving proposal snapshots.
+
+Expected behavior:
+
+- Every pending proposal is bound to its exact action ID.
+- Approval, decline, and supersession use one transition function that checks proposal, user, and action identity.
+- Replaced proposals become terminal `superseded` records linked to their replacement.
+- A transition from any terminal state is rejected; a stale action cannot create a ledger entry.
+
+Done when:
+
+- Domain tests cover every allowed transition, invalid identity, and terminal-state rejection.
+- Agent tests cover transition records for confirmation, decline, and proposal replacement.
+- `npm run check` passes.
+
 ## Slice 10: Honest Recovery From Ledger Write Failure
 
 Source rules: `docs/specification/mvp-safety-contract.md` rules IDM-001, IDM-003, ERR-003, and ERR-004
@@ -412,12 +476,42 @@ Expected behavior:
 - Never say an entry was recorded when the tool reports an error.
 - Tell the user the result could not be confirmed and offer one safe retry step.
 - Keep the same approved action pending for retry.
+- Reuse the exact same approval record when retrying after an uncertain result, so the saved record and the confirmed response have consistent links.
 - Make retrying the same user/action identifier idempotent in the mock ledger.
+- Apply the same retry behavior to linked corrections and goal allocations.
 
 Done when:
 
 - Tests cover failure before persistence and an uncertain outcome after persistence.
-- Retrying after either outcome produces at most one mocked ledger entry.
+- Retrying after either outcome produces at most one mocked record and preserves the same approval for entries, corrections, and goal allocations.
+- The saved entry's user, proposal, action, approval, and ledger links agree with the confirmed proposal transition.
+- `npm run check` passes.
+
+## Slice 16: Close Remaining In-Memory Safety Gaps
+
+Status: Complete for the current mock, in-memory MVP. Durable storage uniqueness remains future work.
+
+Source rules: `docs/specification/mvp-safety-contract.md` rules ARC-002, INT-001, INT-002, INT-004, COR-001, COR-002, and MEM-001
+
+Goal:
+
+Keep model suggestions advisory, give every turn one supported action, and make financial history safe to inspect without accidentally rewriting it.
+
+Expected behavior:
+
+- The model cannot supply approval or tool instructions that Victoria executes.
+- Every agent result has one recognized intent and action; MVP real-transfer requests stop at a refusal.
+- Proposals carry their event, user, suggestion, mock-only mode, creation time, and state.
+- Callers receive detached, frozen snapshots of agent results and mock-ledger records.
+- Updated spending evidence is used for later suggestions and does not change an existing proposal or entry.
+- Habits, goals, and remembered decisions are isolated by user.
+- Goal allocations use the corrected effective entry amount, not the original amount before adjustments.
+
+Done when:
+
+- Contract tests cover the supported action outcomes and real-transfer refusal boundary.
+- Agent tests cover immutable snapshots and future-only evidence updates.
+- The only remaining safety contract item requires durable storage that is outside the in-memory MVP.
 - `npm run check` passes.
 
 These are useful later, but should wait until the core loop works:
@@ -427,6 +521,16 @@ These are useful later, but should wait until the core loop works:
 - Plaid sandbox transaction reads.
 - Notification reminders.
 - Production deployment.
+
+## Multi-Agent Prototype Status
+
+The non-UI, in-memory behavior queue is implemented; durable-adapter uniqueness (`IDM-004`) remains deferred until persistence exists. The standalone prototype remains in `src/agent/team-prototype.ts`. The mock composition now also injects specialists into the live headless `VictoriaAgent`: financial findings come from Financial Moment, and Savings Reasoning plus Companion Voice handle supported avoided-spend, unclear, and regretful-spend turns. Deterministic core checks retain proposal, approval, ledger, progress, goal, correction, and transfer authority. These scripted mocks do not validate provider quality or cost. Provider-backed runtime expansion still requires evaluation and server-boundary work.
+
+The server/durable-state track has a pure turn lifecycle, a user-scoped repository contract with an in-memory adapter under `src/app/turns/`, and a headless submission handler in `src/app/http/submit-turn-handler.ts`. The user confirmed that product behavior and mock multi-agent integration should continue before production authentication or server rollout. Keep these server foundations isolated while that work proceeds; the current in-memory adapter does not survive restarts or coordinate across processes.
+
+See [`multi-agent-readiness.md`](architecture/multi-agent-readiness.md) for staged prerequisites and acceptance evidence. The deterministic cases under `tests/evaluation/` are scripted smoke checks, not a benchmark of real specialist models.
+
+Use [`multi-agent-evaluation-protocol.md`](architecture/multi-agent-evaluation-protocol.md) to plan provider-backed comparison; its proposed thresholds have not been accepted.
 
 ## Final Phase: Victoria UI
 

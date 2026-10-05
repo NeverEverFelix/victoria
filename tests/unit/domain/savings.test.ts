@@ -17,6 +17,13 @@ describe("savings domain", () => {
     ).toBe(3421);
   });
 
+  it("uses the effective corrected amount while retaining the original entry", () => {
+    expect(sumCompletedSavings([
+      { amountCents: 2700, status: "completed" },
+      { amountCents: -300, status: "completed" }
+    ])).toBe(2400);
+  });
+
   it("sums completed entries from the current Monday-to-Monday UTC week", () => {
     expect(
       sumCompletedSavingsForWeek(
@@ -34,6 +41,15 @@ describe("savings domain", () => {
 
   it("calculates potential monthly savings from repeated decisions", () => {
     expect(calculatePotentialMonthlySavings(2746, 20)).toBe(54920);
+  });
+
+  it("[FIN-004] rejects invalid cents and unsafe calculated totals", () => {
+    expect(() => calculatePotentialMonthlySavings(1.5, 20)).toThrow("positive safe integer");
+    expect(() => calculatePotentialMonthlySavings(Number.MAX_SAFE_INTEGER, 2)).toThrow("safe integer");
+    expect(() => sumCompletedSavings([
+      { amountCents: Number.MAX_SAFE_INTEGER, status: "completed" },
+      { amountCents: 1, status: "completed" }
+    ])).toThrow("safe integer");
   });
 
   it("rejects invalid monthly frequency", () => {

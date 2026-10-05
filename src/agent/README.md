@@ -25,3 +25,7 @@ The agent should be proactive with reasoning, memory, suggestions, and reminders
 - `prompts/`: system instructions for Victoria's tone and behavior.
 
 The first implementation should use mock tools and deterministic tests. OpenAI, Prisma, Plaid, and real transfer APIs should be plugged in behind these interfaces later.
+
+`VictoriaAgent` can use an injected Financial Moment, Savings Reasoning, and Companion Voice team. `createVictoriaAgent` currently wires deterministic mock specialists for headless product development. Specialist classifications and assessments are validated; a suggestion must still match the deterministic tool estimate. Victoria's core agent retains proposal creation, explicit approval, ledger writes, goal handling, and transfer refusal. Progress, goal, and correction flows skip unrelated savings and voice specialists.
+
+`team-prototype.ts` remains a standalone orchestration and evaluation seam with timing instrumentation. `team-assessment-policy.ts` validates financial evidence, and `team-response-policy.ts` restores disclosures and rejects completed-action claims, shaming language, and unsupported amounts. Mock specialist integration is not provider-backed evaluation or production readiness.

@@ -8,6 +8,7 @@ export interface LlmAdapter {
 export interface ClassifyMessageInput {
   userMessage: string;
   memory: AgentMemory;
+  conversationContext?: readonly string[];
 }
 
 export interface DraftResponseInput {
@@ -16,4 +17,3 @@ export interface DraftResponseInput {
   classification: ClassifiedMessage;
   responseGoal: string;
 }
-

@@ -37,6 +37,7 @@ An implementation slice is not complete while one of its applicable rules remain
 - **Event**: the immutable financial moment reported by the user.
 - **Suggestion**: Victoria's amount and supporting rationale at a point in time.
 - **Proposal**: a user-addressed offer to record one suggestion in the mocked ledger.
+- **Proposal transition**: an append-only record of a proposal moving from pending to a terminal state.
 - **Approval**: the user's explicit authorization for one exact pending proposal.
 - **Ledger entry**: the immutable record created after valid approval.
 - **Correction**: a new linked record that changes the interpreted ledger effect without rewriting history.
@@ -50,7 +51,7 @@ An implementation slice is not complete while one of its applicable rules remain
 | FIN-001 | During the MVP, Victoria **MUST NOT** initiate, represent, or imply real money movement.                                                                                       | Enforced                             | `tests/contracts/mvp-safety-contract.test.ts`; `tests/unit/agent/policy.test.ts`; `tests/unit/agent/victoria-agent.test.ts` |
 | FIN-002 | A mocked ledger entry **MUST NOT** exist without a valid approval for its exact proposal, action, and user.                                                                    | Enforced in agent memory             | `tests/contracts/mvp-safety-contract.test.ts`; `tests/unit/agent/victoria-agent.test.ts` |
 | FIN-003 | Only completed mocked ledger entries **MAY** contribute to reported savings totals. Pending, declined, cancelled, failed, or merely suggested amounts **MUST NOT** contribute. | Enforced                             | `tests/contracts/mvp-safety-contract.test.ts`; `tests/unit/domain/savings.test.ts`       |
-| FIN-004 | Stored and calculated monetary amounts **MUST** use integer minor units. The MVP minor unit is the US cent.                                                                    | Specified                            | Planned domain validation tests                                                          |
+| FIN-004 | Stored and calculated monetary amounts **MUST** use integer minor units. The MVP minor unit is the US cent.                                                                    | Enforced for agent and domain paths | `tests/unit/domain/money.test.ts`; `tests/unit/domain/savings.test.ts`; `tests/unit/agent/victoria-agent.test.ts` |
 | FIN-005 | An estimate **MUST NOT** be presented as a guaranteed saving, available balance, or completed transfer.                                                                        | Enforced for current suggestion flow | `tests/contracts/mvp-safety-contract.test.ts`                                            |
 
 Examples:
@@ -64,14 +65,17 @@ Examples:
 
 | ID      | Agent responsibility                                                                             | Deterministic-code responsibility                                                                                         | Status                           |
 | ------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| ARC-001 | Classify natural language and extract candidate intent, merchant, amount, goal, and uncertainty. | Validate that the resulting typed value is allowed before any state change.                                               | Enforced at the current boundary |
-| ARC-002 | Propose helpful wording and supported estimates.                                                 | Own amount validation, currency rules, approval matching, state transitions, totals, idempotency, and tool authorization. | Specified; partially enforced    |
+| ARC-001 | Classify natural language and extract candidate intent, merchant, amount, goal, and uncertainty. | Validate that the resulting typed value is allowed before any state change.                                               | Enforced at runtime; invalid values become clarification |
+| ARC-002 | Propose helpful wording and supported estimates.                                                 | Own amount validation, currency rules, approval matching, state transitions, totals, idempotency, and tool authorization. | Enforced by runtime validation, lifecycle, policy, and mock-tool boundaries |
 | ARC-003 | Ask for clarification when meaning is uncertain.                                                 | Prevent a clarification or reflection decision from carrying a state-mutating tool call.                                  | Enforced for current flows       |
 | ARC-004 | Select a requested capability.                                                                   | Policy code **MUST** make the final allow/refuse decision for approval-gated or prohibited tools.                         | Enforced                         |
+| ARC-005 | Return confidence with classification and savings assessment.                                      | Classification or savings suggestion below the provisional `0.70` floor **MUST** route to clarification, never a proposal. | Enforced by confidence policy and tests |
 
-The model's confidence score is evidence for a decision; it is never authorization. A prompt instruction is not a substitute for a deterministic invariant.
+The model's confidence score is evidence for a decision; it is never authorization. A prompt instruction is not a substitute for a deterministic invariant. The `0.70` floor is a conservative product default for the current headless implementation, not a calibrated provider threshold; provider evaluation must review it before any provider-backed rollout. A Savings Reasoning `ask` remains a valid conservative outcome at any confidence. Low-confidence reflection may continue because it cannot create financial state.
 
 Example: the agent may infer `avoided_spend` and extract `$90`; deterministic code must decide whether `9000` cents is valid and whether a matching approval permits ledger creation.
+
+Malformed classifier output, including invalid confidence or unsafe/non-positive cents, is discarded and routed to clarification. Valid but low-confidence action-oriented classification becomes `unclear`; its candidate amount and intent are not used for an action. Savings assessments must also report a finite confidence in `[0, 1]`; low-confidence suggestions are downgraded to clarification. Unsupported extra fields such as `approved: true` are not retained in the typed classification.
 
 Counterexample: letting model output `{ approved: true }` directly create a ledger entry.
 
@@ -89,10 +93,10 @@ Counterexample: letting model output `{ approved: true }` directly create a ledg
 
 | ID      | Normative rule                                                                                                              | Status                                                         | Executable coverage                           |
 | ------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------- |
-| INT-001 | Every agent decision **MUST** contain one typed intent and one typed action.                                                | Enforced by types                                              | Agent typecheck and agent unit tests          |
-| INT-002 | A savings proposal **MUST** identify its event, user, suggestion, mocked movement mode, creation time, and lifecycle state. | Type-enforced, except proposal currently embeds its suggestion | `tests/type-contracts/savings.ts`             |
+| INT-001 | Every agent decision **MUST** contain one typed intent and one typed action.                                                | Enforced by types and exercised decision matrix                | Contract decision matrix and agent unit tests |
+| INT-002 | A savings proposal **MUST** identify its event, user, suggestion, mocked movement mode, creation time, and lifecycle state. | Enforced for in-memory MVP proposals                           | `tests/contracts/mvp-safety-contract.test.ts` |
 | INT-003 | A regretful-spend or unclear intent **MUST NOT** create a savings proposal or ledger-writing tool call by default.          | Enforced                                                       | `tests/contracts/mvp-safety-contract.test.ts` |
-| INT-004 | A proposal in the MVP **MUST NOT** use `real_transfer` movement mode.                                                       | Type-enforced                                                  | `tests/type-contracts/savings.ts`             |
+| INT-004 | A proposal in the MVP **MUST NOT** use `real_transfer` movement mode.                                                       | Enforced by type and runtime policy boundaries                 | `tests/type-contracts/savings.ts`; `tests/contracts/mvp-safety-contract.test.ts` |
 
 ## 4. Approval Semantics
 
@@ -133,7 +137,7 @@ reported event
          -> recorded -> mocked ledger entry
 ```
 
-`declined` and `recorded` are terminal proposal states. A new user decision after either terminal state creates a new proposal rather than reopening the old one.
+`declined`, `recorded`, and `superseded` are terminal proposal states. A new user decision after a terminal state creates a new proposal rather than reopening the old one. Editing a pending proposal creates a replacement with a new action ID and supersedes the prior proposal.
 
 | Current state | Input                          | Next state                     | Side effect                            |
 | ------------- | ------------------------------ | ------------------------------ | -------------------------------------- |
@@ -142,14 +146,16 @@ reported event
 | Pending       | Valid approval                 | Recorded                       | Create exactly one mocked ledger entry |
 | Pending       | Clear decline                  | Declined                       | No ledger entry                        |
 | Pending       | Ambiguous response             | Pending                        | Clarify; no ledger entry               |
+| Pending       | Approved revision or goal change | Superseded; replacement pending | Append transition; require new action approval |
 | Recorded      | Replayed approval              | Recorded                       | No new entry                           |
-| Declined      | Later request to record        | Declined; new proposal pending | Preserve declined proposal             |
+| Superseded    | Replayed approval              | Superseded                     | Refuse stale action; no new entry      |
+| Declined      | Later bare approval            | Declined                       | Ask the user to restate the event for a new proposal |
 
 | ID      | Normative rule                                                                                                         | Status                            |
 | ------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| STA-001 | Proposal transitions **MUST** follow the table above; impossible combinations **MUST** be unrepresentable or rejected. | Type-enforced for proposal shapes |
+| STA-001 | Proposal transitions **MUST** follow the table above; impossible combinations **MUST** be unrepresentable or rejected. | Enforced by runtime transition function and proposal types |
 | STA-002 | A clarification, reflection, or refusal **MUST NOT** mutate financial state.                                           | Enforced for current flows        |
-| STA-003 | Terminal proposals **MUST NOT** be changed back to pending.                                                            | Specified                         |
+| STA-003 | Terminal proposals **MUST NOT** be changed back to pending.                                                            | Enforced by runtime transition function and stale-action checks |
 
 ## 6. Amount Parsing, Rounding, And Currency
 
@@ -193,7 +199,7 @@ The distinction between `AMT-003` and `AMT-004` is deliberate: deterministic cal
 | ID      | Normative rule                                                                                                        | Status                                 | Executable coverage                                              |
 | ------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------- |
 | IDM-001 | Ledger creation **MUST** be idempotent on the approved action identifier, scoped to the user.                         | Enforced in the mock ledger; durable adapter enforcement remains future work | Replay scenarios in `tests/contracts/mvp-safety-contract.test.ts` and `tests/unit/agent/victoria-agent.test.ts` |
-| IDM-002 | A retry **MUST NOT** create a new event, suggestion, approval, or ledger entry when the original operation committed. | Specified                              | Planned repository/integration tests                             |
+| IDM-002 | A retry **MUST NOT** create a new event, suggestion, approval, or ledger entry when the original operation committed. | Enforced for in-memory agent and mock tools; durable adapters remain future work | Retry-after-persist tests in `tests/unit/agent/victoria-agent.test.ts` |
 | IDM-003 | A failed write **MUST NOT** be reported as recorded.                                                                  | Enforced for the current agent flow    | `tests/unit/agent/victoria-agent.test.ts`                        |
 | IDM-004 | Durable adapters **MUST** enforce uniqueness rather than relying only on an in-memory pre-check.                      | Specified                              | Planned persistence contract tests                               |
 
@@ -203,13 +209,19 @@ Real-transfer idempotency and provider retry policies are deferred because real 
 
 | ID      | Normative rule                                                                                        | Status                                        |
 | ------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| COR-001 | Events, suggestions, proposals, approvals, and ledger entries **MUST** be append-only after creation. | Type direction established; runtime specified |
-| COR-002 | New habits or evidence **MUST** affect only future suggestions.                                       | Specified                                     |
-| COR-003 | A corrected amount **MUST** be represented by a new record linked to the record it corrects.          | Specified                                     |
-| COR-004 | Audit views **MUST** retain both the original record and every linked correction.                     | Specified                                     |
-| COR-005 | Totals **MUST** use the effective ledger impact after corrections without erasing original history.   | Specified; exact record shape unresolved      |
+| COR-001 | Events, suggestions, proposals, approvals, and ledger entries **MUST** be append-only after creation. | Enforced for returned agent snapshots and mock-ledger records | `tests/unit/agent/victoria-agent.test.ts` |
+| COR-002 | New habits or evidence **MUST** affect only future suggestions.                                       | Enforced for current in-memory habit estimates | `tests/unit/agent/victoria-agent.test.ts` |
+| COR-003 | A corrected amount **MUST** be represented by a new record linked to the record it corrects.          | Enforced in mocked ledger; agent flow covered |
+| COR-004 | Audit views **MUST** retain both the original record and every linked correction.                     | Enforced by mock ledger correction listing   |
+| COR-005 | Totals **MUST** use the effective ledger impact after corrections without erasing original history.   | Enforced for weekly mocked-ledger total       |
 
-Example: an approved $27 entry later corrected to $24 retains the $27 entry and appends linked corrective history. The exact MVP correction record shape remains an open decision in `docs/decisions.md`; implementation must resolve that question before declaring correction behavior complete.
+### User-scoped memory
+
+| ID      | Normative rule                                                                                                         | Status                       | Executable coverage                                  |
+| ------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------- |
+| MEM-001 | User-specific habits, goals, and remembered decisions **MUST** be returned only to the user they belong to.            | Enforced in mock memory and estimates | `tests/unit/agent/victoria-agent.test.ts` |
+
+Example: an approved $27 entry later corrected to $24 retains the $27 entry and appends a linked adjustment of -300 cents. The corrected effective amount is $24.
 
 Counterexample: updating the original entry's `amountCents` from `2700` to `2400`.
 
@@ -251,7 +263,7 @@ Every recorded action must be reconstructable without relying on model memory or
 | AUD-002 | A successful mocked recording **MUST** say it was recorded in Victoria's savings ledger and that no real money moved.                                                       | Enforced                                      | `tests/contracts/mvp-safety-contract.test.ts`                                            |
 | AUD-003 | User-visible text **MUST NOT** claim transfer, guaranteed protection, or bank-balance changes.                                                                              | Enforced for current recording flow           |
 | AUD-004 | Financial mutations **MUST** be attributable to a user, proposal, approval/action, and timestamp.                                                                           | Type direction established; runtime specified |
-| AUD-005 | User-facing explanations **MUST NOT** expose hidden chain-of-thought. They **SHOULD** state the concise evidence used, such as user-provided amount or merchant history.    | Specified                                     |
+| AUD-005 | User-facing explanations **MUST NOT** expose hidden chain-of-thought. They **SHOULD** state the concise evidence used, such as user-provided amount or merchant history.    | Enforced for current suggestion sources       | `tests/contracts/mvp-safety-contract.test.ts` |
 
 Required successful-recording meaning:
 
@@ -265,7 +277,7 @@ The executable contract suite is `tests/contracts/mvp-safety-contract.test.ts`. 
 
 | Rule group                                      | Primary current test location                      | Completion gate                                                      |
 | ----------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------- |
-| `FIN`, `ARC`, `INT`, `APR`, `STA`, `ERR`, `AUD` | Agent contract and unit tests                      | Relevant agent slice cannot complete without applicable tests        |
+| `FIN`, `ARC`, `INT`, `APR`, `STA`, `ERR`, `AUD`, `MEM` | Agent contract and unit tests                      | Relevant agent slice cannot complete without applicable tests        |
 | `AMT`                                           | Domain money and parser tests                      | Amount-handling slice cannot complete while rules remain `Specified` |
 | `IDM`                                           | Agent replay test; future ledger integration tests | Persistent ledger slice requires durable idempotency coverage        |
 | `COR`                                           | Type contracts; future ledger integration tests    | Correction slice requires linked-record and effective-total tests    |
@@ -286,4 +298,4 @@ Do not reuse retired identifiers. Mark a replaced rule as superseded and link it
 - Plaid and provider-specific contracts.
 - Foreign-exchange rates and multi-currency ledgers.
 - Regulatory or tax reporting.
-- The exact correction/reversal record shape, pending the decision already recorded in `docs/decisions.md`.
+- Full reversal and correction of entries outside the current conversation are not yet supported by the agent flow.
