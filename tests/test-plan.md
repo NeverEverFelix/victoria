@@ -6,6 +6,22 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 
 ## Agent Behavior
 
+- The specialist coordinator validates structured findings before using them.
+- A financial-moment or savings-reasoning specialist failure or timeout stops proposal preparation, exposes no provider error detail, signals cancellation, and does not call later specialists unnecessarily.
+- An invalid specialist result stops the turn safely.
+- A savings recommendation that conflicts with a user-provided amount routes to clarification without selecting either amount.
+- A non-avoided or unclear financial moment does not invoke savings reasoning.
+- Specialist coordination returns advisory findings only; it cannot approve or write a financial record.
+- The Companion Voice Agent receives verified outcome facts and a response goal without raw user messages, user IDs, or memory.
+- A valid voice draft may change tone while preserving every canonical monetary amount and required mocked-ledger/movement disclosure.
+- Voice exceptions, timeouts, invalid drafts, unsupported amount changes, omitted estimate provenance, omitted disclosure, transfer claims, or shaming language use deterministic wording.
+- Specialist traces record only role, schema version, correlation ID, status, timestamps, and duration; they exclude user content and provider output.
+- Specialist traces stay within the configured in-memory capacity, and trace sink failure does not change Victoria's response.
+- Disagreements and timeouts use the correct trace status without creating proposals or tool calls.
+- Specialist timeout signals reach model and read-only estimation adapters; late results after timeout are ignored.
+- Financial Moment handoffs exclude memory and user IDs; Savings Reasoning receives only allowlisted event facts, with user-scoped tool access retained by deterministic orchestration.
+- Financial Moment, Savings Reasoning, and Companion Voice handoffs carry an explicit schema version and reject unknown fields, unsupported versions, and malformed nested values before results reach policy.
+
 - Victoria classifies "I cooked instead of DoorDashing" as an avoided-spend event.
 - Victoria classifies "I regret ordering takeout last night" as a regretful-spend reflection.
 - Regretful spending stays reflective even when it includes a dollar amount; it creates no savings event, proposal, suggestion, tool call, or ledger entry.

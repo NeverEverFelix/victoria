@@ -1,6 +1,6 @@
 # ADR 0001: Orchestrated Multi-Agent Architecture
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-01
 - Scope: Victoria's headless agent runtime
 
@@ -77,7 +77,7 @@ The companion role is intentionally not represented as clinical therapy. It may 
 - Use narrow, versioned schemas for every agent handoff.
 - Treat all agent output as untrusted until validation succeeds.
 - Pass locked financial facts and mandatory disclosures to the Companion Voice Agent.
-- Record agent role, input references, output, schema version, and correlation identifiers for each turn without storing hidden reasoning.
+- Record only bounded handoff metadata: role, schema version, correlation ID, outcome status, timestamps, and duration. Do not store raw inputs, specialist outputs, hidden reasoning, or unnecessary user data.
 - Preserve deterministic and mock implementations for headless tests.
 
 ## Alternatives Considered
@@ -105,11 +105,18 @@ Highly testable, but too rigid for the varied language, emotional context, and e
 ## Open Decisions
 
 - Whether the Companion Voice Agent performs emotional-context assessment and final composition in one call or two bounded stages.
-- The minimum specialist set for the first executable multi-agent slice.
 - Model selection, latency budget, and per-turn call budget for each role.
 - The durable trace format for agent handoffs without retaining hidden reasoning.
 - Whether habit analysis remains a memory service or later becomes a specialist agent.
 
-## Acceptance Condition
+## Accepted Operational Rules (2026-10-04)
 
-Change this record from `Proposed` to `Accepted` only after the product owner confirms the responsibility boundaries and the initial specialist set. Any later material change should be recorded in a new ADR that supersedes this one.
+- The initial specialist set is the Orchestrator, Financial Moment Agent, Savings Reasoning Agent, and Companion Voice Agent described above.
+- A specialist exception, timeout, invalid structured output, or material disagreement stops proposal creation for that turn and routes to clarification. Provider error details are not shown to the user. Timed specialists receive an abort signal.
+- A Savings Reasoning Agent recommendation that conflicts with an explicit user-provided amount is a material disagreement. The orchestrator must not silently choose either amount.
+- Specialist findings remain advisory. Clarification outcomes have no mutation-capable tool call, and deterministic policy remains the only authority for approval and writes.
+- The Companion Voice Agent receives structured verified outcome facts and a permitted response goal, without the raw user message or memory. Its draft is rejected if it changes currency amounts, drops required ledger or movement disclosures, introduces a money-movement claim, or uses shaming language; deterministic wording remains the fallback.
+- Specialist handoff traces are metadata-only and bounded in memory to the most recent 1,000 records per agent instance. Trace write failures do not change user-visible behavior. Durable trace persistence is not enabled.
+- The production path is developed headlessly with injected/test specialists. Live model and money movement use stay disabled until separately configured and authorized.
+
+Any later material change should be recorded in a new ADR that supersedes this one.

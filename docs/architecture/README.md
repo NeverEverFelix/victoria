@@ -15,6 +15,7 @@ These documents describe how Victoria is intended to work. The narrower product 
 - [`Victoria General System Design`](./diagrams/victoria-general-system-design.md) shows the proposed horizontally scaled modular monolith, durable turn admission, personalized memory flow, and external providers.
 - [`ADR 0001`](./decisions/0001-orchestrated-multi-agent-architecture.md) records the proposed pattern, responsibilities, and tradeoffs.
 - [`ADR 0002`](./decisions/0002-horizontally-scaled-modular-monolith.md) records the proposed Vercel and Neon deployment shape, capacity contract, cost rationale, and exit triggers.
+- [`Specialist Runtime Readiness Review`](./specialist-runtime-readiness.md) records current blockers to live model use and the recommended disabled-by-default development sequence.
 
 ## Conventions
 

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   MockLlmAdapter,
+  MockFinancialMomentSpecialist,
   MockMemoryProvider,
+  MockSavingsReasoningSpecialist,
   MockVictoriaTools,
   VictoriaAgent
 } from "../../src/agent/index.js";
@@ -272,10 +274,16 @@ const defaultHabits: UserHabit[] = [
 ];
 
 function createAgent(habits: UserHabit[] = []): VictoriaAgent {
+  const llm = new MockLlmAdapter();
+  const memory = new MockMemoryProvider(habits);
+  const tools = new MockVictoriaTools(habits);
   return new VictoriaAgent({
-    llm: new MockLlmAdapter(),
-    memory: new MockMemoryProvider(habits),
-    tools: new MockVictoriaTools(habits)
+    memory,
+    tools,
+    specialists: {
+      moment: new MockFinancialMomentSpecialist(llm),
+      savings: new MockSavingsReasoningSpecialist()
+    }
   });
 }
 

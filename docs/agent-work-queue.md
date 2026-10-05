@@ -14,6 +14,91 @@ Agents should work from the top unless the user explicitly chooses a different i
 - Do not add real OpenAI, Plaid, Prisma, or banking transfer integrations unless the slice explicitly asks for it.
 - Update docs when behavior changes.
 
+## Production Multi-Agent Path (Headless, Live Use Disabled)
+
+The product owner has accepted the specialist boundaries in ADR 0001. Develop this path with injected specialists and deterministic tests. Do not connect live model providers or real money movement as part of these slices.
+
+### Slice P1: Stop Safely On Specialist Failure
+
+Status: Implemented in the 2026-10-04 specialist coordination session.
+
+- A specialist exception, timeout, or malformed output returns a clarification outcome.
+- Specialists receive an abort signal and the coordinator enforces a bounded call time.
+- Do not expose provider error details or run later specialists after a failed prerequisite.
+- Keep specialist results advisory and outside financial write authority.
+
+### Slice P2: Hold On Material Specialist Disagreement
+
+Status: Implemented in the 2026-10-04 specialist coordination session.
+
+- A savings recommendation that conflicts with the explicit user-provided amount returns a clarification outcome.
+- Do not average the values or silently select either specialist's amount.
+- Do not create a proposal or mutation-capable tool call from this outcome.
+
+### Slice P3: Wire The Headless Orchestrator Path
+
+Status: Implemented in the 2026-10-04 orchestration wiring session.
+
+- Adapt the current `VictoriaAgent` to route through injected specialist interfaces while retaining deterministic policy and tool authority.
+- Keep app composition mock-backed; do not enable live model calls.
+- Add end-to-end agent behavior tests for aligned findings, failures, disagreement, required disclosures, and absence of tool calls on clarification.
+- Keep this work headless until the non-UI MVP sequence is complete.
+
+### Slice P4: Add The Companion Voice Handoff
+
+Status: Implemented in the 2026-10-04 companion voice session.
+
+- Pass verified outcome facts and the permitted response goal to an injected voice specialist.
+- Keep deterministic wording as the fallback when the voice specialist fails or returns invalid output.
+- Preserve required mocked-ledger disclosures outside the specialist's authority.
+- Keep live model calls disabled and test both successful and fallback wording paths.
+
+### Slice P5: Define Bounded Specialist Handoff Traces
+
+Status: Implemented in the 2026-10-04 specialist trace session.
+
+- Record role, schema version, correlation ID, outcome status, and timing without hidden reasoning or unnecessary user data.
+- Keep traces bounded in memory; durable persistence remains disabled.
+- Test that tracing does not become financial authority or change user-visible behavior.
+
+### Slice P6: Review Specialist Runtime Readiness
+
+Status: Reviewed in the 2026-10-04 runtime readiness session. Live use remains blocked.
+
+- Findings are recorded in [`specialist-runtime-readiness.md`](architecture/specialist-runtime-readiness.md).
+- Current composition is mock-only; no provider adapter or real transfer path was enabled.
+- Cancellation propagation, context minimization, strict versioned schemas, turn/cost budgets, and durable state need follow-up work.
+
+### Slice P7: Propagate Specialist Cancellation
+
+Status: Implemented in the 2026-10-04 specialist cancellation session.
+
+- Add `AbortSignal` support to model adapter and read-only estimation contracts.
+- Ensure timed-out calls stop or that late results cannot affect the turn.
+- Keep provider configuration and live model use disabled.
+
+### Slice P8: Minimize Model-Facing Context
+
+Status: Implemented in the 2026-10-04 specialist context minimization session.
+
+- Keep user IDs and tool handles in deterministic orchestration/tool context rather than model-facing inputs.
+- Pass each role only the message facts and memory needed for that role.
+- Add allowlist tests for specialist inputs; keep live model use disabled.
+
+### Slice P9: Define Strict Versioned Handoff Schemas
+
+Status: Implemented in the 2026-10-05 versioned specialist schemas session.
+
+- Add explicit schema versions to specialist input and output handoffs.
+- Reject unknown fields and malformed values at every coordinator boundary.
+- Keep live model use disabled.
+
+### Next: Add Turn And Cost Budgets
+
+- Define an overall turn deadline and per-role call, token/output, and cost limits.
+- Keep live model use disabled by default and retain deterministic fallbacks.
+- Test exhaustion, cancellation, and disabled states without live provider calls.
+
 ## Slice 1: Avoided Spend With Explicit Amount
 
 Source story: `docs/user-stories.md` Story 1

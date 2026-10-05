@@ -1,6 +1,9 @@
 import {
   MockLlmAdapter,
+  MockFinancialMomentSpecialist,
   MockMemoryProvider,
+  MockSavingsReasoningSpecialist,
+  MockCompanionVoiceSpecialist,
   MockVictoriaTools,
   VictoriaAgent
 } from "../agent/index.js";
@@ -24,11 +27,17 @@ export function createVictoriaAgent(options: CreateVictoriaAgentOptions): Victor
   }
 
   const habits = options.seedHabits ?? [];
+  const llm = new MockLlmAdapter();
+  const memory = new MockMemoryProvider(habits);
+  const tools = new MockVictoriaTools(habits);
 
   return new VictoriaAgent({
-    llm: new MockLlmAdapter(),
-    memory: new MockMemoryProvider(habits),
-    tools: new MockVictoriaTools(habits)
+    memory,
+    tools,
+    specialists: {
+      moment: new MockFinancialMomentSpecialist(llm),
+      savings: new MockSavingsReasoningSpecialist()
+    },
+    voice: new MockCompanionVoiceSpecialist()
   });
 }
-

@@ -8,3 +8,7 @@ export * from "./memory/mock-memory.js";
 export * from "./tools/contracts.js";
 export * from "./tools/mock-tools.js";
 export * from "./prompts/system-prompt.js";
+export * from "./specialists/coordinator.js";
+export * from "./specialists/mock-specialists.js";
+export * from "./specialists/companion-voice.js";
+export * from "./specialists/tracing.js";

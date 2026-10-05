@@ -10,12 +10,15 @@ export type { SavingsEntry } from "../../domain/savings/types.js";
 export interface FindTypicalMerchantSpendInput {
   userId: string;
   merchantName: string;
+  signal: AbortSignal;
 }
 
 export interface EstimateAvoidedSpendInput {
   userId: string;
   merchantName?: string;
   userProvidedAmountCents?: number;
+  /** Read-only providers must cancel work or discard results when this signal aborts. */
+  signal: AbortSignal;
 }
 
 export interface CreateSavingsEntryInput {

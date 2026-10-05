@@ -1,4 +1,3 @@
-import type { LlmAdapter } from "./llm/types.js";
 import type { MemoryProvider } from "./memory/types.js";
 import { canCallTool, interpretApprovalResponse } from "./policy.js";
 import type { VictoriaTools } from "./tools/contracts.js";
@@ -17,14 +16,35 @@ import type {
   SavingsProposal,
   SavingsSuggestion
 } from "./types.js";
+import { coordinateSpecialists, type SpecialistTeam } from "./specialists/coordinator.js";
+import {
+  isSafeCompanionVoiceDraft,
+  type CompanionVoiceSpecialist,
+  type VerifiedResponseOutcome
+} from "./specialists/companion-voice.js";
+import {
+  createSpecialistTrace,
+  recordTraceSafely,
+  InMemorySpecialistTraceSink,
+  type SpecialistHandoffTrace,
+  type SpecialistTraceSink
+} from "./specialists/tracing.js";
+import {
+  CompanionVoiceInputSchema,
+  CompanionVoiceOutputSchema,
+  HANDOFF_SCHEMA_VERSION
+} from "./specialists/handoff-schemas.js";
 
 export interface VictoriaAgentDependencies {
-  llm: LlmAdapter;
   memory: MemoryProvider;
   tools: VictoriaTools;
+  specialists: SpecialistTeam;
+  voice?: CompanionVoiceSpecialist;
+  traceSink?: SpecialistTraceSink;
 }
 
 export class VictoriaAgent {
+  private readonly traceBuffer = new InMemorySpecialistTraceSink(1000);
   private readonly pendingSavingsActions = new Map<
     string,
     { userId: string; conversationKey: string; decision: AgentDecision; awaitingValidRevision?: boolean }
@@ -49,7 +69,17 @@ export class VictoriaAgent {
 
   constructor(private readonly dependencies: VictoriaAgentDependencies) {}
 
+  getRecentSpecialistHandoffTraces(): SpecialistHandoffTrace[] {
+    return this.traceBuffer.list();
+  }
+
   async respond(request: AgentRequest): Promise<AgentResponse> {
+    const correlationId = globalThis.crypto.randomUUID();
+    const response = await this.respondWithoutVoice(request, correlationId);
+    return this.composeWithVoice(response, correlationId);
+  }
+
+  private async respondWithoutVoice(request: AgentRequest, correlationId: string): Promise<AgentResponse> {
     const conversationKey = this.conversationKey(request);
     const pendingGoalActionId = this.pendingGoalAllocationIdsByConversation.get(conversationKey);
     const pendingGoalAction = pendingGoalActionId
@@ -163,11 +193,51 @@ export class VictoriaAgent {
       }
     }
 
-    const memory = await this.dependencies.memory.getMemoryForUser(request.userId);
-    const classification = await this.dependencies.llm.classifyMessage({
-      userMessage: request.message,
-      memory
+    let classification: ClassifiedMessage;
+    let specialistSuggestion: SavingsSuggestion | null | undefined;
+    const coordinated = await coordinateSpecialists(this.dependencies.specialists, {
+      userMessage: request.message
+    }, {
+      correlationId,
+      traceSink: { record: (trace) => this.recordTrace(trace) },
+      estimateSpend: (facts, signal) => this.dependencies.tools.estimateAvoidedSpend({
+        userId: request.userId,
+        ...(facts.merchantName ? { merchantName: facts.merchantName } : {}),
+        ...(facts.userProvidedAmountCents !== undefined
+          ? { userProvidedAmountCents: facts.userProvidedAmountCents }
+          : {}),
+        signal
+      })
     });
+    if (coordinated.status === "clarify" && coordinated.reason !== "moment_needs_clarification") {
+      const safeClassification = coordinated.classification ?? {
+        type: "unclear" as const,
+        confidence: 0,
+        summary: request.message,
+        needsClarification: true
+      };
+      const message = coordinated.reason === "specialist_disagreement"
+        ? "I got conflicting information about that savings amount, so I haven't prepared a savings suggestion. What amount should I use?"
+        : "I couldn't confidently understand that financial moment, so I haven't prepared a savings suggestion. Could you tell me a little more?";
+      return {
+        message,
+        decision: {
+          action: "ask_follow_up",
+          classification: safeClassification,
+          userFacingMessage: message
+        }
+      };
+    }
+    if (coordinated.status === "ready") {
+      classification = coordinated.classification;
+      specialistSuggestion = coordinated.recommendation.kind === "suggest"
+        ? coordinated.recommendation
+        : coordinated.recommendation.kind === "no_suggestion"
+        ? null
+        : undefined;
+    } else {
+      classification = coordinated.classification!;
+    }
 
     if (classification.type === "real_money_movement_request") {
       const pendingAmountCents = pendingAction?.decision.suggestion?.amountCents;
@@ -338,7 +408,12 @@ export class VictoriaAgent {
       this.pendingAmountClarifications.delete(this.conversationKey(request));
     }
 
-    const decision = await this.decide(request, resolvedClassification, resolvedSavingsEvent);
+    const decision = await this.decide(
+      request,
+      resolvedClassification,
+      resolvedSavingsEvent,
+      specialistSuggestion
+    );
 
     return {
       message: decision.userFacingMessage,
@@ -349,7 +424,8 @@ export class VictoriaAgent {
   private async decide(
     request: AgentRequest,
     classification: ClassifiedMessage,
-    savingsEvent?: SavingsEvent
+    savingsEvent?: SavingsEvent,
+    specialistSuggestion?: SavingsSuggestion | null
   ): Promise<AgentDecision> {
     if (classification.type === "savings_progress") {
       let message: string;
@@ -401,7 +477,7 @@ export class VictoriaAgent {
     }
 
     if (classification.type === "avoided_spend") {
-      return this.suggestSavings(request, classification, savingsEvent);
+      return this.suggestSavings(request, classification, savingsEvent, specialistSuggestion);
     }
 
     if (classification.type === "goal_allocation") {
@@ -425,17 +501,32 @@ export class VictoriaAgent {
   private async suggestSavings(
     request: AgentRequest,
     classification: ClassifiedMessage,
-    existingSavingsEvent?: SavingsEvent
+    existingSavingsEvent?: SavingsEvent,
+    specialistSuggestion?: SavingsSuggestion | null
   ): Promise<AgentDecision> {
     const savingsEvent = existingSavingsEvent ?? this.buildSavingsEvent(request, classification);
     this.recentSavingsEntriesByConversation.delete(this.conversationKey(request));
-    const suggestion = await this.dependencies.tools.estimateAvoidedSpend({
-      userId: request.userId,
-      ...(classification.merchantName ? { merchantName: classification.merchantName } : {}),
-      ...(classification.amountCents !== undefined
-        ? { userProvidedAmountCents: classification.amountCents }
-        : {})
-    });
+    let suggestion: SavingsSuggestion | null;
+    try {
+      suggestion = specialistSuggestion === undefined
+        ? await this.dependencies.tools.estimateAvoidedSpend({
+            userId: request.userId,
+            ...(classification.merchantName ? { merchantName: classification.merchantName } : {}),
+            ...(classification.amountCents !== undefined
+              ? { userProvidedAmountCents: classification.amountCents }
+              : {}),
+            signal: AbortSignal.timeout(10_000)
+          })
+        : specialistSuggestion;
+    } catch {
+      const message = "I couldn't check that savings estimate just now. Please try again in a moment, or tell me the amount you would have spent.";
+      return {
+        action: "ask_follow_up",
+        classification,
+        savingsEvent,
+        userFacingMessage: message
+      };
+    }
 
     if (!suggestion) {
       this.pendingAmountClarifications.set(this.conversationKey(request), {
@@ -929,4 +1020,102 @@ export class VictoriaAgent {
   private conversationKey(request: AgentRequest): string {
     return `${request.userId}:${request.conversationId ?? "default"}`;
   }
+
+  private async composeWithVoice(response: AgentResponse, correlationId: string): Promise<AgentResponse> {
+    const voice = this.dependencies.voice ?? this.dependencies.specialists?.voice;
+    if (!voice) return response;
+
+    const outcome: VerifiedResponseOutcome = {
+      action: response.decision.action,
+      financialEventType: response.decision.classification.type,
+      ...(response.decision.suggestion
+        ? {
+            amountCents: response.decision.suggestion.amountCents,
+            amountSource: response.decision.suggestion.source,
+            movementMode: response.decision.suggestion.movementMode
+          }
+        : response.decision.goalAllocation
+        ? {
+            amountCents: response.decision.goalAllocation.amountCents,
+            ...(response.decision.toolCall?.movementMode
+              ? { movementMode: response.decision.toolCall.movementMode }
+              : {})
+          }
+        : response.decision.proposal
+        ? {
+            amountCents: response.decision.proposal.suggestion.amountCents,
+            amountSource: response.decision.proposal.suggestion.source,
+            movementMode: response.decision.proposal.suggestion.movementMode
+          }
+        : response.decision.classification.amountCents !== undefined
+        ? { amountCents: response.decision.classification.amountCents }
+        : {}),
+      ...(response.decision.proposal ? { proposalStatus: response.decision.proposal.status } : {}),
+      ...(response.decision.goalAllocation
+        ? { goalName: response.decision.goalAllocation.goalName }
+        : response.decision.proposal?.goalName
+        ? { goalName: response.decision.proposal.goalName }
+        : {}),
+      ledgerEntryRecorded: response.decision.action === "create_ledger_entry" ||
+        response.decision.action === "record_goal_allocation"
+    };
+
+    const controller = new AbortController();
+    const startedAt = new Date();
+    const start = performance.now();
+    let status: "succeeded" | "failed" | "timed_out" | "invalid_output" = "failed";
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const handoff = CompanionVoiceInputSchema.parse({
+        schemaVersion: HANDOFF_SCHEMA_VERSION,
+        outcome,
+        responseGoal: response.message
+      });
+      const rawOutput = await Promise.race([
+        voice.compose({ handoff, signal: controller.signal }),
+        new Promise<unknown>((_, reject) => {
+          timeout = setTimeout(() => {
+            controller.abort();
+            reject(new CompanionVoiceTimeoutError());
+          }, 5_000);
+        })
+      ]);
+      const parsedOutput = CompanionVoiceOutputSchema.safeParse(rawOutput);
+      if (!parsedOutput.success) {
+        status = "invalid_output";
+        return response;
+      }
+      const draft = parsedOutput.data.draft;
+      if (!isSafeCompanionVoiceDraft(draft, response.message)) {
+        status = "invalid_output";
+        return response;
+      }
+      status = "succeeded";
+      return {
+        ...response,
+        message: draft,
+        decision: { ...response.decision, userFacingMessage: draft }
+      };
+    } catch (error) {
+      if (error instanceof CompanionVoiceTimeoutError) status = "timed_out";
+      return response;
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+      this.recordTrace(createSpecialistTrace({
+        correlationId,
+        role: "companion_voice",
+        status,
+        startedAt: startedAt.toISOString(),
+        completedAt: new Date().toISOString(),
+        durationMs: Math.max(0, Math.round(performance.now() - start))
+      }));
+    }
+  }
+
+  private recordTrace(trace: SpecialistHandoffTrace): void {
+    this.traceBuffer.record(trace);
+    recordTraceSafely(this.dependencies.traceSink, trace);
+  }
 }
+
+class CompanionVoiceTimeoutError extends Error {}

@@ -27,6 +27,7 @@ export class MockVictoriaTools implements VictoriaTools {
   }
 
   async findTypicalMerchantSpend(input: FindTypicalMerchantSpendInput): Promise<number | null> {
+    input.signal.throwIfAborted();
     const habit = this.habits.find(
       (candidate) => candidate.merchantName.toLowerCase() === input.merchantName.toLowerCase()
     );
@@ -35,6 +36,7 @@ export class MockVictoriaTools implements VictoriaTools {
   }
 
   async estimateAvoidedSpend(input: EstimateAvoidedSpendInput): Promise<SavingsSuggestion | null> {
+    input.signal.throwIfAborted();
     if (input.userProvidedAmountCents !== undefined) {
       return {
         id: `suggestion_${Date.now()}`,
@@ -52,8 +54,10 @@ export class MockVictoriaTools implements VictoriaTools {
 
     const typicalAmountCents = await this.findTypicalMerchantSpend({
       userId: input.userId,
-      merchantName: input.merchantName
+      merchantName: input.merchantName,
+      signal: input.signal
     });
+    input.signal.throwIfAborted();
 
     if (typicalAmountCents === null) {
       return null;

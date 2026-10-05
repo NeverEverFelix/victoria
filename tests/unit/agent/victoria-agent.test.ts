@@ -1,15 +1,241 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MockLlmAdapter,
+  MockFinancialMomentSpecialist,
   MockMemoryProvider,
+  MockSavingsReasoningSpecialist,
   MockVictoriaTools,
-  VictoriaAgent
+  VictoriaAgent,
+  type CompanionVoiceSpecialist,
+  type SpecialistTeam
 } from "../../../src/agent/index.js";
 import type { UserHabit } from "../../../src/agent/types.js";
 import type { SavingsEntry } from "../../../src/domain/savings/types.js";
 
 describe("VictoriaAgent", () => {
   afterEach(() => vi.useRealTimers());
+
+  it("returns a safe follow-up when a specialist fails without preparing a tool call", async () => {
+    const tools = new MockVictoriaTools();
+    const estimate = vi.spyOn(tools, "estimateAvoidedSpend");
+    const specialists: SpecialistTeam = {
+      moment: { analyze: vi.fn().mockRejectedValue(new Error("private provider detail")) },
+      savings: { recommend: vi.fn() }
+    };
+    const agent = createAgent([], tools, specialists);
+
+    const response = await agent.respond({
+      userId: "user_123",
+      message: "I cooked instead of ordering takeout."
+    });
+
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.classification.type).toBe("unclear");
+    expect(response.decision.proposal).toBeUndefined();
+    expect(response.decision.suggestion).toBeUndefined();
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(response.message).not.toContain("private provider detail");
+    expect(estimate).not.toHaveBeenCalled();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("returns a safe follow-up when savings reasoning fails", async () => {
+    const tools = new MockVictoriaTools();
+    const estimate = vi.spyOn(tools, "estimateAvoidedSpend");
+    const specialists: SpecialistTeam = {
+      moment: {
+        analyze: vi.fn().mockResolvedValue({ schemaVersion: 1, classification: {
+          type: "avoided_spend",
+          confidence: 0.9,
+          summary: "Skipped takeout",
+          needsClarification: false
+        } })
+      },
+      savings: { recommend: vi.fn().mockRejectedValue(new Error("private provider detail")) }
+    };
+    const agent = createAgent([], tools, specialists);
+
+    const response = await agent.respond({ userId: "user_123", message: "I skipped takeout." });
+
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.classification.type).toBe("avoided_spend");
+    expect(response.decision.proposal).toBeUndefined();
+    expect(response.decision.suggestion).toBeUndefined();
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(response.message).not.toContain("private provider detail");
+    expect(estimate).not.toHaveBeenCalled();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("asks the user to resolve amount disagreement without creating a suggestion or tool call", async () => {
+    const tools = new MockVictoriaTools();
+    const estimate = vi.spyOn(tools, "estimateAvoidedSpend");
+    const specialists: SpecialistTeam = {
+      moment: {
+        analyze: vi.fn().mockResolvedValue({ schemaVersion: 1, classification: {
+          type: "avoided_spend",
+          confidence: 0.9,
+          amountCents: 2700,
+          summary: "Skipped takeout",
+          needsClarification: false
+        } })
+      },
+      savings: {
+        recommend: vi.fn().mockResolvedValue({ schemaVersion: 1, recommendation: {
+          kind: "suggest",
+          id: "suggestion_disagreement",
+          amountCents: 2500,
+          currency: "USD",
+          movementMode: "mock_ledger",
+          source: "manual_estimate",
+          reason: "Estimated takeout"
+        } })
+      }
+    };
+    const agent = createAgent([], tools, specialists);
+
+    const response = await agent.respond({
+      userId: "user_123",
+      message: "I avoided spending $27 on takeout."
+    });
+
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.proposal).toBeUndefined();
+    expect(response.decision.suggestion).toBeUndefined();
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(response.message).toContain("conflicting information");
+    expect(estimate).not.toHaveBeenCalled();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("hands only verified response facts and the permitted goal to the companion voice", async () => {
+    let receivedInput: Parameters<CompanionVoiceSpecialist["compose"]>[0] | undefined;
+    const voice: CompanionVoiceSpecialist = {
+      compose: vi.fn(async (input) => {
+        receivedInput = input;
+        return voiceOutput("Using the $90.00 amount you provided, I can record it in your mocked Victoria savings ledger. No real money has moved yet.");
+      })
+    };
+    const agent = createAgent([], new MockVictoriaTools(), undefined, voice);
+
+    const response = await agent.respond({
+      userId: "user_123",
+      message: "I almost bought a $90 jacket but decided to wait."
+    });
+
+    expect(response.message).toContain("I can record it");
+    expect(response.decision.userFacingMessage).toBe(response.message);
+    expect(receivedInput?.handoff.outcome).toMatchObject({
+      action: "suggest_savings",
+      financialEventType: "avoided_spend",
+      amountCents: 9000,
+      amountSource: "user_provided",
+      movementMode: "mock_ledger",
+      proposalStatus: "pending"
+    });
+    expect(Object.keys(receivedInput?.handoff ?? {}).sort()).toEqual([
+      "outcome", "responseGoal", "schemaVersion"
+    ]);
+    expect(receivedInput?.handoff.schemaVersion).toBe(1);
+    expect(receivedInput).not.toHaveProperty("userId");
+    expect(receivedInput).not.toHaveProperty("userMessage");
+    expect(receivedInput).not.toHaveProperty("memory");
+    expect(receivedInput?.handoff.outcome).not.toHaveProperty("toolCall");
+  });
+
+  it("uses the deterministic response when companion voice output omits a required disclosure", async () => {
+    const voice: CompanionVoiceSpecialist = {
+      compose: vi.fn().mockResolvedValue(voiceOutput("I recorded $90.00 in savings for you."))
+    };
+    const agent = createAgent([], new MockVictoriaTools(), undefined, voice);
+
+    const response = await agent.respond({
+      userId: "user_123",
+      message: "I almost bought a $90 jacket but decided to wait."
+    });
+
+    expect(response.message).toBe(response.decision.userFacingMessage);
+    expect(response.message).toContain("No real money has moved yet.");
+    expect(response.message).not.toBe("I recorded $90.00 in savings for you.");
+  });
+
+  it("rejects an unversioned or extra-field Companion Voice output", async () => {
+    const voice: CompanionVoiceSpecialist = {
+      compose: vi.fn().mockResolvedValue({
+        schemaVersion: 1,
+        draft: "Using the $90.00 amount you provided, I can record it in your mocked Victoria savings ledger. No real money has moved yet.",
+        userId: "unexpected"
+      })
+    };
+    const agent = createAgent([], new MockVictoriaTools(), undefined, voice);
+
+    const response = await agent.respond({
+      userId: "user_123",
+      message: "I almost bought a $90 jacket but decided to wait."
+    });
+
+    expect(response.message).toBe(response.decision.userFacingMessage);
+    expect(response.message).not.toContain("unexpected");
+    expect(response.message).toContain("No real money has moved yet.");
+    expect(agent.getRecentSpecialistHandoffTraces().at(-1)).toMatchObject({
+      role: "companion_voice",
+      status: "invalid_output"
+    });
+  });
+
+  it("uses the deterministic response when companion voice adds an unsupported amount", async () => {
+    const voice: CompanionVoiceSpecialist = {
+      compose: vi.fn().mockResolvedValue(voiceOutput(
+        "I can record $90.00 and an extra $10.00 in your Victoria savings ledger. No real money has moved yet."
+      ))
+    };
+    const agent = createAgent([], new MockVictoriaTools(), undefined, voice);
+
+    const response = await agent.respond({
+      userId: "user_123",
+      message: "I almost bought a $90 jacket but decided to wait."
+    });
+
+    expect(response.message).toBe(response.decision.userFacingMessage);
+    expect(response.message).not.toContain("extra $10.00");
+    expect(response.message).toContain("amount you provided");
+  });
+
+  it("falls back to deterministic wording when companion voice fails", async () => {
+    const voice: CompanionVoiceSpecialist = {
+      compose: vi.fn().mockRejectedValue(new Error("private provider detail"))
+    };
+    const agent = createAgent([], new MockVictoriaTools(), undefined, voice);
+
+    const response = await agent.respond({
+      userId: "user_123",
+      message: "I almost bought a $90 jacket but decided to wait."
+    });
+
+    expect(response.message).toBe(response.decision.userFacingMessage);
+    expect(response.message).toContain("No real money has moved yet.");
+    expect(response.message).not.toContain("private provider detail");
+  });
+
+  it("aborts a stalled companion voice call and keeps deterministic wording", async () => {
+    let receivedSignal: AbortSignal | undefined;
+    const voice: CompanionVoiceSpecialist = {
+      compose: vi.fn((input) => {
+        receivedSignal = input.signal;
+        return new Promise<unknown>(() => {});
+      })
+    };
+    const agent = createAgent([], new MockVictoriaTools(), undefined, voice);
+
+    const response = await agent.respond({
+      userId: "user_123",
+      message: "I almost bought a $90 jacket but decided to wait."
+    });
+
+    expect(receivedSignal?.aborted).toBe(true);
+    expect(response.message).toBe(response.decision.userFacingMessage);
+    expect(response.message).toContain("No real money has moved yet.");
+  }, 6500);
 
   it("answers weekly progress through a read-only ledger summary tool", async () => {
     vi.useFakeTimers();
@@ -1155,12 +1381,20 @@ describe("VictoriaAgent", () => {
 
 function createAgent(
   habits: UserHabit[] = [],
-  tools: MockVictoriaTools = new MockVictoriaTools(habits)
+  tools: MockVictoriaTools = new MockVictoriaTools(habits),
+  specialistOverrides?: SpecialistTeam,
+  voiceOverride?: CompanionVoiceSpecialist
 ): VictoriaAgent {
+  const llm = new MockLlmAdapter();
+  const memory = new MockMemoryProvider(habits);
   return new VictoriaAgent({
-    llm: new MockLlmAdapter(),
-    memory: new MockMemoryProvider(habits),
-    tools
+    memory,
+    tools,
+    specialists: specialistOverrides ?? {
+      moment: new MockFinancialMomentSpecialist(llm),
+      savings: new MockSavingsReasoningSpecialist()
+    },
+    ...(voiceOverride ? { voice: voiceOverride } : {})
   });
 }
 
@@ -1170,6 +1404,10 @@ function requireActionId(actionId: string | undefined): string {
   }
 
   return actionId;
+}
+
+function voiceOutput(draft: string) {
+  return { schemaVersion: 1 as const, draft };
 }
 
 function savingsEntry(

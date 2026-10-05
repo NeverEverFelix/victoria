@@ -4,6 +4,7 @@ import type { ClassifyMessageInput, DraftResponseInput, LlmAdapter } from "./typ
 
 export class MockLlmAdapter implements LlmAdapter {
   async classifyMessage(input: ClassifyMessageInput): Promise<ClassifiedMessage> {
+    input.signal.throwIfAborted();
     const message = input.userMessage.toLowerCase();
     const amountParse = parseExplicitDollarAmount(input.userMessage);
     const amountCents = amountParse.status === "valid" ? amountParse.amountCents : undefined;
@@ -103,6 +104,7 @@ export class MockLlmAdapter implements LlmAdapter {
   }
 
   async draftResponse(input: DraftResponseInput): Promise<string> {
+    input.signal.throwIfAborted();
     return input.responseGoal;
   }
 }

@@ -110,6 +110,32 @@ Safer behavior:
 
 ## Integration Failures
 
+### Specialist Failure Or Disagreement Becomes A Savings Proposal
+
+Risk:
+
+A specialist times out, returns malformed structured data, or disagrees with another specialist, but the orchestrator chooses a convenient answer and continues toward a savings action.
+
+Safer behavior:
+
+- Treat specialist output as advisory and validate it at the handoff boundary.
+- On specialist failure, timeout, or invalid output, stop the proposal path and ask a clear follow-up without exposing provider error details. Bound call time and signal cancellation.
+- When specialists materially disagree, do not average or silently prefer one result; ask the user to clarify.
+- Never attach a mutation-capable tool call to a clarification outcome.
+- Keep live model calls disabled while these paths are developed against injected test specialists.
+
+### Companion Voice Changes Verified Financial Meaning
+
+Risk:
+
+The Companion Voice Agent rewrites an amount, removes whether it was estimated or user-provided, omits the mocked-ledger or no-transfer disclosure, claims money moved, or responds with shame.
+
+Safer behavior:
+
+- Give the voice role only verified outcome facts and a permitted response goal, without raw user messages or memory.
+- Reject drafts that change monetary amounts, remove required disclosures or provenance, claim a transfer occurred, or shame the user.
+- Fall back to the deterministic response when voice output fails, times out, or fails validation.
+
 ### Real Providers Leak Into The Agent
 
 Risk:
