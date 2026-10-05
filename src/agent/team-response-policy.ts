@@ -23,7 +23,7 @@ export function finalizeCompanionResponse(
   finding: FinancialMomentFinding,
   assessment: SavingsAssessment
 ): FinalizedResponse {
-  const voiceDraftAccepted = isSafeVoiceDraft(draft);
+  const voiceDraftAccepted = isSafeVoiceDraft(draft, finding, assessment);
   let message = voiceDraftAccepted ? draft.trim() : deterministicResponse(finding, assessment);
   message = enforceRequiredDisclosures(message, finding, assessment);
   return Object.freeze({ message, voiceDraftAccepted });
@@ -53,8 +53,30 @@ function enforceRequiredDisclosures(message: string, finding: FinancialMomentFin
   return message;
 }
 
-function isSafeVoiceDraft(candidate: unknown): candidate is string {
-  return typeof candidate === "string" && candidate.trim().length > 0 && !claimsCompletedAction(candidate);
+function isSafeVoiceDraft(candidate: unknown, finding: FinancialMomentFinding, assessment: SavingsAssessment): candidate is string {
+  if (typeof candidate !== "string" || !candidate.trim() || claimsCompletedAction(candidate) || isShaming(candidate)) return false;
+  if (assessment.outcome === "ask" && !candidate.includes("?")) return false;
+  if (hasUnsupportedMoneyAmount(candidate, finding, assessment)) return false;
+  return true;
+}
+
+function isShaming(message: string): boolean {
+  return /\b(?:irresponsible|lazy|bad with money|you should have known|shame on you|you failed)\b/i.test(message);
+}
+
+function hasUnsupportedMoneyAmount(message: string, finding: FinancialMomentFinding, assessment: SavingsAssessment): boolean {
+  const mentions = message.match(/(?:[$€£]\s?-?\d[\d,]*(?:\.\d+)?|\b-?\d[\d,]*(?:\.\d+)?\s+(?:dollars?|bucks)\b)/gi) ?? [];
+  if (!mentions.length) return false;
+  const expectedAmount = assessment.outcome === "suggest"
+    ? assessment.amountCents
+    : finding.classification.amountCents;
+  if (!Number.isSafeInteger(expectedAmount) || (expectedAmount ?? 0) <= 0) return true;
+  return mentions.some((mention) => {
+    if (/[€£]/.test(mention)) return true;
+    const normalized = mention.replace(/[$,\s]|\b(?:dollars?|bucks)\b/gi, "");
+    const parsedCents = Math.round(Number(normalized) * 100);
+    return !Number.isSafeInteger(parsedCents) || parsedCents !== expectedAmount;
+  });
 }
 
 function claimsCompletedAction(message: string): boolean {

@@ -65,6 +65,8 @@ export interface UserHabit {
 
 export interface ClassifiedMessage {
   type: FinancialEventType;
+  /** Internal policy annotation; never accepted from a classifier as input. */
+  uncertainIntent?: Exclude<FinancialEventType, "unclear">;
   confidence: number;
   merchantName?: string;
   amountCents?: number;

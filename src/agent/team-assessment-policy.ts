@@ -1,4 +1,5 @@
 import type { AgentMemory } from "./types.js";
+import { MIN_ACTIONABLE_CONFIDENCE } from "./confidence-policy.js";
 import type { FinancialMomentFinding, SavingsAssessment } from "./team-prototype.js";
 import { validateClassifiedMessage } from "./validation.js";
 
@@ -18,6 +19,7 @@ export function fallbackFinding(summary: string): FinancialMomentFinding {
 export function clarificationAfterSpecialistFailure(role: "financialMoment" | "savingsReasoning"): SavingsAssessment {
   return Object.freeze({
     outcome: "ask",
+    confidence: 1,
     question: role === "financialMoment"
       ? "Could you tell me a little more about what happened?"
       : "I want to make sure I have the amount right. Could you clarify it?"
@@ -27,8 +29,11 @@ export function clarificationAfterSpecialistFailure(role: "financialMoment" | "s
 /** Return only supported, evidence-consistent advice; never treat it as approval. */
 export function validateTeamAssessment(candidate: unknown, finding: FinancialMomentFinding, memory: AgentMemory): SavingsAssessment {
   if (!isRecord(candidate)) throw new Error("invalid assessment");
+  if (typeof candidate.confidence !== "number" || !Number.isFinite(candidate.confidence) ||
+      candidate.confidence < 0 || candidate.confidence > 1) throw new Error("invalid assessment confidence");
   if (candidate.outcome === "suggest") {
-    if (!hasOnlyKeys(candidate, ["outcome", "amountCents", "source", "rationale"])) throw new Error("unsupported fields");
+    if (!hasOnlyKeys(candidate, ["outcome", "confidence", "amountCents", "source", "rationale"])) throw new Error("unsupported fields");
+    if (candidate.confidence < MIN_ACTIONABLE_CONFIDENCE) throw new Error("suggestion confidence is too low");
     if (finding.classification.type !== "avoided_spend" || finding.classification.needsClarification ||
         finding.classification.amountIssue !== undefined ||
         !Number.isSafeInteger(candidate.amountCents) || (candidate.amountCents as number) <= 0 ||
@@ -48,15 +53,16 @@ export function validateTeamAssessment(candidate: unknown, finding: FinancialMom
       throw new Error("unsupported suggestion source");
     }
     return Object.freeze({
-      outcome: "suggest", amountCents: candidate.amountCents as number,
+      outcome: "suggest", confidence: candidate.confidence, amountCents: candidate.amountCents as number,
       source: candidate.source, rationale: candidate.rationale as string
     });
   }
-  if (candidate.outcome === "ask" && hasOnlyKeys(candidate, ["outcome", "question"]) && typeof candidate.question === "string" && candidate.question.trim()) {
-    return Object.freeze({ outcome: "ask", question: candidate.question.trim() });
+  if (candidate.outcome === "ask" && hasOnlyKeys(candidate, ["outcome", "confidence", "question"]) &&
+      typeof candidate.question === "string" && candidate.question.trim()) {
+    return Object.freeze({ outcome: "ask", confidence: candidate.confidence, question: candidate.question.trim() });
   }
-  if (candidate.outcome === "reflect" && hasOnlyKeys(candidate, ["outcome", "rationale"]) && typeof candidate.rationale === "string") {
-    return Object.freeze({ outcome: "reflect", rationale: candidate.rationale });
+  if (candidate.outcome === "reflect" && hasOnlyKeys(candidate, ["outcome", "confidence", "rationale"]) && typeof candidate.rationale === "string") {
+    return Object.freeze({ outcome: "reflect", confidence: candidate.confidence, rationale: candidate.rationale });
   }
   throw new Error("invalid assessment");
 }

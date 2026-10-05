@@ -74,6 +74,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Correcting a recorded amount requires exact approval, appends a signed adjustment, and leaves the original entry unchanged.
 - Corrections reject invalid, no-op, cross-user, non-completed, or non-mocked targets, and effective weekly totals retain the original entry's week.
 - Model classifications and estimated suggestions are runtime-validated; malformed values and model-supplied approval fields cannot create proposals or ledger entries.
+- Model classification and Savings Reasoning confidence are validated; classification or a savings suggestion below the provisional 0.70 floor asks for clarification, and confidence never authorizes a ledger action.
 - If a save, correction, or goal allocation succeeds but its reply is lost, repeating the approval reuses the same approval record and returns the existing mocked result without duplicating history.
 - Each recorded entry links to the same user, proposal, action, approval, and ledger entry shown in its proposal transition.
 - Estimated amounts explain their basis briefly, such as the user's usual spend at a named merchant.
@@ -124,10 +125,28 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Invalid moment output, specialist exceptions, or conflicting savings amounts resolve to a safe clarification/reflection and never to a financial mutation.
 - Suggested user-provided amounts must match the validated finding; habit estimates must match the user's own USD habit record.
 - The deterministic response policy restores mandatory confirmation, mocked-ledger, and no-transfer disclosures when voice output omits them or falsely claims an action completed.
+- Savings Reasoning chooses whether to ask, suggest, or reflect. When it chooses ask, its clarification wording goes directly to the user and Companion Voice does not rewrite it.
 - Habit-based savings wording remains explicitly estimated after companion voice drafting.
 - The curated specialist readiness corpus preserves expected baseline and advisory-team outcomes for explicit amounts, known estimates, missing amounts, vague savings, regretful spend, transfer requests, and multiple amounts.
 - The readiness harness calculates nearest-rank p50/p95 summaries across multiple turns and rejects invalid latency observations; mock timings are not treated as provider SLA evidence.
 - The prototype records per-specialist and total elapsed time, the evaluation harness summarizes multi-turn p50/p95, and the orchestrator never invokes more than three specialists in a turn.
+- Turn execution has a pure queued/running/completed/failed lifecycle; retries retain the accepted turn identity, and illegal or non-chronological transitions are rejected.
+- Turn acceptance replays the original user-scoped idempotent request, rejects reuse with a different conversation or request fingerprint, and compare-and-transition permits only one caller at an expected revision.
+- Turn reads and transitions return no data across user/conversation boundaries; the in-memory adapter is explicitly limited to a single process.
+- Turn submission rejects unauthenticated callers, hides conversations the caller does not own, validates JSON and idempotency headers, applies body limits, and returns no submitted message in the response.
+- Turn submission fails closed when identity, ownership, request fingerprinting, or repository admission is unavailable; internal errors are not exposed to callers.
+- The mock core composition uses Financial Moment classification, validates Savings Reasoning against deterministic estimates, and uses Companion Voice only when its assessment agrees with the core decision.
+- An unsupported or mismatched specialist estimate produces clarification and no proposal; specialist advice never creates a ledger entry or approves an action.
+- Approval replies continue through Victoria's pending-action path without re-running specialists; progress, goal, and correction flows stay in their deterministic core handlers.
+- Companion Voice wording that shames the user, claims a completed action, or introduces an unsupported money amount falls back to safe deterministic wording.
+- A vague avoided-spend turn can continue through amount clarification to a pending proposal and only create one ledger entry after explicit approval.
+- A specialist failure or disagreement with the core estimate does not create a proposal; Companion Voice failure preserves the approval request and mocked-ledger disclosure.
+- Low-confidence classification asks for clarification before proposing; a later clear turn can proceed to a pending proposal and requires exact approval.
+- A low-confidence clarification retains short-lived context for the next reply, while a clear new intent replaces and clears that context.
+- Low-confidence proposal edits leave the pending proposal unchanged; a clear revision creates a superseding proposal that requires fresh explicit approval.
+- Low-confidence goal requests create no allocation; a clarified goal creates a pending allocation that requires explicit approval.
+- When a low-confidence goal target is clarified with a different target, the current message takes precedence over stale unresolved context, and only the clarified target is proposed.
+- When specialist and core estimates disagree, Victoria asks, accepts the user's clarified amount as a new supported basis, and records only after approval.
 
 - `npm run agent:validate` fails when required agent instructions, task briefs, workflows, PR templates, or CODEOWNERS files are missing.
 - `npm run agent:validate` fails when MVP-facing docs drift back toward real money movement language.

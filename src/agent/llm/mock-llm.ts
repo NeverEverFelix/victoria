@@ -5,13 +5,14 @@ import type { ClassifyMessageInput, DraftResponseInput, LlmAdapter } from "./typ
 export class MockLlmAdapter implements LlmAdapter {
   async classifyMessage(input: ClassifyMessageInput): Promise<ClassifiedMessage> {
     const message = input.userMessage.toLowerCase();
+    const contextualMessage = [...(input.conversationContext ?? []), input.userMessage].join(" ").toLowerCase();
     const amountParse = parseExplicitDollarAmount(input.userMessage);
     const amountCents = amountParse.status === "valid" ? amountParse.amountCents : undefined;
     const amountIssue = amountParse.status === "invalid_value" || amountParse.status === "multiple_amounts" || amountParse.status === "invalid_precision" || amountParse.status === "unsupported_currency"
       ? amountParse.status
       : undefined;
     const revisionReason = parseRevisionReason(input.userMessage);
-    const merchantName = inferMerchantName(message);
+    const merchantName = inferMerchantName(contextualMessage);
 
     if (isRealMoneyMovementRequest(message)) {
       return {
@@ -24,8 +25,8 @@ export class MockLlmAdapter implements LlmAdapter {
       };
     }
 
-    if (/\b(correct|correction|fix|change|revise)\b/.test(message) &&
-        /\b(entry|recorded|saved amount|savings amount)\b/.test(message)) {
+    if (/\b(correct|correction|fix|change|revise)\b/.test(contextualMessage) &&
+        /\b(entry|recorded|saved amount|savings amount)\b/.test(contextualMessage)) {
       return {
         type: "entry_correction",
         confidence: 0.9,
@@ -50,7 +51,7 @@ export class MockLlmAdapter implements LlmAdapter {
       };
     }
 
-    if (message.includes("instead of") || message.includes("almost bought") || message.includes("cooked")) {
+    if (contextualMessage.includes("instead of") || contextualMessage.includes("almost bought") || contextualMessage.includes("cooked")) {
       return {
         type: "avoided_spend",
         confidence: 0.8,
@@ -61,13 +62,13 @@ export class MockLlmAdapter implements LlmAdapter {
         needsClarification: amountIssue !== undefined || (
           amountCents === undefined &&
           merchantName === undefined &&
-          !message.includes("instead of") &&
-          !message.includes("almost bought")
+          !contextualMessage.includes("instead of") &&
+          !contextualMessage.includes("almost bought")
         )
       };
     }
 
-    if (message.includes("regret") || message.includes("should not have")) {
+    if (contextualMessage.includes("regret") || contextualMessage.includes("should not have")) {
       return {
         type: "regretful_spend",
         confidence: 0.8,
@@ -79,12 +80,13 @@ export class MockLlmAdapter implements LlmAdapter {
       };
     }
 
-    if (message.includes("goal") || message.includes("emergency fund") || message.includes("put this toward")) {
+    const goalName = inferGoalName(input.userMessage) ?? inferGoalName(contextualMessage);
+    if (contextualMessage.includes("goal") || goalName !== undefined || contextualMessage.includes("put this toward")) {
       return {
         type: "goal_allocation",
         confidence: 0.75,
         ...(amountCents !== undefined ? { amountCents } : {}),
-        ...(message.includes("emergency fund") ? { goalName: "Emergency fund" } : {}),
+        ...(goalName !== undefined ? { goalName } : {}),
         summary: input.userMessage,
         needsClarification: false
       };
@@ -92,7 +94,7 @@ export class MockLlmAdapter implements LlmAdapter {
 
     if (
       revisionReason !== undefined ||
-      /\b(change|correct|correction|update|revise|replace|make that|make it)\b/.test(message) ||
+      /\b(change|correct|correction|update|revise|replace|make that|make it)\b/.test(contextualMessage) ||
       (message.includes("actually") && (amountCents !== undefined || amountIssue !== undefined))
     ) {
       return {
@@ -118,6 +120,18 @@ export class MockLlmAdapter implements LlmAdapter {
   async draftResponse(input: DraftResponseInput): Promise<string> {
     return input.responseGoal;
   }
+}
+
+function inferGoalName(message: string): string | undefined {
+  const normalized = message.toLowerCase();
+  if (/\bemergency fund\b/.test(normalized)) return "Emergency fund";
+
+  const match = normalized.match(/\b(?:toward|towards)\s+(?:my\s+)?([a-z][a-z0-9' -]{1,40}?)(?:\s+(?:instead|please|goal)|[?.!,]|$)/) ??
+    normalized.match(/\bgoal\s+(?:is|named|for)\s+(?:my\s+)?([a-z][a-z0-9' -]{1,35}?)(?:[?.!,]|$)/) ??
+    normalized.match(/^(?:my\s+)?([a-z][a-z0-9' -]{1,35}\s+(?:fund|goal))\.?$/);
+  const candidate = match?.[1]?.trim().replace(/\s+/g, " ");
+  if (!candidate || /^(?:that|this|it|a goal|the goal)$/.test(candidate)) return undefined;
+  return candidate.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function parseRevisionReason(message: string): string | undefined {

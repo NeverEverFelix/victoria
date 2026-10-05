@@ -1,4 +1,5 @@
 import {
+  createMockAgentTeamSpecialists,
   MockLlmAdapter,
   MockMemoryProvider,
   MockVictoriaTools,
@@ -28,7 +29,7 @@ export function createVictoriaAgent(options: CreateVictoriaAgentOptions): Victor
   return new VictoriaAgent({
     llm: new MockLlmAdapter(),
     memory: new MockMemoryProvider(habits),
-    tools: new MockVictoriaTools(habits)
+    tools: new MockVictoriaTools(habits),
+    specialists: createMockAgentTeamSpecialists()
   });
 }
-

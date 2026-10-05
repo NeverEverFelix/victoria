@@ -69,12 +69,13 @@ Examples:
 | ARC-002 | Propose helpful wording and supported estimates.                                                 | Own amount validation, currency rules, approval matching, state transitions, totals, idempotency, and tool authorization. | Enforced by runtime validation, lifecycle, policy, and mock-tool boundaries |
 | ARC-003 | Ask for clarification when meaning is uncertain.                                                 | Prevent a clarification or reflection decision from carrying a state-mutating tool call.                                  | Enforced for current flows       |
 | ARC-004 | Select a requested capability.                                                                   | Policy code **MUST** make the final allow/refuse decision for approval-gated or prohibited tools.                         | Enforced                         |
+| ARC-005 | Return confidence with classification and savings assessment.                                      | Classification or savings suggestion below the provisional `0.70` floor **MUST** route to clarification, never a proposal. | Enforced by confidence policy and tests |
 
-The model's confidence score is evidence for a decision; it is never authorization. A prompt instruction is not a substitute for a deterministic invariant.
+The model's confidence score is evidence for a decision; it is never authorization. A prompt instruction is not a substitute for a deterministic invariant. The `0.70` floor is a conservative product default for the current headless implementation, not a calibrated provider threshold; provider evaluation must review it before any provider-backed rollout. A Savings Reasoning `ask` remains a valid conservative outcome at any confidence. Low-confidence reflection may continue because it cannot create financial state.
 
 Example: the agent may infer `avoided_spend` and extract `$90`; deterministic code must decide whether `9000` cents is valid and whether a matching approval permits ledger creation.
 
-Malformed classifier output, including invalid confidence or unsafe/non-positive cents, is discarded and routed to clarification. Unsupported extra fields such as `approved: true` are not retained in the typed classification.
+Malformed classifier output, including invalid confidence or unsafe/non-positive cents, is discarded and routed to clarification. Valid but low-confidence action-oriented classification becomes `unclear`; its candidate amount and intent are not used for an action. Savings assessments must also report a finite confidence in `[0, 1]`; low-confidence suggestions are downgraded to clarification. Unsupported extra fields such as `approved: true` are not retained in the typed classification.
 
 Counterexample: letting model output `{ approved: true }` directly create a ledger entry.
 

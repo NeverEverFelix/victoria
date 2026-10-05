@@ -4,20 +4,26 @@ This document separates a tested prototype from a production-capable runtime. It
 
 ## Current Position
 
-Victoria has a safety-tested, in-memory single-agent MVP and an advisory specialist orchestration prototype. The prototype has typed sequential handoffs, separate assessment and response policy modules, safe specialist-failure behavior, and a three-call ceiling with local elapsed-time measurement.
+Victoria has a safety-tested, in-memory core agent with deterministic mock specialists wired into the mock composition, plus a standalone orchestration prototype. The core agent uses the Financial Moment specialist for classification and invokes Savings Reasoning and Companion Voice for avoided-spend, unclear, and regretful-spend flows. Deterministic proposal creation, amount/tool checks, approvals, ledger writes, and real-transfer refusal remain in the core agent.
 
-The deterministic seven-case corpus in `tests/evaluation/` checks that the current agent and a scripted specialist team preserve selected MVP outcomes. Both use the same mock classifier and scenario-authored specialist behavior. It computes local nearest-rank latency summaries across turns, but those mock timings are not representative. This verifies contract parity and orchestration plumbing; it does **not** measure model quality, specialist value, provider latency, token usage, or dollar cost. See the [evaluation harness notes](../../tests/evaluation/README.md).
+The deterministic seven-case corpus in `tests/evaluation/` checks that the current agent and a scripted specialist team preserve selected MVP outcomes. Unit tests also exercise specialist/core handoffs and confirmation behavior in the live mock composition. These checks use deterministic mocks; they do **not** measure model quality, specialist value, provider latency, token usage, or dollar cost. See the [evaluation harness notes](../../tests/evaluation/README.md).
+
+The headless policy now requires confidence on Financial Moment classifications and Savings Reasoning assessments. Valid classifications and suggestions below the provisional `0.70` floor ask for clarification; unresolved intent keeps short-lived conversation context for the next reply and clears when a clear new intent arrives. Mismatched specialist/core estimates also ask and can continue after the user supplies a supported amount. This floor is not calibrated against a provider and is not evidence of real model confidence quality.
 
 No provider-backed specialist is wired in. There are no HTTP route handlers, durable turn/conversation records, durable pending proposals, or cross-process conversation locks. The live `VictoriaAgent` retains pending conversational state in process memory. These are production readiness gaps, not prototype failures.
+
+The server-state foundation includes a pure lifecycle in `src/domain/turns/lifecycle.ts`, a user-scoped repository contract with an in-memory adapter in `src/app/turns/`, and a headless authenticated submission handler in `src/app/http/submit-turn-handler.ts`. The handler requires an injected verified identity, conversation ownership check, and keyed request fingerprint. These are contracts with test doubles, not production adapters. The in-memory repository is not durable across processes or restarts. No Next.js route, real authenticator, database adapter, or production runtime currently uses them.
 
 ## Readiness Stages
 
 ### Stage 1: Headless Prototype — Current
 
-- [x] Keep the existing single-agent runtime unchanged.
+- [x] Keep deterministic core product behavior and financial authority in `VictoriaAgent`.
+- [x] Wire deterministic mock specialists into the headless core agent for supported conversational behaviors.
 - [x] Define Financial Moment, Savings Reasoning, and Companion Voice handoff contracts.
 - [x] Keep deterministic assessment, response, approval, and ledger policy outside specialists.
 - [x] Exercise specialist disagreement, malformed output, failure, and required wording.
+- [x] Exercise low-confidence clarification context, estimate disagreement, and specialist failure across follow-up turns.
 - [x] Cap specialist calls and capture local per-role timing; summarize multi-turn p50/p95 in the evaluation harness.
 - [x] Add a scenario corpus covering amount, ambiguity, estimates, regret, transfers, and multiple amounts.
 
@@ -35,7 +41,10 @@ No provider-backed specialist is wired in. There are no HTTP route handlers, dur
 
 ### Stage 3: Server And Durable State — Before Production
 
-- [ ] Define the authenticated request boundary, validate user and conversation ownership, and add route-handler contract tests.
+- [x] Define a pure queued/running/completed/failed turn lifecycle, including retry under the original turn identity.
+- [x] Define user-scoped idempotent turn repository operations and exercise them with an in-memory adapter.
+- [x] Define and test a headless authenticated submission boundary with input validation and conversation ownership checks.
+- [ ] Connect the handler to a verified production authenticator and conversation ownership store in a server route.
 - [ ] Persist accepted turns before execution, with idempotency keys and recoverable queued/running/completed/failed state.
 - [ ] Persist conversation messages, pending proposals, approvals, and immutable history; remove reliance on process-local pending-action maps in the production path.
 - [ ] Enforce conversation ordering/leases across instances and storage-level approved-action uniqueness (`IDM-004`).

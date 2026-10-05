@@ -16,7 +16,7 @@ describe("AgentTeamPrototype", () => {
       savingsReasoning: { assess: vi.fn(async ({ finding }: { finding: { classification: ClassifiedMessage } }) => {
         order.push("savings");
         expect(finding.classification).toEqual(avoided);
-        return { outcome: "suggest" as const, amountCents: 9000, source: "user_provided" as const, rationale: "User stated the amount." };
+        return { outcome: "suggest" as const, confidence: 0.95, amountCents: 9000, source: "user_provided" as const, rationale: "User stated the amount." };
       }) },
       companionVoice: { respond: vi.fn(async ({ assessment }) => {
         order.push("voice");
@@ -50,12 +50,24 @@ describe("AgentTeamPrototype", () => {
 
   it("keeps savings reasoning bound to the amount the user stated", async () => {
     const specialists = team({ assessment: {
-      outcome: "suggest", amountCents: 12000, source: "habit_estimate", rationale: "Typical price."
+      outcome: "suggest", confidence: 0.95, amountCents: 12000, source: "habit_estimate", rationale: "Typical price."
     } });
     const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
     expect(turn.assessment).toMatchObject({ outcome: "ask" });
     expect(turn.degradedRoles).toContain("savingsReasoning");
     expect(turn.message).not.toContain("$120");
+  });
+
+  it("[ARC-005] downgrades a low-confidence savings suggestion to clarification", async () => {
+    const specialists = team({ assessment: {
+      outcome: "suggest", confidence: 0.55, amountCents: 9000,
+      source: "user_provided", rationale: "Low confidence despite matching amount."
+    } });
+    const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
+
+    expect(turn.assessment.outcome).toBe("ask");
+    expect(turn.message).toContain("Could you clarify");
+    expect(turn.degradedRoles).toContain("savingsReasoning");
   });
 
   it("restores required disclosures when companion voice omits them", async () => {
@@ -69,11 +81,47 @@ describe("AgentTeamPrototype", () => {
     }));
   });
 
+  it("uses the savings specialist's clarification without asking voice to rewrite it", async () => {
+    const specialists = team({
+      assessment: { outcome: "ask", confidence: 0.4, question: "Which amount should I use" },
+      voiceMessage: "Sure, sounds good."
+    });
+    const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a jacket", memory });
+
+    expect(turn.message).toBe("Which amount should I use");
+    expect(turn.degradedRoles).toEqual([]);
+    expect(specialists.companionVoice.respond).not.toHaveBeenCalled();
+  });
+
   it("replaces companion wording that falsely claims a completed action", async () => {
     const specialists = team({ voiceMessage: "I recorded the $90 in your savings already." });
     const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
     expect(turn.message).toContain("Would you like me to record $90.00");
     expect(turn.message).not.toContain("I recorded");
+    expect(turn.degradedRoles).toContain("companionVoice");
+  });
+
+  it("replaces shaming companion wording for regretful spending", async () => {
+    const specialists = team({
+      classification: {
+        type: "regretful_spend", confidence: 0.9, summary: "Regretted takeout", needsClarification: false
+      },
+      assessment: { outcome: "reflect", confidence: 0.95, rationale: "Offer a calm reflection." },
+      voiceMessage: "That was irresponsible, and you should have known better."
+    });
+    const turn = await new AgentTeamPrototype(specialists).respond({ message: "I regret ordering takeout.", memory });
+    expect(turn.message).toContain("No shame");
+    expect(turn.message).not.toContain("irresponsible");
+    expect(turn.degradedRoles).toContain("companionVoice");
+  });
+
+  it("replaces companion wording that introduces an unsupported amount", async () => {
+    const specialists = team({
+      voiceMessage: "You avoided a $90 purchase, so you can record $120 today."
+    });
+    const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
+    expect(turn.message).toContain("$90.00");
+    expect(turn.message).not.toContain("$120");
     expect(turn.degradedRoles).toContain("companionVoice");
   });
 
@@ -90,7 +138,7 @@ describe("AgentTeamPrototype", () => {
     };
     const specialists = team({
       classification: withoutAmount,
-      assessment: { outcome: "suggest", amountCents: 2400, source: "habit_estimate", rationale: "Usual merchant spend." },
+      assessment: { outcome: "suggest", confidence: 0.95, amountCents: 2400, source: "habit_estimate", rationale: "Usual merchant spend." },
       voiceMessage: "Would you like me to record this?"
     });
     const turn = await new AgentTeamPrototype(specialists).respond({ message: "I made coffee at home", memory: estimateMemory });
@@ -127,7 +175,8 @@ describe("AgentTeamPrototype", () => {
     const asked = await new AgentTeamPrototype(savingsFailure).respond({ message: "I waited on a $90 jacket", memory });
     expect(asked.assessment.outcome).toBe("ask");
     expect(asked.message).toContain("make sure I have the amount right");
-    expect(asked.specialistCalls).toBe(3);
+    expect(asked.specialistCalls).toBe(2);
+    expect(savingsFailure.companionVoice.respond).not.toHaveBeenCalled();
 
     const voiceFailure = team();
     voiceFailure.companionVoice.respond = vi.fn().mockRejectedValue(new Error("provider down"));
@@ -152,7 +201,7 @@ describe("AgentTeamPrototype", () => {
   it("preserves MVP transfer limitations in companion wording", async () => {
     const specialists = team({
       classification: { type: "real_money_movement_request", confidence: 1, summary: "Move money", needsClarification: false },
-      assessment: { outcome: "reflect", rationale: "Transfer unavailable." },
+      assessment: { outcome: "reflect", confidence: 0.95, rationale: "Transfer unavailable." },
       voiceMessage: "I can help with that."
     });
     const turn = await new AgentTeamPrototype(specialists).respond({ message: "Move money to savings", memory });
@@ -171,7 +220,7 @@ function team(overrides: {
 } = {}): AgentTeamSpecialists {
   return {
     financialMoment: { analyze: vi.fn(async () => ({ classification: overrides.classification ?? avoided })) },
-    savingsReasoning: { assess: vi.fn(async (): Promise<SavingsAssessment> => overrides.assessment ?? { outcome: "suggest", amountCents: 9000, source: "user_provided", rationale: "User stated the amount." }) },
+    savingsReasoning: { assess: vi.fn(async (): Promise<SavingsAssessment> => overrides.assessment ?? { outcome: "suggest", confidence: 0.95, amountCents: 9000, source: "user_provided", rationale: "User stated the amount." }) },
     companionVoice: { respond: vi.fn(async ({ assessment }: { assessment: SavingsAssessment }) => overrides.voiceMessage ?? (
       assessment.outcome === "suggest"
         ? "Want me to record this? No real money has moved."

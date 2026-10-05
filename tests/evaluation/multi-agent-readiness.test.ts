@@ -103,15 +103,15 @@ function scriptedSpecialists(llm: MockLlmAdapter, memory: AgentMemory): AgentTea
 function assessDeterministically(classification: ClassifiedMessage, memory: AgentMemory): SavingsAssessment {
   if (classification.type !== "avoided_spend") {
     return classification.type === "unclear"
-      ? { outcome: "ask", question: "What did you avoid spending on, and about how much?" }
-      : { outcome: "reflect", rationale: "This moment does not support a savings suggestion." };
+      ? { outcome: "ask", confidence: 0.95, question: "What did you avoid spending on, and about how much?" }
+      : { outcome: "reflect", confidence: 0.95, rationale: "This moment does not support a savings suggestion." };
   }
   if (classification.amountIssue) {
-    return { outcome: "ask", question: "Which amount should I use?" };
+    return { outcome: "ask", confidence: 0.95, question: "Which amount should I use?" };
   }
   if (classification.amountCents !== undefined) {
     return {
-      outcome: "suggest", amountCents: classification.amountCents,
+      outcome: "suggest", confidence: 0.95, amountCents: classification.amountCents,
       source: "user_provided", rationale: "The user supplied an explicit amount."
     };
   }
@@ -120,9 +120,9 @@ function assessDeterministically(classification: ClassifiedMessage, memory: Agen
   );
   if (habit) {
     return {
-      outcome: "suggest", amountCents: habit.typicalAmountCents,
+      outcome: "suggest", confidence: Math.min(0.9, habit.confidence), amountCents: habit.typicalAmountCents,
       source: "habit_estimate", rationale: `Typical spend at ${habit.merchantName}.`
     };
   }
-  return { outcome: "ask", question: "About how much would you like me to use?" };
+  return { outcome: "ask", confidence: 0.95, question: "About how much would you like me to use?" };
 }

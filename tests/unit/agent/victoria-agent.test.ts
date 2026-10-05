@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createMockAgentTeamSpecialists,
   MockLlmAdapter,
   MockMemoryProvider,
   MockVictoriaTools,
   VictoriaAgent
 } from "../../../src/agent/index.js";
+import type { AgentTeamSpecialists } from "../../../src/agent/index.js";
 import type { UserHabit } from "../../../src/agent/types.js";
 import type { SavingsEntry } from "../../../src/domain/savings/types.js";
 
@@ -138,6 +140,7 @@ describe("VictoriaAgent", () => {
     const correctionProposal = await agent.respond({ ...context, message: "Correct that recorded entry to $24." });
     expect(correctionProposal.decision.action).toBe("correct_ledger_entry");
     expect(correctionProposal.decision.toolCall?.requiresApproval).toBe(true);
+    expect(correctionProposal.message).toContain("most recently recorded entry in this conversation is currently $27.00");
     expect(correctionProposal.message).toContain("original entry will stay in the history");
     expect(await tools.listSavingsEntryCorrections("user_123")).toEqual([]);
     const unboundApproval = await agent.approveToolCall({ ...context, message: "Yes" }, correctionProposal.decision);
@@ -1539,16 +1542,294 @@ describe("VictoriaAgent", () => {
     expect(response.decision.toolCall).toBeUndefined();
     expect(await tools.listSavingsEntries("user_123")).toEqual([]);
   });
+
+  it("uses specialist advice only when it agrees with the deterministic estimate", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const specialists: AgentTeamSpecialists = {
+      ...base,
+      savingsReasoning: {
+        assess: async ({ finding }) => finding.classification.amountCents === undefined
+          ? { outcome: "ask", confidence: 0.95, question: "Which amount should I use?" }
+          : {
+              outcome: "suggest",
+              confidence: 0.95,
+              amountCents: finding.classification.amountCents + 100,
+              source: "user_provided",
+              rationale: "Deliberately mismatched test advice."
+            }
+      }
+    };
+    const agent = createAgent([], tools, specialists);
+    const response = await agent.respond({
+      userId: "user_123",
+      message: "I almost bought a $20 book but decided to wait."
+    });
+
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.suggestion).toBeUndefined();
+    expect(response.decision.proposal).toBeUndefined();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("runs the specialist team for an avoided-spend turn, but approval still bypasses the team", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const specialists: AgentTeamSpecialists = {
+      financialMoment: { analyze: vi.fn((input) => base.financialMoment.analyze(input)) },
+      savingsReasoning: { assess: vi.fn((input) => base.savingsReasoning.assess(input)) },
+      companionVoice: { respond: vi.fn((input) => base.companionVoice.respond(input)) }
+    };
+    const agent = createAgent([], tools, specialists);
+    const context = { userId: "user_123", conversationId: "specialist_core_flow" };
+    const proposed = await agent.respond({ ...context, message: "I almost bought a $20 book but waited." });
+
+    expect(specialists.financialMoment.analyze).toHaveBeenCalledTimes(1);
+    expect(specialists.savingsReasoning.assess).toHaveBeenCalledTimes(1);
+    expect(specialists.companionVoice.respond).toHaveBeenCalledTimes(1);
+    expect(proposed.decision.action).toBe("suggest_savings");
+    expect(proposed.decision.suggestion?.amountCents).toBe(2000);
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+
+    const recorded = await agent.respond({ ...context, message: "Yes" });
+    expect(recorded.decision.action).toBe("create_ledger_entry");
+    expect(specialists.financialMoment.analyze).toHaveBeenCalledTimes(1);
+    expect(await tools.listSavingsEntries("user_123")).toHaveLength(1);
+  });
+
+  it("carries a vague avoided-spend moment through amount clarification, proposal, and approval", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const specialists: AgentTeamSpecialists = {
+      financialMoment: { analyze: vi.fn((input) => base.financialMoment.analyze(input)) },
+      savingsReasoning: { assess: vi.fn((input) => base.savingsReasoning.assess(input)) },
+      companionVoice: { respond: vi.fn((input) => base.companionVoice.respond(input)) }
+    };
+    const agent = createAgent([], tools, specialists);
+    const context = { userId: "user_123", conversationId: "multi_turn_specialists" };
+
+    const first = await agent.respond({ ...context, message: "I cooked instead of ordering takeout." });
+    expect(first.decision.action).toBe("ask_follow_up");
+    expect(first.decision.savingsEvent).toBeDefined();
+    expect(first.decision.proposal).toBeUndefined();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+
+    const amount = await agent.respond({ ...context, message: "About $18." });
+    expect(amount.decision.action).toBe("suggest_savings");
+    expect(amount.decision.savingsEvent?.id).toBe(first.decision.savingsEvent?.id);
+    expect(amount.decision.suggestion?.amountCents).toBe(1800);
+    expect(amount.decision.proposal?.status).toBe("pending");
+    expect(amount.decision.toolCall?.requiresApproval).toBe(true);
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+
+    const approval = await agent.respond({ ...context, message: "Yes" });
+    expect(approval.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries("user_123")).toMatchObject([{ amountCents: 1800 }]);
+    expect(specialists.financialMoment.analyze).toHaveBeenCalledTimes(2);
+    expect(specialists.savingsReasoning.assess).toHaveBeenCalledTimes(1);
+    expect(specialists.companionVoice.respond).not.toHaveBeenCalled();
+  });
+
+  it("asks when specialist habit reasoning disagrees with the core estimator", async () => {
+    const userHabit: UserHabit = {
+      id: "habit_blue_bottle", userId: "user_123", merchantName: "Blue Bottle",
+      typicalAmountCents: 675, currency: "USD", confidence: 0.9
+    };
+    const tools = new MockVictoriaTools([{
+      ...userHabit,
+      typicalAmountCents: 725
+    }]);
+    const specialists = createMockAgentTeamSpecialists();
+    const agent = createAgent([userHabit], tools, specialists);
+    const context = { userId: "user_123", conversationId: "estimate_disagreement" };
+    const response = await agent.respond({
+      ...context,
+      message: "I made coffee at home instead of going to Blue Bottle."
+    });
+
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.suggestion).toBeUndefined();
+    expect(response.decision.proposal).toBeUndefined();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+
+    const clarified = await agent.respond({ ...context, message: "About $7.25." });
+    expect(clarified.decision.action).toBe("suggest_savings");
+    expect(clarified.decision.suggestion?.amountCents).toBe(725);
+    expect(clarified.decision.savingsEvent?.id).toBe(response.decision.savingsEvent?.id);
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+
+    const recorded = await agent.respond({ ...context, message: "Yes" });
+    expect(recorded.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries("user_123")).toMatchObject([{ amountCents: 725 }]);
+  });
+
+  it("[ARC-005] turns low-confidence classification into a clarification and resumes after clearer context", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    let classificationCount = 0;
+    const analyzedMessages: Array<{ message: string; context?: readonly string[] }> = [];
+    const specialists: AgentTeamSpecialists = {
+      ...base,
+      savingsReasoning: { assess: vi.fn((input) => base.savingsReasoning.assess(input)) },
+      companionVoice: { respond: vi.fn((input) => base.companionVoice.respond(input)) },
+      financialMoment: {
+        analyze: vi.fn(async (input) => {
+          const { message } = input;
+          classificationCount += 1;
+          analyzedMessages.push({ message, context: input.conversationContext });
+          return {
+            classification: {
+              type: "avoided_spend" as const,
+              confidence: classificationCount === 1 ? 0.55 : 0.95,
+              ...(classificationCount >= 3 ? { amountCents: 2000 } : {}),
+              summary: message,
+              needsClarification: false
+            }
+          };
+        })
+      }
+    };
+    const agent = createAgent([], tools, specialists);
+    const context = { userId: "user_123", conversationId: "low_confidence_follow_up" };
+
+    const uncertain = await agent.respond({ ...context, message: "I almost bought a $20 book, but I'm not sure." });
+    expect(uncertain.decision.action).toBe("ask_follow_up");
+    expect(uncertain.decision.classification.type).toBe("unclear");
+    expect(uncertain.decision.proposal).toBeUndefined();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+
+    const clarified = await agent.respond({ ...context, message: "Yes, I did." });
+    expect(analyzedMessages[1]?.message).toBe("Yes, I did.");
+    expect(analyzedMessages[1]?.context).toContain("I almost bought a $20 book, but I'm not sure.");
+    expect(clarified.decision.action).toBe("ask_follow_up");
+    expect(clarified.decision.suggestion).toBeUndefined();
+
+    const amount = await agent.respond({ ...context, message: "$20" });
+    expect(amount.decision.action).toBe("suggest_savings");
+    expect(amount.decision.suggestion?.amountCents).toBe(2000);
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+
+    const recorded = await agent.respond({ ...context, message: "Yes" });
+    expect(recorded.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries("user_123")).toMatchObject([{ amountCents: 2000 }]);
+  });
+
+  it("clears pending clarification context when the user switches to a clear question", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    let firstCall = true;
+    const specialists: AgentTeamSpecialists = {
+      ...base,
+      savingsReasoning: { assess: vi.fn((input) => base.savingsReasoning.assess(input)) },
+      companionVoice: { respond: vi.fn((input) => base.companionVoice.respond(input)) },
+      financialMoment: {
+        analyze: vi.fn(async (input) => {
+          if (firstCall) {
+            firstCall = false;
+            return { classification: {
+              type: "avoided_spend" as const, confidence: 0.55, amountCents: 2000,
+              summary: input.message, needsClarification: false
+            } };
+          }
+          return base.financialMoment.analyze(input);
+        })
+      }
+    };
+    const agent = createAgent([], tools, specialists);
+    const context = { userId: "user_123", conversationId: "switch_from_uncertain_intent" };
+
+    const uncertain = await agent.respond({ ...context, message: "I might have skipped a purchase." });
+    expect(uncertain.decision.action).toBe("ask_follow_up");
+    const progress = await agent.respond({ ...context, message: "How much have I saved this week?" });
+
+    expect(progress.decision.action).toBe("summarize_progress");
+    expect(progress.message).toContain("No savings have been recorded");
+    expect(specialists.savingsReasoning.assess).not.toHaveBeenCalled();
+    expect(specialists.companionVoice.respond).not.toHaveBeenCalled();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("falls back to clarification when Financial Moment classification fails", async () => {
+    const base = createMockAgentTeamSpecialists();
+    const specialists: AgentTeamSpecialists = {
+      ...base,
+      financialMoment: { analyze: vi.fn(async () => { throw new Error("specialist unavailable"); }) },
+      savingsReasoning: { assess: vi.fn((input) => base.savingsReasoning.assess(input)) },
+      companionVoice: { respond: vi.fn((input) => base.companionVoice.respond(input)) }
+    };
+    const tools = new MockVictoriaTools();
+    const response = await createAgent([], tools, specialists).respond({
+      userId: "user_123", message: "I almost bought a $20 book but waited."
+    });
+
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.classification.type).toBe("unclear");
+    expect(response.decision.proposal).toBeUndefined();
+    expect(specialists.savingsReasoning.assess).not.toHaveBeenCalled();
+    expect(specialists.companionVoice.respond).not.toHaveBeenCalled();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("asks after Savings Reasoning fails and restores safe wording when Companion Voice fails", async () => {
+    const base = createMockAgentTeamSpecialists();
+    const savingsFailure: AgentTeamSpecialists = {
+      ...base,
+      savingsReasoning: { assess: vi.fn(async () => { throw new Error("reasoning unavailable"); }) }
+    };
+    const askTools = new MockVictoriaTools();
+    const asked = await createAgent([], askTools, savingsFailure).respond({
+      userId: "user_123", message: "I almost bought a $20 book but waited."
+    });
+    expect(asked.decision.action).toBe("ask_follow_up");
+    expect(asked.decision.proposal).toBeUndefined();
+    expect(await askTools.listSavingsEntries("user_123")).toEqual([]);
+
+    const voiceFailure: AgentTeamSpecialists = {
+      ...base,
+      companionVoice: { respond: vi.fn(async () => { throw new Error("voice unavailable"); }) }
+    };
+    const proposalTools = new MockVictoriaTools();
+    const proposed = await createAgent([], proposalTools, voiceFailure).respond({
+      userId: "user_123", message: "I almost bought a $20 book but waited."
+    });
+    expect(proposed.decision.action).toBe("suggest_savings");
+    expect(proposed.message).toContain("Please confirm");
+    expect(proposed.message).toContain("No real money has moved");
+    expect(await proposalTools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it.each([
+    { message: "How much have I saved this week?", action: "summarize_progress" },
+    { message: "Put this toward my emergency fund.", action: "update_goal" },
+    { message: "Correct the recorded amount to $24.", action: "ask_follow_up" }
+  ] as const)("routes core behavior for '$message' without invoking unrelated specialists", async ({ message, action }) => {
+    const base = createMockAgentTeamSpecialists();
+    const specialists: AgentTeamSpecialists = {
+      financialMoment: { analyze: vi.fn((input) => base.financialMoment.analyze(input)) },
+      savingsReasoning: { assess: vi.fn((input) => base.savingsReasoning.assess(input)) },
+      companionVoice: { respond: vi.fn((input) => base.companionVoice.respond(input)) }
+    };
+    const response = await createAgent([], new MockVictoriaTools(), specialists).respond({
+      userId: "user_123", message
+    });
+
+    expect(response.decision.action).toBe(action);
+    expect(specialists.financialMoment.analyze).toHaveBeenCalledTimes(1);
+    expect(specialists.savingsReasoning.assess).not.toHaveBeenCalled();
+    expect(specialists.companionVoice.respond).not.toHaveBeenCalled();
+  });
 });
 
 function createAgent(
   habits: UserHabit[] = [],
-  tools: MockVictoriaTools = new MockVictoriaTools(habits)
+  tools: MockVictoriaTools = new MockVictoriaTools(habits),
+  specialists?: AgentTeamSpecialists
 ): VictoriaAgent {
   return new VictoriaAgent({
     llm: new MockLlmAdapter(),
     memory: new MockMemoryProvider(habits),
-    tools
+    tools,
+    ...(specialists ? { specialists } : {})
   });
 }
 

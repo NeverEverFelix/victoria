@@ -25,6 +25,8 @@ Victoria should:
 Acceptance criteria:
 
 - Given the message includes a clear dollar amount, Victoria uses that amount.
+- Given the event classification confidence is below the provisional 0.70 floor, Victoria asks for clarification and creates no proposal.
+- Given Victoria asks because intent confidence is low, it uses that unresolved turn as context for the user's next reply and clears it when the user switches to a clear new intent.
 - Given the amount has more than two decimal places or uses a recognized non-USD currency, Victoria asks for a valid USD amount and creates no proposal.
 - Given the user has not confirmed, no savings ledger entry is created.
 - Given the user confirms, Victoria creates a mocked ledger entry for 9000 cents.

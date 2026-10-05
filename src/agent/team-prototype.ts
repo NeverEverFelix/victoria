@@ -1,5 +1,6 @@
 import type { AgentMemory, ClassifiedMessage } from "./types.js";
 import { clarificationAfterSpecialistFailure, fallbackFinding, validateTeamAssessment, validateTeamFinding } from "./team-assessment-policy.js";
+import { applyClassificationConfidencePolicy } from "./confidence-policy.js";
 import { finalizeCompanionResponse, requiredDisclosures } from "./team-response-policy.js";
 
 /** Advisory result from the financial-moment specialist. */
@@ -9,15 +10,15 @@ export interface FinancialMomentFinding {
 
 /** Savings reasoning can suggest or ask, but has no approval or tool authority. */
 export type SavingsAssessment =
-  | { outcome: "suggest"; amountCents: number; source: "user_provided" | "habit_estimate"; rationale: string }
-  | { outcome: "ask"; question: string }
-  | { outcome: "reflect"; rationale: string };
+  | { outcome: "suggest"; confidence: number; amountCents: number; source: "user_provided" | "habit_estimate"; rationale: string }
+  | { outcome: "ask"; confidence: number; question: string }
+  | { outcome: "reflect"; confidence: number; rationale: string };
 
 export type SpecialistRole = "financialMoment" | "savingsReasoning" | "companionVoice";
 
 export interface AgentTeamSpecialists {
   financialMoment: {
-    analyze(input: { message: string; memory: AgentMemory }): Promise<FinancialMomentFinding>;
+    analyze(input: { message: string; memory: AgentMemory; conversationContext?: readonly string[] }): Promise<FinancialMomentFinding>;
   };
   savingsReasoning: {
     assess(input: { finding: FinancialMomentFinding; memory: AgentMemory }): Promise<SavingsAssessment>;
@@ -81,7 +82,9 @@ export class AgentTeamPrototype {
       return this.finish(finding, assessment, response.message, startedAt, timings, failedRoles);
     }
 
-    const finding = validatedFinding;
+    const finding = {
+      classification: applyClassificationConfidencePolicy(validatedFinding.classification)
+    };
     const savingsResult = await this.measure("savingsReasoning", timings, () =>
       this.specialists.savingsReasoning.assess({ finding, memory: input.memory })
     );
@@ -96,6 +99,12 @@ export class AgentTeamPrototype {
         failedRoles.push("savingsReasoning");
         assessment = clarificationAfterSpecialistFailure("savingsReasoning");
       }
+    }
+
+    // Savings Reasoning owns the ask decision and its clarification wording.
+    // Companion Voice must not rewrite that into a different intent.
+    if (assessment.outcome === "ask") {
+      return this.finish(finding, assessment, assessment.question, startedAt, timings, failedRoles);
     }
 
     const disclosures = requiredDisclosures(finding, assessment);
