@@ -90,10 +90,14 @@ ${diff}
 }
 
 export function chunkDiffForReview(diff, maxChars) {
-  if (!Number.isInteger(maxChars) || maxChars < 500) {
-    throw new Error("AI_REVIEW_MAX_DIFF_CHARS must be an integer of at least 500.");
+  if (!Number.isInteger(maxChars) || maxChars < 2000) {
+    throw new Error("AI_REVIEW_MAX_DIFF_CHARS must be an integer of at least 2000.");
   }
 
+  return partitionDiff(diff, maxChars);
+}
+
+function partitionDiff(diff, maxChars) {
   const sections = extractDiffSections(diff);
   const units = sections.flatMap((section) => splitSection(section, maxChars));
   const chunks = [];
@@ -133,13 +137,13 @@ export function chunkDiffForReview(diff, maxChars) {
 }
 
 export function splitReviewChunkForRetry(chunk) {
-  const minimumRetryChars = 500;
+  const minimumRetryChars = 1200;
   if (!chunk?.text || chunk.text.length <= minimumRetryChars) {
     return null;
   }
 
   const maxChars = Math.max(minimumRetryChars, Math.floor(chunk.text.length / 2));
-  const split = chunkDiffForReview(chunk.text, maxChars).chunks;
+  const split = partitionDiff(chunk.text, maxChars).chunks;
   return split.length > 1 ? split : null;
 }
 
@@ -188,7 +192,7 @@ function splitSection(section, maxChars) {
 
   const units = [];
   const continuationLabel = `[Complete diff section for ${section.path}; continuation follows.]\n`;
-  if (maxChars - continuationLabel.length - 20 < 200) {
+  if (maxChars - continuationLabel.length - 20 < 1000) {
     throw new Error(`Diff path is too long to chunk safely: ${section.path}`);
   }
 

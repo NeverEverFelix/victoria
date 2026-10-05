@@ -22,7 +22,7 @@ Optional repository variable for the response budget of each review pass (defaul
 AI_REVIEW_MAX_OUTPUT_TOKENS
 ```
 
-Optional repository variable for the maximum diff characters sent in one pass (default `18000`; minimum `500`):
+Optional repository variable for the maximum diff characters sent in one pass (default `18000`; minimum `2000`):
 
 ```text
 AI_REVIEW_MAX_DIFF_CHARS
@@ -44,7 +44,7 @@ If `OPENAI_API_KEY` is not set, the AI review workflow skips cleanly by default.
 
 For pull requests, the workflow uses `pull_request_target`, checks out the exact base commit, and downloads the proposed patch through the GitHub API. It loads `AGENTS.md`, `docs/agentic-coding-patterns.md`, `docs/decisions.md`, `docs/mvp.md`, `docs/user-stories.md`, `docs/specification/mvp-safety-contract.md`, and `tests/test-plan.md` from that base commit with `git show`. The pull request diff remains untrusted evidence. The workflow must never check out or execute the pull request head while `OPENAI_API_KEY` or a write-capable token is available. If GitHub requires an Actions event policy for `pull_request_target`, allow this workflow only after confirming those constraints remain intact.
 
-The AI prompt keeps trusted instructions separate from the untrusted diff. The diff is split into bounded passes of at most `AI_REVIEW_MAX_DIFF_CHARS` (default 18,000 characters; minimum 500); all passes must complete before a single review comment is posted. If a pass exceeds its output-token budget, the reviewer splits only that pass in half and retries its smaller segments, down to 500 characters. `AI_REVIEW_MAX_OUTPUT_TOKENS` (default 2,000; allowed range 100–4,000) sets the response budget per pass. `AI_REVIEW_MAX_CHUNKS` (default 24) bounds total API calls, including adaptive retries, and `AI_REVIEW_MAX_COMMENT_CHARS` (default 60,000) protects GitHub's comment-size limit. Exceeding any limit, or receiving a truncated model response that cannot be split further, fails without posting a partial review. Each trusted context file is visibly marked if truncated.
+The AI prompt keeps trusted instructions separate from the untrusted diff. The diff is split into bounded passes of at most `AI_REVIEW_MAX_DIFF_CHARS` (default 18,000 characters; minimum 2,000); all passes must complete before a single review comment is posted. If a pass exceeds its output-token budget, the reviewer splits only that pass in half and retries its smaller segments. Retry segments may be smaller than the configured pass size, down to 1,200 characters, while the original diff and retry count remain bounded by the complete-coverage and maximum-pass checks. `AI_REVIEW_MAX_OUTPUT_TOKENS` (default 2,000; allowed range 100–4,000) sets the response budget per pass. `AI_REVIEW_MAX_CHUNKS` (default 24) bounds total API calls, including adaptive retries, and `AI_REVIEW_MAX_COMMENT_CHARS` (default 60,000) protects GitHub's comment-size limit. Exceeding any limit, or receiving a truncated model response that cannot be split further, fails without posting a partial review. Each trusted context file is visibly marked if truncated.
 
 ## Recommended Branch Protection
 
