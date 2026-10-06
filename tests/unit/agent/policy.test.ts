@@ -17,6 +17,12 @@ describe("agent policy", () => {
     }
   );
 
+  it("accepts an explicit amount-bound ledger approval only for the pending amount", () => {
+    expect(interpretApprovalResponse("Yes, record that $20 in my Victoria ledger.", 2_000)).toBe("explicit_approval");
+    expect(interpretApprovalResponse("Yes, record that $25 in my Victoria ledger.", 2_000)).toBe("not_approval");
+    expect(interpretApprovalResponse("Yes, record that $20 and transfer it from checking.", 2_000)).toBe("not_approval");
+  });
+
   it("blocks real money movement without explicit approval", () => {
     const decision = canCallTool(baseRequest(), {
       name: "eventuallyMoveMoney",

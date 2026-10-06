@@ -85,7 +85,7 @@ export class VictoriaAgent {
       ? this.pendingEntryCorrections.get(pendingCorrectionId)
       : undefined;
     if (pendingCorrection && pendingCorrectionId) {
-      const approval = interpretApprovalResponse(request.message);
+      const approval = interpretApprovalResponse(request.message, pendingCorrection.decision.entryCorrection?.correctedAmountCents);
       if (approval === "explicit_approval") {
         return this.approveEntryCorrection({ ...request, approvedActionId: pendingCorrectionId }, pendingCorrection.decision);
       }
@@ -108,7 +108,7 @@ export class VictoriaAgent {
       : undefined;
 
     if (pendingGoalAction && pendingGoalActionId) {
-      const approvalResponse = interpretApprovalResponse(request.message);
+      const approvalResponse = interpretApprovalResponse(request.message, pendingGoalAction.decision.goalAllocation?.amountCents);
       if (approvalResponse === "explicit_approval") {
         return this.approveGoalAllocation(
           { ...request, approvedActionId: pendingGoalActionId },
@@ -147,7 +147,7 @@ export class VictoriaAgent {
       : undefined;
 
     if (pendingAction && pendingActionId) {
-      const approvalResponse = interpretApprovalResponse(request.message);
+      const approvalResponse = interpretApprovalResponse(request.message, pendingAction.decision.suggestion?.amountCents);
 
       if (
         pendingAction.awaitingValidRevision &&

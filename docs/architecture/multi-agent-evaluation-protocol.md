@@ -7,6 +7,7 @@ Use the live comparison gate only after both provider-backed runtime arms can pr
 ## Evaluation Set
 
 - The frozen v1 set is [`tests/evaluation/fixtures/provider-eval-v1.json`](../../tests/evaluation/fixtures/provider-eval-v1.json) (50 synthetic turns, including short prior context where needed). It contains no real user or account data.
+- The separate [`provider-eval-v1-setups.ts`](../../tests/evaluation/fixtures/provider-eval-v1-setups.ts) defines deterministic preludes for stateful cases P31–P35, P49, and P50. These preludes create the pending proposal, stale-estimate context, or prior mock-ledger entry through the ordinary agent flow; they do not alter the frozen target message or expected outcome. A fixture test pins the original corpus hash.
 - Frozen corpus SHA-256: `2bf4b48684abe591d2108afafc059bed871735f0caa6c53b43f33e13a24e562c`.
 - Each case records an expected intent, expected core action, and an expected amount only where exact cents are supported. Use deterministic mocks for habits and tools, and the same context/tool state in both arms.
 - The corpus covers explicit and estimated avoided spend, unknown and malformed amounts, ambiguity, regret, approval/decline/revision, a linked entry correction, transfer requests, prompt injection, unsupported savings claims, specialist disagreement, and stale/conflicting context.
@@ -14,7 +15,7 @@ Use the live comparison gate only after both provider-backed runtime arms can pr
 - Provider outages and timeout/fallback behavior require separate injected-failure runs. Do not count a synthetic user turn as evidence of provider outage handling.
 - Never include real account numbers, credentials, or unnecessary personal financial details.
 
-The opt-in provider team now supports Financial Moment classification, Savings Reasoning, and Companion Voice. The current smoke command exercises one synthetic turn through that team; it does not run this 50-turn corpus or compare complete runtime arms. Do not claim a provider specialist-versus-single-agent result until both arms can produce complete user-visible turns under identical deterministic policy and mock tools. In particular, the team wiring and single-turn smoke are not evidence that specialist reasoning improves quality.
+The opt-in provider team supports Financial Moment classification, Savings Reasoning, and Companion Voice. `npm run eval:provider:comparison` now implements an opt-in complete-turn runner for both the Financial Moment baseline and full provider team, with mock memory/tools, explicit state preludes, a dated rate card, per-turn response/usage results, and per-role timing summaries. Its Responses API plumbing has mocked-fetch coverage. It has not been run against a live provider and has no human review results; implementation and mock tests are not evidence that specialists improve quality.
 
 ## Blinded Human Review
 
@@ -28,7 +29,7 @@ The original seven-case set remains a connection and schema smoke corpus; it is 
 
 ## Systems Compared
 
-Run the current single-agent baseline and the proposed specialist runtime against the same inputs, memory, tools, and environmental assumptions. Record the model and prompt versions. Use identical deterministic policy and tool boundaries in both arms; only the reasoning/routing arrangement should differ. Randomize response order for blind review. The current repository does not yet implement this full provider-backed comparison runner, so this gate is prepared but not executable end to end.
+Run the current single-agent baseline and the proposed specialist runtime against the same inputs, memory, tools, and environmental assumptions. Record the model and prompt versions. Use identical deterministic policy and tool boundaries in both arms; only the reasoning/routing arrangement should differ. Randomize response order for blind review. The runner now executes both arms end to end, but the live comparison gate still needs a credentialed run, failure-accounting review, and blinded response review before it can be considered complete.
 
 ## Acceptance Criteria
 

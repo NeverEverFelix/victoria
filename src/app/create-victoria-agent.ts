@@ -7,6 +7,7 @@ import {
   VictoriaAgent
 } from "../agent/index.js";
 import { createOpenAiAgentTeamSpecialists } from "../agent/team/openai-specialists.js";
+import type { ProviderUsageReporter } from "../agent/telemetry/provider-usage-reporter.js";
 import { buildFeatureFlags, type VictoriaEnv } from "../config/index.js";
 import type { UserHabit } from "../agent/types.js";
 import type { MemoryProvider } from "../agent/memory/types.js";
@@ -18,6 +19,7 @@ export interface CreateVictoriaAgentOptions {
   fetcher?: typeof fetch;
   memory?: MemoryProvider;
   tools?: VictoriaTools;
+  providerUsageReporter?: ProviderUsageReporter;
 }
 
 export function createVictoriaAgent(options: CreateVictoriaAgentOptions): VictoriaAgent {
@@ -34,6 +36,7 @@ export function createVictoriaAgent(options: CreateVictoriaAgentOptions): Victor
     ? new OpenAiFinancialMomentAdapter({
       apiKey: options.env.openAiApiKey,
       model: options.env.openAiModel,
+      ...(options.providerUsageReporter ? { usageReporter: options.providerUsageReporter } : {}),
       ...(options.fetcher ? { fetcher: options.fetcher } : {})
     })
     : new MockLlmAdapter();
@@ -41,6 +44,7 @@ export function createVictoriaAgent(options: CreateVictoriaAgentOptions): Victor
     ? createOpenAiAgentTeamSpecialists({
       apiKey: options.env.openAiApiKey,
       model: options.env.openAiModel,
+      ...(options.providerUsageReporter ? { usageReporter: options.providerUsageReporter } : {}),
       ...(options.fetcher ? { fetcher: options.fetcher } : {})
     })
     : createMockAgentTeamSpecialists(classifier);

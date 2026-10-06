@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createVictoriaAgent } from "../../../src/app/create-victoria-agent.js";
 import { parseVictoriaEnv, type EnvSource } from "../../../src/config/index.js";
+import { ProviderUsageReporter } from "../../../src/agent/telemetry/provider-usage-reporter.js";
 
 describe("createVictoriaAgent", () => {
   it("creates a mock-backed Victoria agent for the current skeleton", async () => {
@@ -67,13 +68,17 @@ describe("createVictoriaAgent", () => {
     ];
     let callCount = 0;
     const requests: Record<string, unknown>[] = [];
+    const providerUsageReporter = new ProviderUsageReporter();
     const agent = createVictoriaAgent({
       env: parseVictoriaEnv(validEnv({ OPENAI_AGENT_TEAM_ENABLED: "true" })),
+      providerUsageReporter,
       fetcher: async (_input, init) => {
         requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-        return jsonResponse({
-          output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(outputs[callCount++]) }] }]
-        });
+        const currentCall = callCount++;
+        return new Response(JSON.stringify({
+          usage: { input_tokens: 10 + currentCall, output_tokens: 4 + currentCall },
+          output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(outputs[currentCall]) }] }]
+        }), { status: 200, headers: { "x-request-id": `req-${currentCall}` } });
       }
     });
 
@@ -97,6 +102,13 @@ describe("createVictoriaAgent", () => {
     expect(proposed.decision.suggestion?.amountCents).toBe(9000);
     expect(proposed.decision.toolCall?.requiresApproval).toBe(true);
     expect(proposed.message).toContain("No real money has moved");
+    expect(providerUsageReporter.snapshot()).toMatchObject([
+      { role: "financial_moment", inputTokens: 10, outputTokens: 4, requestId: "req-0" },
+      { role: "savings_reasoning", inputTokens: 11, outputTokens: 5, requestId: "req-1" },
+      { role: "companion_voice", inputTokens: 12, outputTokens: 6, requestId: "req-2" }
+    ]);
+    expect(providerUsageReporter.snapshot().every((record) => typeof record.elapsedMs === "number")).toBe(true);
+    expect(providerUsageReporter.toJsonLines().split("\n")).toHaveLength(3);
 
     const recorded = await agent.respond({ userId: "user_123", conversationId: "provider_team_flow", message: "Yes" });
     expect(recorded.decision.action).toBe("create_ledger_entry");

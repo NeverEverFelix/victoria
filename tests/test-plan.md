@@ -16,7 +16,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - A vague savings message creates no event, proposal, suggestion, tool call, or ledger entry; after the user provides context, the agent can make an approval-gated suggestion.
 - Victoria chooses `estimateAvoidedSpend()` before suggesting a savings action.
 - Victoria refuses to call `eventuallyMoveMoney()` during the MVP, even when approval is present.
-- A natural-language real-transfer request receives a clear limitation response and does not create a mocked entry or call a transfer tool, including when a savings suggestion is pending.
+- A natural-language real-transfer request receives a clear limitation response and does not create a mocked entry or call a transfer tool, including when a savings suggestion is pending; cover sending money to a named goal and withdrawing money from checking.
 
 ## Environment Safety
 
@@ -116,7 +116,8 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Explicit amounts with more than two decimal places or a recognized non-USD currency require clarification and create no proposal or ledger entry; an invalid correction cannot approve the prior pending amount.
 - Explicit zero or negative USD amounts require clarification and create no proposal or ledger entry.
 - Properly grouped thousands separators in explicit USD amounts parse to exact cents; malformed grouping requires clarification and is never partially interpreted.
-- Multiple explicit dollar amounts require clarification; pending proposal edits with multiple amounts cannot be approved until one amount is specified.
+- Multiple explicit dollar amounts require clarification unless a recorded-entry correction uses the clear contrast pattern "$18, not $20"; then the first amount is the corrected value and still requires exact approval. Pending proposal edits with multiple amounts cannot be approved until one amount is specified.
+- An approval that repeats the pending amount is accepted only when the repeated amount matches the exact pending proposal; a mismatched amount does not approve the old amount.
 - Victoria makes it clear when an action is only a mocked ledger entry.
 
 ## Agentic Coding Setup

@@ -3,6 +3,7 @@ import {
   parseExplicitDollarAmount,
   parseExplicitDollarAmountCents
 } from "../../../src/domain/financial-events/parse-explicit-amount.js";
+import { parseExplicitCorrectionAmount } from "../../../src/domain/financial-events/parse-correction-amount.js";
 
 describe("financial event domain", () => {
   it("parses an explicit dollar amount into cents", () => {
@@ -46,6 +47,12 @@ describe("financial event domain", () => {
       status: "multiple_amounts"
     });
     expect(parseExplicitDollarAmountCents("I chose between a $20 and a $30 order.")).toBeUndefined();
+  });
+
+  it("parses a corrected amount when the second amount is explicitly negated", () => {
+    expect(parseExplicitCorrectionAmount("I avoided $18, not $20.")).toEqual({ status: "valid", amountCents: 1_800 });
+    expect(parseExplicitCorrectionAmount("I avoided $18 and $20.")).toBeNull();
+    expect(parseExplicitCorrectionAmount("I avoided $18, not $20, and saved $3.")).toBeNull();
   });
 
   it("recognizes an unsupported currency instead of treating it as no amount", () => {

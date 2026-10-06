@@ -1,5 +1,6 @@
 import type { ClassifiedMessage } from "../types.js";
 import { parseExplicitDollarAmount } from "../../domain/financial-events/parse-explicit-amount.js";
+import { parseExplicitCorrectionAmount } from "../../domain/financial-events/parse-correction-amount.js";
 import type { ClassifyMessageInput, DraftResponseInput, LlmAdapter } from "./types.js";
 
 export class MockLlmAdapter implements LlmAdapter {
@@ -27,14 +28,15 @@ export class MockLlmAdapter implements LlmAdapter {
 
     if (/\b(correct|correction|fix|change|revise)\b/.test(contextualMessage) &&
         /\b(entry|recorded|saved amount|savings amount)\b/.test(contextualMessage)) {
+      const correctionAmount = parseExplicitCorrectionAmount(input.userMessage);
       return {
         type: "entry_correction",
         confidence: 0.9,
-        ...(amountCents !== undefined ? { amountCents } : {}),
-        ...(amountIssue ? { amountIssue } : {}),
+        ...(correctionAmount ? { amountCents: correctionAmount.amountCents } : amountCents !== undefined ? { amountCents } : {}),
+        ...(!correctionAmount && amountIssue ? { amountIssue } : {}),
         ...(revisionReason ? { revisionReason } : {}),
         summary: input.userMessage,
-        needsClarification: amountIssue !== undefined || amountCents === undefined
+        needsClarification: !correctionAmount && (amountIssue !== undefined || amountCents === undefined)
       };
     }
 
@@ -144,8 +146,9 @@ function isRealMoneyMovementRequest(message: string): boolean {
     /\b(move|transfer|send)\b.{0,40}\b(money|funds|cash)\b/.test(message) ||
     /\b(money|funds|cash)\b.{0,40}\b(move|transfer|send)\b/.test(message) ||
     /\b(bank|account)\s+transfer\b/.test(message) ||
-    /\b(move|transfer|send)\b.{0,35}\b(to|into)\b.{0,35}\b(savings|checking|bank|account)\b/.test(message) ||
-    /\b(move|transfer|send)\b.{0,40}\b(from|between)\b.{0,40}\b(to|into)\b/.test(message)
+    /\b(move|transfer|send)\b.{0,35}\b(to|into)\b.{0,40}\b(savings|checking|bank|account|emergency fund)\b/.test(message) ||
+    /\b(move|transfer|send)\b.{0,40}\b(from|between)\b.{0,40}\b(to|into)\b/.test(message) ||
+    /\b(withdraw|take|pull|remove)\b.{0,50}\b(from|out of)\b.{0,35}\b(checking|savings|bank|account)\b/.test(message)
   );
 }
 
