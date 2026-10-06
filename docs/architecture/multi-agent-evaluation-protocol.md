@@ -14,7 +14,7 @@ Use the live comparison gate only after both provider-backed runtime arms can pr
 - Provider outages and timeout/fallback behavior require separate injected-failure runs. Do not count a synthetic user turn as evidence of provider outage handling.
 - Never include real account numbers, credentials, or unnecessary personal financial details.
 
-The checked-in provider adapter only classifies Financial Moments. It does not provide a provider-backed Savings Reasoning or Companion Voice, and the current seven-case smoke command does not run this 50-turn corpus or compare complete runtime arms. Do not claim a provider specialist-versus-single-agent result until both arms can produce complete user-visible turns under identical deterministic policy and mock tools. In particular, comparing the current provider classifier against mock specialists is not evidence that specialist reasoning improves quality.
+The opt-in provider team now supports Financial Moment classification, Savings Reasoning, and Companion Voice. The current smoke command exercises one synthetic turn through that team; it does not run this 50-turn corpus or compare complete runtime arms. Do not claim a provider specialist-versus-single-agent result until both arms can produce complete user-visible turns under identical deterministic policy and mock tools. In particular, the team wiring and single-turn smoke are not evidence that specialist reasoning improves quality.
 
 ## Blinded Human Review
 

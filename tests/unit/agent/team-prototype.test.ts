@@ -220,6 +220,16 @@ describe("AgentTeamPrototype", () => {
       requiredDisclosures: ["Victoria cannot move real money in the MVP.", "No transfer has been made."]
     }));
   });
+
+  it("accepts safe disclosures that mention transfer without claiming a transfer", async () => {
+    const specialists = team({
+      voiceMessage: "You do not need to transfer anything; would you like me to record $90? No real money has moved."
+    });
+    const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
+
+    expect(turn.message).toContain("You do not need to transfer anything");
+    expect(turn.message).toContain("No real money has moved.");
+  });
 });
 
 function team(overrides: {

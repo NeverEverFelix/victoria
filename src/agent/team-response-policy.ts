@@ -64,8 +64,10 @@ function isSafeVoiceDraft(candidate: unknown, finding: FinancialMomentFinding, a
 
 function claimsProhibitedMoneyMovement(message: string): boolean {
   const withoutSafeDisclosure = message.replace(/\bno real money has moved(?: yet)?\b/gi, "");
-  return /\b(?:move|moves|moved|moving|transfer|transfers|transferred|transferring|send|sends|sent|sending|deposit|deposits|deposited|depositing)\b/i
-    .test(withoutSafeDisclosure);
+  const action = "(?:move|moves|moved|moving|transfer|transfers|transferred|transferring|send|sends|sent|sending|deposit|deposits|deposited|depositing)";
+  const affirmativeActorClaim = new RegExp(`\\b(?:i|we|victoria)\\s+(?:(?:can|will|would|have|has|already|just)\\s+)*(?:${action})\\b`, "i");
+  const completedPassiveClaim = new RegExp(`\\b(?:money|funds|a transfer)\\s+(?:was|were|has been|have been)\\s+(?:${action}|made|completed)\\b`, "i");
+  return affirmativeActorClaim.test(withoutSafeDisclosure) || completedPassiveClaim.test(withoutSafeDisclosure);
 }
 
 function isShaming(message: string): boolean {

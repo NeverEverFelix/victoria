@@ -36,6 +36,17 @@ describe("buildFeatureFlags", () => {
     }))).useProviderAgentTeam).toBe(false);
   });
 
+  it("gives the full provider team precedence when both provider flags are enabled", () => {
+    const flags = buildFeatureFlags(parseVictoriaEnv(validEnv({
+      OPENAI_FINANCIAL_MOMENT_ENABLED: "true",
+      OPENAI_AGENT_TEAM_ENABLED: "true"
+    })));
+
+    expect(flags.useProviderAgentTeam).toBe(true);
+    expect(flags.useProviderFinancialMoment).toBe(false);
+    expect(flags.useMockAi).toBe(false);
+  });
+
   it("uses mock AI in test when OPENAI_MODEL is mock", () => {
     const flags = buildFeatureFlags(
       parseVictoriaEnv(
