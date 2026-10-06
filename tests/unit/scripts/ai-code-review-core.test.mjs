@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCompleteReviewComment,
+  buildReviewRequest,
   buildReviewInput,
   chunkDiffForReview,
   resolveReviewOutputTokenLimit,
@@ -11,6 +12,18 @@ describe("AI code review core", () => {
   it("uses a bounded default and allows a configured response-token limit", () => {
     expect(resolveReviewOutputTokenLimit(undefined)).toBe(2000);
     expect(resolveReviewOutputTokenLimit("2400")).toBe(2400);
+  });
+
+  it("keeps GPT-5 reasoning tokens from consuming the review response budget", () => {
+    expect(buildReviewRequest("gpt-5", [], 2000)).toEqual({
+      model: "gpt-5",
+      input: [],
+      reasoning: { effort: "low" },
+      text: { verbosity: "low" },
+      max_output_tokens: 2000,
+      store: false
+    });
+    expect(buildReviewRequest("gpt-4.1", [], 2000)).not.toHaveProperty("reasoning");
   });
 
   it("rejects an invalid or unbounded response-token limit", () => {

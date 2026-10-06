@@ -7,9 +7,10 @@ on:
       - reopened
       - synchronize
       - ready_for_review
+      - edited
   push:
     branches:
-      - main
+      - '**'
 
 jobs:
   review-pull-request:
@@ -52,7 +53,7 @@ jobs:
 
   review-main:
     if: github.event_name == 'push'
-    name: Review Main
+    name: Review Commit
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

@@ -172,7 +172,9 @@ requireIncludes(".github/workflows/ai-code-review.yml", [
   "AI_REVIEW_MAX_COMMENT_CHARS",
   "PULL_REQUEST_NUMBER",
   "branches:",
-  "- main",
+  "- '**'",
+  "edited",
+  "AI_REVIEW_MAX_OUTPUT_TOKENS",
   "timeout-minutes:",
   "AI_REVIEW_REQUIRED"
 ]);
@@ -207,6 +209,8 @@ requireIncludes("scripts/ai-code-review-core.mjs", [
   "Trusted repository instructions from the trusted review commit",
   "chunkDiffForReview",
   "splitReviewChunkForRetry",
+  "buildReviewRequest",
+  "? \"high\" : \"low\"",
   "coveredDiffChars",
   "coverage mismatch"
 ]);

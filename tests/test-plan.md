@@ -155,8 +155,10 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Pull-request AI review runs trusted default-branch code and never executes pull-request code with secrets.
 - AI review keeps trusted instructions separate from untrusted diff content.
 - Oversized diffs list every changed path, prioritize safety-sensitive excerpts, and cannot satisfy required AI review.
-- AI review uses its configured per-pass output-token budget and rejects values outside the bounded range.
-- Large AI review diffs are split into smaller bounded passes; every pass must complete before any review is posted.
+- AI review uses a 2,000-token default per-pass output budget and rejects values outside the bounded range.
+- Pull request events and pushes to every branch trigger AI review; review passes are processed concurrently and adaptively split on output truncation.
+- Large AI review diffs retain complete coverage; every pass must complete before any review is posted, within the configured bounded call cap.
+- GPT-5 AI review requests use low reasoning effort so internal reasoning does not consume the response-token allowance needed for findings.
 
 ## Future Integration Boundaries
 

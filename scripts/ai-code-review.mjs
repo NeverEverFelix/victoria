@@ -3,6 +3,7 @@ import { existsSync, readFileSync, appendFileSync } from "node:fs";
 import {
   buildCompleteReviewComment,
   buildReviewInput,
+  buildReviewRequest,
   chunkDiffForReview,
   resolveReviewOutputTokenLimit,
   splitReviewChunkForRetry
@@ -24,6 +25,7 @@ const {
 
 const maxDiffChars = Number(process.env.AI_REVIEW_MAX_DIFF_CHARS ?? 18000);
 const maxChunks = Number(process.env.AI_REVIEW_MAX_CHUNKS ?? 24);
+const reviewConcurrency = 5;
 const maxCommentChars = Number(process.env.AI_REVIEW_MAX_COMMENT_CHARS ?? 60000);
 const maxTrustedFileChars = 12000;
 
@@ -145,15 +147,7 @@ async function createReview(input, maxOutputTokens) {
       Authorization: `Bearer ${OPENAI_API_KEY}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      model: OPENAI_CODE_REVIEW_MODEL,
-      input,
-      text: {
-        verbosity: "low"
-      },
-      max_output_tokens: maxOutputTokens,
-      store: false
-    })
+    body: JSON.stringify(buildReviewRequest(OPENAI_CODE_REVIEW_MODEL, input, maxOutputTokens))
   });
 
   if (!response.ok) {
@@ -222,6 +216,7 @@ function writeSummary(body) {
   }
 
   appendFileSync(GITHUB_STEP_SUMMARY, `${body}\n`, "utf8");
+  console.log(body);
 }
 
 async function main() {
@@ -267,40 +262,44 @@ async function main() {
     process.env.AI_REVIEW_MAX_OUTPUT_TOKENS
   );
   const reviewChunks = [...partition.chunks];
-  const reviews = [];
+  const reviews = Array(reviewChunks.length);
+  let apiCalls = 0;
   let index = 0;
   while (index < reviewChunks.length) {
-    const chunk = reviewChunks[index];
-    const scope = [
-      `This pass covers ${chunk.paths.length} changed path(s): ${chunk.paths.join(", ")}.`,
-      "Review only this bounded segment of the PR diff. The complete diff is covered across all passes; do not infer that files outside this segment are unchanged or absent."
-    ].join(" ");
-    const input = buildReviewInput({
-      diff: chunk.text,
-      reviewScope: scope,
-      ...trustedContext
-    });
-    try {
-      reviews.push(await createReview(input, maxOutputTokens));
-      index += 1;
-    } catch (error) {
-      if (error.code !== "AI_REVIEW_OUTPUT_LIMIT") {
-        throw error;
-      }
-
-      const smallerChunks = splitReviewChunkForRetry(chunk);
-      if (!smallerChunks) {
-        throw error;
-      }
-      if (reviewChunks.length + smallerChunks.length - 1 > maxChunks) {
-        throw new Error(
-          `AI review stopped without posting a partial result: a response exceeded AI_REVIEW_MAX_OUTPUT_TOKENS and adaptive splitting would exceed AI_REVIEW_MAX_CHUNKS (${maxChunks}).`
-        );
-      }
-
-      reviewChunks.splice(index, 1, ...smallerChunks);
-      log(`A review pass exceeded the output-token budget; split it into ${smallerChunks.length} smaller passes (${reviewChunks.length} total).`);
+    const end = Math.min(index + reviewConcurrency, reviewChunks.length);
+    const batch = reviewChunks.slice(index, end);
+    apiCalls += batch.length;
+    if (apiCalls > maxChunks) {
+      throw new Error(`AI review stopped without posting a partial result: AI_REVIEW_MAX_CHUNKS (${maxChunks}) API-call limit exceeded.`);
     }
+    const results = await Promise.allSettled(batch.map((chunk) => {
+      const scope = [
+        `This pass covers ${chunk.paths.length} changed path(s): ${chunk.paths.join(", ")}.`,
+        "Review only this bounded segment of the PR diff. The complete diff is covered across all passes; do not infer that files outside this segment are unchanged or absent."
+      ].join(" ");
+      return createReview(buildReviewInput({ diff: chunk.text, reviewScope: scope, ...trustedContext }), maxOutputTokens);
+    }));
+    const retryChunks = [];
+    for (let resultIndex = 0; resultIndex < results.length; resultIndex += 1) {
+      const result = results[resultIndex];
+      const chunk = batch[resultIndex];
+      if (result.status === "fulfilled") {
+        reviews[index + resultIndex] = result.value;
+        continue;
+      }
+      if (result.reason.code !== "AI_REVIEW_OUTPUT_LIMIT") {
+        throw result.reason;
+      }
+      const smallerChunks = splitReviewChunkForRetry(chunk);
+      if (!smallerChunks) throw result.reason;
+      retryChunks.push({ position: index + resultIndex, chunks: smallerChunks });
+    }
+    for (const retry of retryChunks.reverse()) {
+      reviewChunks.splice(retry.position, 1, ...retry.chunks);
+      reviews.splice(retry.position, 1, ...retry.chunks.map(() => undefined));
+    }
+    if (retryChunks.length) log(`Split ${retryChunks.length} over-budget pass(es); retrying smaller segments (${reviewChunks.length} total passes).`);
+    index = retryChunks.length ? index : end;
   }
 
   partition.chunks = reviewChunks;

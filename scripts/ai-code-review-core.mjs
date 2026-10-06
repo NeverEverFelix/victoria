@@ -13,6 +13,19 @@ export function resolveReviewOutputTokenLimit(value) {
   return limit;
 }
 
+export function buildReviewRequest(model, input, maxOutputTokens) {
+  const isReasoningModel = /^(?:gpt-5|o\d)/i.test(model);
+  const reasoningEffort = /(?:^|-)pro(?:-|$)/i.test(model) ? "high" : "low";
+  return {
+    model,
+    input,
+    ...(isReasoningModel ? { reasoning: { effort: reasoningEffort } } : {}),
+    text: { verbosity: "low" },
+    max_output_tokens: maxOutputTokens,
+    store: false
+  };
+}
+
 export function buildReviewInput({
   diff,
   agentInstructions,
