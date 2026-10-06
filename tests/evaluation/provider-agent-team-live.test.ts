@@ -1,4 +1,3 @@
-import { loadEnvConfig } from "@next/env";
 import { describe, expect, it } from "vitest";
 import { MockVictoriaTools } from "../../src/agent/tools/mock-tools.js";
 import { createVictoriaAgent } from "../../src/app/create-victoria-agent.js";
@@ -11,10 +10,10 @@ if (runLiveSmoke && (process.env.CI === "true" || process.env.GITHUB_ACTIONS ===
 if (runLiveSmoke && process.env.CONFIRM_LIVE_SMOKE !== "1") {
   throw new Error("Set CONFIRM_LIVE_SMOKE=1 to confirm provider requests and possible API charges.");
 }
-if (runLiveSmoke) loadEnvConfig(process.cwd());
-
 describe.skipIf(!runLiveSmoke)("live provider agent-team smoke", () => {
   it("runs one avoided-spend turn with the provider team and mock ledger", async () => {
+    const { loadEnvConfig } = await import("@next/env");
+    loadEnvConfig(process.cwd());
     const apiKey = process.env.OPENAI_API_KEY?.trim();
     if (!apiKey || /^(?:local-|test-|replace|placeholder)/i.test(apiKey)) {
       throw new Error("Set a real OPENAI_API_KEY in ignored .env.local or the process environment.");

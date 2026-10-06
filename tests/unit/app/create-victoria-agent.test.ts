@@ -87,6 +87,12 @@ describe("createVictoriaAgent", () => {
       const text = request.text as { format?: { type?: string; strict?: boolean } } | undefined;
       return text?.format?.type === "json_schema" && text.format.strict === true;
     })).toBe(true);
+    const voiceRequest = requests[2]!;
+    const voiceText = voiceRequest.text as {
+      format?: { schema?: { properties?: { response?: { maxLength?: number } } } };
+    };
+    expect(voiceRequest.instructions).toContain("validated amounts from the assessment");
+    expect(voiceText.format?.schema?.properties?.response?.maxLength).toBe(1000);
     expect(proposed.decision.action).toBe("suggest_savings");
     expect(proposed.decision.suggestion?.amountCents).toBe(9000);
     expect(proposed.decision.toolCall?.requiresApproval).toBe(true);
