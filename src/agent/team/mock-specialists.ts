@@ -1,11 +1,11 @@
 import { formatUsd } from "../../domain/money.js";
 import { MockLlmAdapter } from "../llm/mock-llm.js";
+import type { LlmAdapter } from "../llm/types.js";
 import type { AgentMemory } from "../types.js";
 import type { AgentTeamSpecialists, SavingsAssessment } from "../team-prototype.js";
 
 /** Deterministic specialists used by the headless core product until a provider is evaluated. */
-export function createMockAgentTeamSpecialists(): AgentTeamSpecialists {
-  const classifier = new MockLlmAdapter();
+export function createMockAgentTeamSpecialists(classifier: Pick<LlmAdapter, "classifyMessage"> = new MockLlmAdapter()): AgentTeamSpecialists {
   return {
     financialMoment: {
       async analyze({ message, memory, conversationContext }) {

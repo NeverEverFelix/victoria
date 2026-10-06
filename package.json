@@ -16,6 +16,7 @@
     "check": "npm run agent:validate && npm run lint && npm run typecheck && npm run typecheck:test && npm test",
     "test": "vitest run",
     "test:watch": "vitest",
+    "eval:provider:financial-moment": "RUN_PROVIDER_EVAL=1 vitest run tests/evaluation/provider-financial-moment.test.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json"
   },

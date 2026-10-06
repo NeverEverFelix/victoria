@@ -6,12 +6,23 @@ describe("buildFeatureFlags", () => {
   it("uses mock ledger and sandbox banking in local development", () => {
     const flags = buildFeatureFlags(parseVictoriaEnv(validEnv()));
 
-    expect(flags.useMockAi).toBe(false);
+    expect(flags.useMockAi).toBe(true);
+    expect(flags.useProviderFinancialMoment).toBe(false);
     expect(flags.useMockLedger).toBe(true);
     expect(flags.useSandboxBanking).toBe(true);
     expect(flags.allowRealTransfers).toBe(false);
     expect(flags.requireApprovalForSavingsLedger).toBe(true);
     expect(flags.requireApprovalForRealTransfers).toBe(true);
+  });
+
+  it("enables the provider Financial Moment only with the explicit flag and a real model", () => {
+    const enabled = buildFeatureFlags(parseVictoriaEnv(validEnv({
+      OPENAI_FINANCIAL_MOMENT_ENABLED: "true"
+    })));
+    expect(enabled.useProviderFinancialMoment).toBe(true);
+    expect(enabled.useMockAi).toBe(false);
+    expect(buildFeatureFlags(parseVictoriaEnv(validEnv({ OPENAI_MODEL: "mock", OPENAI_FINANCIAL_MOMENT_ENABLED: "true" })))
+      .useProviderFinancialMoment).toBe(false);
   });
 
   it("uses mock AI in test when OPENAI_MODEL is mock", () => {

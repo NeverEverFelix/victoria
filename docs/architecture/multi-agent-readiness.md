@@ -4,13 +4,13 @@ This document separates a tested prototype from a production-capable runtime. It
 
 ## Current Position
 
-Victoria has a safety-tested, in-memory core agent with deterministic mock specialists wired into the mock composition, plus a standalone orchestration prototype. The core agent uses the Financial Moment specialist for classification and invokes Savings Reasoning and Companion Voice for avoided-spend, unclear, and regretful-spend flows. Deterministic proposal creation, amount/tool checks, approvals, ledger writes, and real-transfer refusal remain in the core agent.
+Victoria has a safety-tested, in-memory core agent with deterministic mock specialists by default, plus a standalone orchestration prototype. An opt-in OpenAI Responses adapter can now serve Financial Moment classification with a versioned strict schema; Savings Reasoning and Companion Voice remain deterministic mocks. The provider flag defaults off. Deterministic proposal creation, amount/tool checks, approvals, ledger writes, and real-transfer refusal remain in the core agent.
 
 The deterministic seven-case corpus in `tests/evaluation/` checks that the current agent and a scripted specialist team preserve selected MVP outcomes. Unit tests also exercise specialist/core handoffs and confirmation behavior in the live mock composition. These checks use deterministic mocks; they do **not** measure model quality, specialist value, provider latency, token usage, or dollar cost. See the [evaluation harness notes](../../tests/evaluation/README.md).
 
 The headless policy now requires confidence on Financial Moment classifications and Savings Reasoning assessments. Valid classifications and suggestions below the provisional `0.70` floor ask for clarification; unresolved intent keeps short-lived conversation context for the next reply and clears when a clear new intent arrives. Mismatched specialist/core estimates also ask and can continue after the user supplies a supported amount. This floor is not calibrated against a provider and is not evidence of real model confidence quality.
 
-No provider-backed specialist is wired in. There are no HTTP route handlers, durable turn/conversation records, durable pending proposals, or cross-process conversation locks. The live `VictoriaAgent` retains pending conversational state in process memory. These are production readiness gaps, not prototype failures.
+The provider-backed Financial Moment path has transport/schema tests and an opt-in evaluation command, but it has not been run against a real provider or evaluated on the required 50-turn corpus. It does not report price/cost yet, and no provider-backed Savings Reasoning or Companion Voice is wired in. There are no HTTP route handlers, durable turn/conversation records, durable pending proposals, or cross-process conversation locks. The live `VictoriaAgent` retains pending conversational state in process memory. These are production readiness gaps, not prototype failures.
 
 The server-state foundation includes a pure lifecycle in `src/domain/turns/lifecycle.ts`, a user-scoped repository contract with an in-memory adapter in `src/app/turns/`, and a headless authenticated submission handler in `src/app/http/submit-turn-handler.ts`. The handler requires an injected verified identity, conversation ownership check, and keyed request fingerprint. These are contracts with test doubles, not production adapters. The in-memory repository is not durable across processes or restarts. No Next.js route, real authenticator, database adapter, or production runtime currently uses them.
 
@@ -30,7 +30,9 @@ The server-state foundation includes a pure lifecycle in `src/domain/turns/lifec
 ### Stage 2: Provider Evaluation — Before Runtime Migration
 
 - [ ] Agree on a provider/model strategy and where each role runs.
-- [ ] Define provider-specific structured-output schemas and versioned prompts.
+- [x] Define the Financial Moment provider structured-output schema and versioned prompt.
+- [x] Add a default-off flag for the provider Financial Moment path.
+- [x] Select GPT-6 Luna for the initial cost-sensitive Financial Moment evaluation; production selection remains pending evaluation results.
 - [ ] Evaluate the same frozen scenario set against the single-agent baseline and the specialist implementation.
 - [ ] Add blinded human review for tone, clarity, and companion value; automated contract assertions alone are insufficient.
 - [ ] Add adversarial cases for prompt injection, unsupported financial claims, specialist disagreement, and partial provider outages.
@@ -62,5 +64,7 @@ The server-state foundation includes a pure lifecycle in `src/domain/turns/lifec
 ## Today’s Evaluation Gate
 
 The checked-in deterministic evaluation is a smoke and contract-parity baseline. The next meaningful quality evaluation requires a provider-backed specialist adapter and human-reviewed examples. Do not label scripted results as evidence that three model calls outperform one model call. The proposed numeric thresholds remain unaccepted until they are reviewed against measured provider behavior and product economics.
+
+The provider evaluation command currently exercises the existing seven-case starter corpus and reports classification, deterministic amount fidelity, latency, and token counts. It is a connection/smoke evaluation only; it does not meet the 50-turn comparison, blinded review, or cost reporting gate.
 
 Production multi-agent readiness is reached only when Stages 2 and 3 have explicit pass evidence and Stage 4's operational controls are implemented. The MVP's real-money prohibition remains in force throughout.
