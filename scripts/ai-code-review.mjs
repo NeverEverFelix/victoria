@@ -3,6 +3,7 @@ import { existsSync, readFileSync, appendFileSync } from "node:fs";
 import {
   buildCompleteReviewComment,
   buildReviewInput,
+  buildReviewRequest,
   chunkDiffForReview,
   resolveReviewOutputTokenLimit,
   splitReviewChunkForRetry
@@ -22,8 +23,8 @@ const {
   OPENAI_CODE_REVIEW_MODEL = "gpt-5"
 } = process.env;
 
-const maxDiffChars = Number(process.env.AI_REVIEW_MAX_DIFF_CHARS ?? 12000);
-const maxChunks = Number(process.env.AI_REVIEW_MAX_CHUNKS ?? 96);
+const maxDiffChars = Number(process.env.AI_REVIEW_MAX_DIFF_CHARS ?? 18000);
+const maxChunks = Number(process.env.AI_REVIEW_MAX_CHUNKS ?? 24);
 const reviewConcurrency = 5;
 const maxCommentChars = Number(process.env.AI_REVIEW_MAX_COMMENT_CHARS ?? 60000);
 const maxTrustedFileChars = 12000;
@@ -146,15 +147,7 @@ async function createReview(input, maxOutputTokens) {
       Authorization: `Bearer ${OPENAI_API_KEY}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      model: OPENAI_CODE_REVIEW_MODEL,
-      input,
-      text: {
-        verbosity: "low"
-      },
-      max_output_tokens: maxOutputTokens,
-      store: false
-    })
+    body: JSON.stringify(buildReviewRequest(OPENAI_CODE_REVIEW_MODEL, input, maxOutputTokens))
   });
 
   if (!response.ok) {
@@ -223,6 +216,7 @@ function writeSummary(body) {
   }
 
   appendFileSync(GITHUB_STEP_SUMMARY, `${body}\n`, "utf8");
+  console.log(body);
 }
 
 async function main() {

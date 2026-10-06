@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCompleteReviewComment,
+  buildReviewRequest,
   buildReviewInput,
   chunkDiffForReview,
   resolveReviewOutputTokenLimit,
@@ -9,8 +10,20 @@ import {
 
 describe("AI code review core", () => {
   it("uses a bounded default and allows a configured response-token limit", () => {
-    expect(resolveReviewOutputTokenLimit(undefined)).toBe(4000);
+    expect(resolveReviewOutputTokenLimit(undefined)).toBe(2000);
     expect(resolveReviewOutputTokenLimit("2400")).toBe(2400);
+  });
+
+  it("keeps GPT-5 reasoning tokens from consuming the review response budget", () => {
+    expect(buildReviewRequest("gpt-5", [], 2000)).toEqual({
+      model: "gpt-5",
+      input: [],
+      reasoning: { effort: "low" },
+      text: { verbosity: "low" },
+      max_output_tokens: 2000,
+      store: false
+    });
+    expect(buildReviewRequest("gpt-4.1", [], 2000)).not.toHaveProperty("reasoning");
   });
 
   it("rejects an invalid or unbounded response-token limit", () => {
@@ -95,22 +108,6 @@ describe("AI code review core", () => {
     expect(splitReviewChunkForRetry({ text: "too small", paths: [] })).toBeNull();
   });
 
-  it("keeps subdividing truncated passes below 2,000 characters", () => {
-    const first = chunkDiffForReview(fileDiff("src/dense.ts", "+line\n".repeat(500)), 12_000).chunks[0];
-    const pending = [first];
-    const finalPasses = [];
-
-    while (pending.length) {
-      const chunk = pending.pop();
-      const smaller = splitReviewChunkForRetry(chunk);
-      if (smaller) pending.push(...smaller);
-      else finalPasses.push(chunk);
-    }
-
-    expect(finalPasses.length).toBeGreaterThan(1);
-    expect(finalPasses.every((chunk) => chunk.text.length <= 500)).toBe(true);
-  });
-
   it("covers the previously recurring 256k-character PR size in bounded passes", () => {
     const diff = fileDiff("src/agent/large.ts", "+x".repeat(128_000));
     const partition = chunkDiffForReview(diff, 18_000);
@@ -166,7 +163,7 @@ describe("AI code review core", () => {
   it("handles empty diffs and rejects invalid pass limits", () => {
     expect(chunkDiffForReview("", 2000).chunks).toEqual([]);
     expect(() => chunkDiffForReview("diff", 100)).toThrow(
-      "AI_REVIEW_MAX_DIFF_CHARS must be an integer of at least 500."
+      "AI_REVIEW_MAX_DIFF_CHARS must be an integer of at least 2000."
     );
   });
 });
