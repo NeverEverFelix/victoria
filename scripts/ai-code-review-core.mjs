@@ -1,6 +1,6 @@
 export function resolveReviewOutputTokenLimit(value) {
   if (value === undefined || value === "") {
-    return 2000;
+    return 4000;
   }
 
   const limit = Number(value);

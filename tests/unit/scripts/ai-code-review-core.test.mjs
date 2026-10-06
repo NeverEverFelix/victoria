@@ -9,7 +9,7 @@ import {
 
 describe("AI code review core", () => {
   it("uses a bounded default and allows a configured response-token limit", () => {
-    expect(resolveReviewOutputTokenLimit(undefined)).toBe(2000);
+    expect(resolveReviewOutputTokenLimit(undefined)).toBe(4000);
     expect(resolveReviewOutputTokenLimit("2400")).toBe(2400);
   });
 

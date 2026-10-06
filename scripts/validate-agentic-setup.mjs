@@ -172,7 +172,9 @@ requireIncludes(".github/workflows/ai-code-review.yml", [
   "AI_REVIEW_MAX_COMMENT_CHARS",
   "PULL_REQUEST_NUMBER",
   "branches:",
-  "- main",
+  "- '**'",
+  "edited",
+  "AI_REVIEW_MAX_OUTPUT_TOKENS",
   "timeout-minutes:",
   "AI_REVIEW_REQUIRED"
 ]);
