@@ -8,6 +8,12 @@ describe("financial event domain", () => {
   it("parses an explicit dollar amount into cents", () => {
     expect(parseExplicitDollarAmountCents("I almost bought a $90 jacket.")).toBe(9000);
     expect(parseExplicitDollarAmountCents("I skipped a $6.75 coffee.")).toBe(675);
+    expect(parseExplicitDollarAmountCents("I passed on a $1,200 TV.")).toBe(120000);
+    expect(parseExplicitDollarAmountCents("It cost $1,200.50.")).toBe(120050);
+  });
+
+  it("does not parse malformed comma grouping as a smaller amount", () => {
+    expect(parseExplicitDollarAmount("I nearly spent $12,34.")).toEqual({ status: "invalid_value" });
   });
 
   it("returns undefined when no explicit dollar amount exists", () => {

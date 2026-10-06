@@ -115,6 +115,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Approval from another user cannot approve a proposal, and goal allocation cannot reuse the prior proposal's approval.
 - Explicit amounts with more than two decimal places or a recognized non-USD currency require clarification and create no proposal or ledger entry; an invalid correction cannot approve the prior pending amount.
 - Explicit zero or negative USD amounts require clarification and create no proposal or ledger entry.
+- Properly grouped thousands separators in explicit USD amounts parse to exact cents; malformed grouping requires clarification and is never partially interpreted.
 - Multiple explicit dollar amounts require clarification; pending proposal edits with multiple amounts cannot be approved until one amount is specified.
 - Victoria makes it clear when an action is only a mocked ledger entry.
 

@@ -3,10 +3,10 @@ import {
   MockLlmAdapter,
   MockMemoryProvider,
   MockVictoriaTools,
-  createOpenAiAgentTeamSpecialists,
   OpenAiFinancialMomentAdapter,
   VictoriaAgent
 } from "../agent/index.js";
+import { createOpenAiAgentTeamSpecialists } from "../agent/team/openai-specialists.js";
 import { buildFeatureFlags, type VictoriaEnv } from "../config/index.js";
 import type { UserHabit } from "../agent/types.js";
 import type { MemoryProvider } from "../agent/memory/types.js";
