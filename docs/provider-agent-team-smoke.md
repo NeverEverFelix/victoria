@@ -27,10 +27,10 @@ Keep `.env.local` on your machine. Do not commit it or paste the key into chat. 
 ## Run the live smoke
 
 ```bash
-npm run agent:smoke:provider-team
+CONFIRM_LIVE_SMOKE=1 npm run agent:smoke:provider-team
 ```
 
-The command loads `.env.local`, then makes up to three provider requests for a synthetic avoided-spend message. Its summary includes the selected model, called roles, core classification and action, response, and mock-ledger count. Confirm the ledger count is zero and that the response says recording requires user approval.
+The explicit confirmation is required because the command makes provider requests that may incur charges. It refuses to run in CI. After confirming, it loads `.env.local` and may make up to three provider requests for a synthetic avoided-spend message. Its summary includes the selected model, called roles, core classification and action, response, and mock-ledger count. Confirm the ledger count is zero and that the response says recording requires user approval.
 
 Common prerequisite error:
 
@@ -38,7 +38,7 @@ Common prerequisite error:
 Set a real OPENAI_API_KEY in ignored .env.local or the process environment.
 ```
 
-Resolve it by adding a valid key to `.env.local`. The test also requires `APP_ENV=local`, `OPENAI_AGENT_TEAM_ENABLED=true`, a non-mock `OPENAI_MODEL`, and `MONEY_MOVEMENT_MODE=mock_ledger`.
+Resolve it by adding a valid key to `.env.local`. The test also requires `APP_ENV=local`, `OPENAI_AGENT_TEAM_ENABLED=true`, a non-mock `OPENAI_MODEL`, and `MONEY_MOVEMENT_MODE=mock_ledger`. If the confirmation variable is missing, rerun with `CONFIRM_LIVE_SMOKE=1` as shown above.
 
 ## Related mock and safety checks
 

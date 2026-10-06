@@ -6,6 +6,8 @@
 
 The scripted specialists use `MockLlmAdapter` and deterministic fixture logic. This is a plumbing and contract-parity check only. Its local elapsed times are not representative provider latency and its output has no model token or price data.
 
+In the frozen provider corpus, `expectedIntent` is the financial-moment classification for the current utterance; `expectedAction` also reflects conversation context. For example, a short confirmation may classify as `unclear` on its own while still authorizing the exact pending proposal through the separate approval policy.
+
 `metrics.ts` computes nearest-rank p50 and p95 summaries across turns. A provider-backed evaluation should use the same corpus and summary shape, add provider usage/cost data, record model and prompt versions, and retain per-role timings. Do not compare the scripted mock timings with the proposed service targets.
 
 The frozen 50-turn synthetic corpus is `fixtures/provider-eval-v1.json`; evaluation design and blinded review instructions are in `../../docs/architecture/multi-agent-evaluation-protocol.md`. `templates/blinded-review.csv` is the reviewer sheet and `templates/provider-run-report.json` defines run metadata and summary fields. Expected safety outcomes must stay fixed during a comparison. Use a separate holdout set when tuning prompts or routing. The corpus is prepared but is not yet consumed by an end-to-end provider comparison runner.

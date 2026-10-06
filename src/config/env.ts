@@ -32,6 +32,7 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
   const databaseUrl = requireEnv(source, "DATABASE_URL");
   const openAiApiKey = requireEnv(source, "OPENAI_API_KEY");
   const openAiModel = requireEnv(source, "OPENAI_MODEL");
+  // Both provider paths default off; when both are on, the complete agent team takes precedence.
   const openAiFinancialMomentEnabled = parseOptionalBoolean(source.OPENAI_FINANCIAL_MOMENT_ENABLED, "OPENAI_FINANCIAL_MOMENT_ENABLED");
   const openAiAgentTeamEnabled = parseOptionalBoolean(source.OPENAI_AGENT_TEAM_ENABLED, "OPENAI_AGENT_TEAM_ENABLED");
   const plaidClientId = requireEnv(source, "PLAID_CLIENT_ID");

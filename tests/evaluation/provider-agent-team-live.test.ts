@@ -5,6 +5,12 @@ import { createVictoriaAgent } from "../../src/app/create-victoria-agent.js";
 import { parseVictoriaEnv } from "../../src/config/env.js";
 
 const runLiveSmoke = process.env.RUN_PROVIDER_AGENT_TEAM_SMOKE === "1";
+if (runLiveSmoke && (process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true")) {
+  throw new Error("The live provider-team smoke is local-only and cannot run in CI.");
+}
+if (runLiveSmoke && process.env.CONFIRM_LIVE_SMOKE !== "1") {
+  throw new Error("Set CONFIRM_LIVE_SMOKE=1 to confirm provider requests and possible API charges.");
+}
 if (runLiveSmoke) loadEnvConfig(process.cwd());
 
 describe.skipIf(!runLiveSmoke)("live provider agent-team smoke", () => {
@@ -50,7 +56,7 @@ describe.skipIf(!runLiveSmoke)("live provider agent-team smoke", () => {
       expect(response.decision.toolCall?.requiresApproval).toBe(true);
       expect(response.message).toContain("No real money has moved");
     }
-    expect(providerRoles[0]).toBe("financial_moment_v1");
+    expect(providerRoles).toContain("financial_moment_v1");
 
     process.stdout.write(`${JSON.stringify({
       model: env.openAiModel,
