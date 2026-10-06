@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { parseVictoriaEnv, type EnvSource } from "../../../src/config/env.js";
 
 describe("parseVictoriaEnv", () => {
+  it("keeps provider Financial Moment disabled unless explicitly enabled", () => {
+    expect(parseVictoriaEnv(validEnv()).openAiFinancialMomentEnabled).toBe(false);
+    expect(parseVictoriaEnv(validEnv({ OPENAI_FINANCIAL_MOMENT_ENABLED: "true" })).openAiFinancialMomentEnabled).toBe(true);
+    expect(() => parseVictoriaEnv(validEnv({ OPENAI_FINANCIAL_MOMENT_ENABLED: "yes" })))
+      .toThrow("OPENAI_FINANCIAL_MOMENT_ENABLED must be true or false.");
+  });
   it("parses a valid local environment", () => {
     const env = parseVictoriaEnv(validEnv());
 

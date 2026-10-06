@@ -8,10 +8,10 @@ The most important rule: never share databases or secrets between local, test, s
 
 | Environment | Purpose | Database | AI | Banking | Money movement |
 | --- | --- | --- | --- | --- | --- |
-| `local` | Developer machine | `victoria_local` | mock until adapter exists | sandbox | `mock_ledger` |
+| `local` | Developer machine | `victoria_local` | mock by default; Financial Moment provider opt-in | sandbox | `mock_ledger` |
 | `test` | Automated tests | `victoria_test` or disposable DB | mock by default | sandbox or mock | `mock_ledger` |
-| `staging` | Production-like validation | staging DB | mock until adapter exists | sandbox | `mock_ledger` until approved |
-| `production` | Real users | production DB | mock until adapter exists | sandbox until banking reads are audited | `mock_ledger` until approved |
+| `staging` | Production-like validation | staging DB | mock by default; Financial Moment provider opt-in | sandbox | `mock_ledger` until approved |
+| `production` | Real users | production DB | mock by default; Financial Moment provider opt-in | sandbox until banking reads are audited | `mock_ledger` until approved |
 
 ## Required Variables
 
@@ -20,7 +20,8 @@ APP_ENV=
 NODE_ENV=
 DATABASE_URL=
 OPENAI_API_KEY=
-OPENAI_MODEL=
+OPENAI_MODEL=mock
+OPENAI_FINANCIAL_MOMENT_ENABLED=false
 PLAID_CLIENT_ID=
 PLAID_SECRET=
 PLAID_ENV=
@@ -33,7 +34,7 @@ AUTH_SECRET=
 - `local`, `test`, and `staging` should default to `MONEY_MOVEMENT_MODE=mock_ledger`.
 - `production` should also use `MONEY_MOVEMENT_MODE=mock_ledger` until real transfers have been fully approved, audited, and tested.
 - `production` cannot use real transfers during the MVP. A future audited release may revisit this boundary.
-- `OPENAI_MODEL=mock` is the only runnable AI setting until the real AI adapter is wired.
+- `OPENAI_MODEL=mock` keeps the deterministic classifier active. The provider-backed Financial Moment uses the OpenAI Responses API with strict structured output and remains disabled unless `OPENAI_FINANCIAL_MOMENT_ENABLED=true`.
 - `PLAID_ENV=production` should not be used until banking reads and writes have separate audited adapters.
 - Victoria must never treat a mocked ledger entry as real moved money.
 - Real banking integrations should be isolated behind tool contracts.

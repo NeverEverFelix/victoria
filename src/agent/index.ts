@@ -7,6 +7,7 @@ export * from "./team/mock-specialists.js";
 export * from "./victoria-agent.js";
 export * from "./llm/types.js";
 export * from "./llm/mock-llm.js";
+export * from "./llm/openai-financial-moment.js";
 export * from "./memory/types.js";
 export * from "./memory/mock-memory.js";
 export * from "./tools/contracts.js";

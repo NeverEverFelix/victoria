@@ -10,6 +10,7 @@ export interface VictoriaEnv {
   databaseUrl: string;
   openAiApiKey: string;
   openAiModel: string;
+  openAiFinancialMomentEnabled: boolean;
   plaidClientId: string;
   plaidSecret: string;
   plaidEnv: PlaidEnv;
@@ -30,6 +31,7 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
   const databaseUrl = requireEnv(source, "DATABASE_URL");
   const openAiApiKey = requireEnv(source, "OPENAI_API_KEY");
   const openAiModel = requireEnv(source, "OPENAI_MODEL");
+  const openAiFinancialMomentEnabled = parseOptionalBoolean(source.OPENAI_FINANCIAL_MOMENT_ENABLED);
   const plaidClientId = requireEnv(source, "PLAID_CLIENT_ID");
   const plaidSecret = requireEnv(source, "PLAID_SECRET");
   const authSecret = requireEnv(source, "AUTH_SECRET");
@@ -48,6 +50,7 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
     databaseUrl,
     openAiApiKey,
     openAiModel,
+    openAiFinancialMomentEnabled,
     plaidClientId,
     plaidSecret,
     plaidEnv,
@@ -57,6 +60,12 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
     isTest: appEnv === "test" || nodeEnv === "test",
     usesRealMoneyMovement: moneyMovementMode === "real_transfer"
   };
+}
+
+function parseOptionalBoolean(value: string | undefined): boolean {
+  if (value === undefined || value.trim() === "" || value === "false") return false;
+  if (value === "true") return true;
+  throw new Error("OPENAI_FINANCIAL_MOMENT_ENABLED must be true or false.");
 }
 
 function parseAppEnv(value: string | undefined): AppEnv {
