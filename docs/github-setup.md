@@ -22,7 +22,7 @@ Optional repository variable for the response budget of each review pass (defaul
 AI_REVIEW_MAX_OUTPUT_TOKENS
 ```
 
-Optional repository variable for the maximum diff characters sent in one pass (default `12000`; minimum `2000`):
+Optional repository variable for the maximum diff characters sent in one pass (default `12000`; minimum `500`):
 
 ```text
 AI_REVIEW_MAX_DIFF_CHARS
@@ -44,7 +44,7 @@ If `OPENAI_API_KEY` is not set, the AI review workflow skips cleanly by default.
 
 For pull requests, the workflow uses `pull_request_target`, checks out the exact base commit, and downloads the proposed patch through the GitHub API. It runs when a PR is opened, reopened, synchronized, marked ready, or edited. Push events on all branches run the review for each pushed commit. The review loads trusted rules from the PR base commit or pushed commit and treats the PR diff only as untrusted evidence. The workflow must never check out or execute the pull request head while `OPENAI_API_KEY` or a write-capable token is available.
 
-The AI prompt keeps trusted instructions separate from the untrusted diff. The diff is split into passes of at most 12,000 characters by default, with up to five passes reviewed concurrently to reduce latency. If a pass exceeds its 4,000-token output budget, only that pass is divided and retried. `AI_REVIEW_MAX_CHUNKS` (default 96) bounds total API calls, including retries. `AI_REVIEW_MAX_COMMENT_CHARS` (default 60,000) protects GitHub's comment-size limit. If the call budget is exhausted or a minimum-size response is still truncated, the workflow fails without posting a partial review. Each trusted context file is visibly marked if truncated.
+The AI prompt keeps trusted instructions separate from the untrusted diff. The diff is split into passes of at most 12,000 characters by default, with up to five passes reviewed concurrently to reduce latency. If a pass exceeds its 4,000-token output budget, only that pass is divided and retried down to 500 characters. `AI_REVIEW_MAX_CHUNKS` (default 96) bounds total API calls, including retries; remove repository overrides that set it lower than the default unless the tighter cap is intentional. `AI_REVIEW_MAX_COMMENT_CHARS` (default 60,000) protects GitHub's comment-size limit. If the call budget is exhausted or the smallest pass is still truncated, the workflow fails without posting a partial review. Each trusted context file is visibly marked if truncated.
 
 ## Recommended Branch Protection
 

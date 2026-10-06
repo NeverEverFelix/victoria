@@ -157,7 +157,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Oversized diffs list every changed path, prioritize safety-sensitive excerpts, and cannot satisfy required AI review.
 - AI review uses a 4,000-token default per-pass output budget and rejects values outside the bounded range.
 - Pull request events and pushes to every branch trigger AI review; review passes are processed concurrently and adaptively split on output truncation.
-- Large AI review diffs retain complete coverage; every pass must complete before any review is posted, within a 96-call safety cap.
+- Large AI review diffs retain complete coverage; truncated passes split down to 500 characters and every pass must complete before any review is posted, within a 96-call safety cap.
 
 ## Future Integration Boundaries
 

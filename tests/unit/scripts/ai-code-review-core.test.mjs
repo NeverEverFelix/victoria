@@ -95,6 +95,22 @@ describe("AI code review core", () => {
     expect(splitReviewChunkForRetry({ text: "too small", paths: [] })).toBeNull();
   });
 
+  it("keeps subdividing truncated passes below 2,000 characters", () => {
+    const first = chunkDiffForReview(fileDiff("src/dense.ts", "+line\n".repeat(500)), 12_000).chunks[0];
+    const pending = [first];
+    const finalPasses = [];
+
+    while (pending.length) {
+      const chunk = pending.pop();
+      const smaller = splitReviewChunkForRetry(chunk);
+      if (smaller) pending.push(...smaller);
+      else finalPasses.push(chunk);
+    }
+
+    expect(finalPasses.length).toBeGreaterThan(1);
+    expect(finalPasses.every((chunk) => chunk.text.length <= 500)).toBe(true);
+  });
+
   it("covers the previously recurring 256k-character PR size in bounded passes", () => {
     const diff = fileDiff("src/agent/large.ts", "+x".repeat(128_000));
     const partition = chunkDiffForReview(diff, 18_000);
@@ -150,7 +166,7 @@ describe("AI code review core", () => {
   it("handles empty diffs and rejects invalid pass limits", () => {
     expect(chunkDiffForReview("", 2000).chunks).toEqual([]);
     expect(() => chunkDiffForReview("diff", 100)).toThrow(
-      "AI_REVIEW_MAX_DIFF_CHARS must be an integer of at least 2000."
+      "AI_REVIEW_MAX_DIFF_CHARS must be an integer of at least 500."
     );
   });
 });

@@ -209,6 +209,7 @@ requireIncludes("scripts/ai-code-review-core.mjs", [
   "Trusted repository instructions from the trusted review commit",
   "chunkDiffForReview",
   "splitReviewChunkForRetry",
+  "at least 500",
   "coveredDiffChars",
   "coverage mismatch"
 ]);
