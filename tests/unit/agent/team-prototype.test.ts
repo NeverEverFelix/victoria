@@ -75,7 +75,7 @@ describe("AgentTeamPrototype", () => {
     const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
     expect(turn.message).toContain("Would you like me to record $90.00");
     expect(turn.message).toContain("Please confirm before I record it.");
-    expect(turn.message).toContain("No real money has moved.");
+    expect(turn.message).toContain("No real money has moved");
     expect(specialists.companionVoice.respond).toHaveBeenCalledWith(expect.objectContaining({
       requiredDisclosures: ["Ask for explicit confirmation before recording.", "No real money has moved."]
     }));
@@ -98,6 +98,15 @@ describe("AgentTeamPrototype", () => {
     const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
     expect(turn.message).toContain("Would you like me to record $90.00");
     expect(turn.message).not.toContain("I recorded");
+    expect(turn.degradedRoles).toContain("companionVoice");
+  });
+
+  it("replaces companion wording that promises real money movement", async () => {
+    const specialists = team({ voiceMessage: "I can transfer that $90 to your savings account right away." });
+    const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
+    expect(turn.message).toContain("Would you like me to record $90.00");
+    expect(turn.message).toContain("No real money has moved");
+    expect(turn.message).not.toContain("transfer that");
     expect(turn.degradedRoles).toContain("companionVoice");
   });
 
@@ -210,6 +219,16 @@ describe("AgentTeamPrototype", () => {
     expect(specialists.companionVoice.respond).toHaveBeenCalledWith(expect.objectContaining({
       requiredDisclosures: ["Victoria cannot move real money in the MVP.", "No transfer has been made."]
     }));
+  });
+
+  it("accepts safe disclosures that mention transfer without claiming a transfer", async () => {
+    const specialists = team({
+      voiceMessage: "You do not need to transfer anything; would you like me to record $90? No real money has been transferred."
+    });
+    const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
+
+    expect(turn.message).toContain("You do not need to transfer anything");
+    expect(turn.message).toContain("No real money has been transferred");
   });
 });
 

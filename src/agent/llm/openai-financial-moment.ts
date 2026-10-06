@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { parseExplicitDollarAmount } from "../../domain/financial-events/parse-explicit-amount.js";
+import { parseExplicitCorrectionAmount } from "../../domain/financial-events/parse-correction-amount.js";
+import type { ProviderUsageReporter } from "../telemetry/provider-usage-reporter.js";
 import type { ClassifiedMessage } from "../types.js";
 import { validateClassifiedMessage } from "../validation.js";
 import type { ClassifyMessageInput, LlmAdapter } from "./types.js";
@@ -40,7 +42,7 @@ export interface OpenAiFinancialMomentOptions {
   model: string;
   fetcher?: typeof fetch;
   timeoutMs?: number;
-  onUsage?: (usage: { inputTokens?: number; outputTokens?: number; requestId?: string }) => void;
+  usageReporter?: ProviderUsageReporter;
 }
 
 /** Provider-backed intent analysis. It has no tools and cannot approve or mutate. */
@@ -56,6 +58,7 @@ export class OpenAiFinancialMomentAdapter implements LlmAdapter {
   }
 
   async classifyMessage(input: ClassifyMessageInput): Promise<ClassifiedMessage> {
+    const startedAt = performance.now();
     const response = await this.fetcher("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -85,10 +88,12 @@ export class OpenAiFinancialMomentAdapter implements LlmAdapter {
     if (!response.ok) throw new Error(`OpenAI classification request failed (${response.status}).`);
     const payload: unknown = await response.json();
     const metadata = readUsage(payload);
-    this.options.onUsage?.({
+    this.options.usageReporter?.report({
+      role: "financial_moment",
       ...(metadata.inputTokens !== undefined ? { inputTokens: metadata.inputTokens } : {}),
       ...(metadata.outputTokens !== undefined ? { outputTokens: metadata.outputTokens } : {}),
-      ...(response.headers.get("x-request-id") ? { requestId: response.headers.get("x-request-id")! } : {})
+      ...(response.headers.get("x-request-id") ? { requestId: response.headers.get("x-request-id")! } : {}),
+      elapsedMs: Math.max(0, Math.round(performance.now() - startedAt))
     });
     const text = getOutputText(payload);
     const parsed: unknown = JSON.parse(text);
@@ -96,7 +101,9 @@ export class OpenAiFinancialMomentAdapter implements LlmAdapter {
     if (!candidate.success) throw new Error("OpenAI classification output did not match the expected schema.");
 
     const evidenceText = [input.userMessage, ...(input.conversationContext ?? [])].join(" ").toLocaleLowerCase();
-    const amount = parseExplicitDollarAmount(input.userMessage);
+    const amount = (candidate.data.type === "entry_correction"
+      ? parseExplicitCorrectionAmount(input.userMessage)
+      : null) ?? parseExplicitDollarAmount(input.userMessage);
     const amountIssue = amount.status === "invalid_value" || amount.status === "multiple_amounts" ||
       amount.status === "invalid_precision" || amount.status === "unsupported_currency" ? amount.status : undefined;
     const classification = validateClassifiedMessage({

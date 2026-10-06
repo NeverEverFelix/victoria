@@ -1,0 +1,67 @@
+{
+  "runId": "",
+  "corpusId": "victoria-provider-eval-v1",
+  "corpusSha256": "",
+  "startedAt": "",
+  "completedAt": "",
+  "environment": "",
+  "arms": [
+    {
+      "armId": "baseline",
+      "runtimeVersion": "",
+      "model": "",
+      "promptVersion": "",
+      "schemaVersion": "",
+      "timeoutMs": null,
+      "rateCardDate": "",
+      "inputUsdPerMillionTokens": null,
+      "outputUsdPerMillionTokens": null,
+      "summary": {
+        "turns": 0,
+        "completedTurns": 0,
+        "failedOrTimedOutTurns": 0,
+        "safetyFailures": 0,
+        "classificationPasses": 0,
+        "actionPasses": 0,
+        "amountPasses": 0,
+        "latencyMs": {"p50": null, "p95": null, "max": null},
+        "estimatedCostUsd": {"total": null, "perTurnP50": null, "perTurnP95": null, "retryTotal": null},
+        "callsByRole": {},
+        "tokensByRole": {}
+      },
+      "turnResults": []
+    },
+    {
+      "armId": "specialist",
+      "runtimeVersion": "",
+      "model": "",
+      "promptVersion": "",
+      "schemaVersion": "",
+      "timeoutMs": null,
+      "rateCardDate": "",
+      "inputUsdPerMillionTokens": null,
+      "outputUsdPerMillionTokens": null,
+      "summary": {
+        "turns": 0,
+        "completedTurns": 0,
+        "failedOrTimedOutTurns": 0,
+        "safetyFailures": 0,
+        "classificationPasses": 0,
+        "actionPasses": 0,
+        "amountPasses": 0,
+        "latencyMs": {"p50": null, "p95": null, "max": null},
+        "estimatedCostUsd": {"total": null, "perTurnP50": null, "perTurnP95": null, "retryTotal": null},
+        "callsByRole": {},
+        "tokensByRole": {}
+      },
+      "turnResults": []
+    }
+  ],
+  "humanReview": {
+    "reviewerCount": 2,
+    "ratingsFile": "",
+    "unblindingKeyFile": "",
+    "unblindedAfterBothSubmitted": false
+  },
+  "limitations": []
+}

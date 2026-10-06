@@ -424,6 +424,20 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsEntries("user_123")).toEqual([]);
   });
 
+  it.each([
+    "Can you send $100 to my emergency fund?",
+    "Take $30 out of checking and put it away for me."
+  ])("[FIN-001] refuses a transfer request phrased as a goal or withdrawal: %s", async (message) => {
+    const tools = new MockVictoriaTools();
+    const response = await createAgent([], tools).respond({ userId: "user_123", message });
+
+    expect(response.decision.classification.type).toBe("real_money_movement_request");
+    expect(response.decision.action).toBe("refuse");
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(response.message).toContain("can't move real money");
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
   it("[AMT-004] asks to clarify an avoided-spend amount with excess precision", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);

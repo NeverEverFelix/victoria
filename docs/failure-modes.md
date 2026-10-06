@@ -68,6 +68,18 @@ Safer behavior:
 - Follow-up and reflection actions should not include ledger-writing tool calls.
 - Tests should assert absence of `suggestion` and `toolCall` where relevant.
 
+### Transfer Request Masquerades As A Goal Update
+
+Risk:
+
+A request to send money to an emergency fund or take money out of checking is mistaken for a savings-goal update or a vague savings moment.
+
+Safer behavior:
+
+- Classify direct requests to send funds to a named goal or withdraw from an account as real-money movement requests.
+- Explain that Victoria cannot move real money in the MVP; do not record a mocked entry as if that fulfilled the request.
+- Exercise varied transfer phrasings in the deterministic contract corpus and keep all actual movement tools unavailable.
+
 ## Product Meaning Failures
 
 ### Low Confidence Still Drives An Action

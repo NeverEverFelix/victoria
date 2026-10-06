@@ -2,6 +2,7 @@ export * from "./types.js";
 export * from "./policy.js";
 export * from "./validation.js";
 export * from "./confidence-policy.js";
+export * from "./telemetry/provider-usage-reporter.js";
 export * from "./team-prototype.js";
 export * from "./team/mock-specialists.js";
 export * from "./victoria-agent.js";

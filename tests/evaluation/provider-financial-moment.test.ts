@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyClassificationConfidencePolicy } from "../../src/agent/confidence-policy.js";
 import { OpenAiFinancialMomentAdapter } from "../../src/agent/llm/openai-financial-moment.js";
+import { ProviderUsageReporter } from "../../src/agent/telemetry/provider-usage-reporter.js";
 import { summarizeLatencies } from "./metrics.js";
 import { multiAgentReadinessScenarios } from "./fixtures/multi-agent-scenarios.js";
 
@@ -13,14 +14,8 @@ describe.skipIf(!enabled)("provider-backed Financial Moment evaluation", () => {
     if (!apiKey) throw new Error("Set OPENAI_API_KEY to run the provider evaluation.");
     if (model === "mock") throw new Error("OPENAI_EVAL_MODEL must be a provider model, not mock.");
 
-    let inputTokens = 0;
-    let outputTokens = 0;
-    const requestIds: string[] = [];
-    const adapter = new OpenAiFinancialMomentAdapter({ apiKey, model, onUsage(usage) {
-      inputTokens += usage.inputTokens ?? 0;
-      outputTokens += usage.outputTokens ?? 0;
-      if (usage.requestId) requestIds.push(usage.requestId);
-    } });
+    const usageReporter = new ProviderUsageReporter();
+    const adapter = new OpenAiFinancialMomentAdapter({ apiKey, model, usageReporter });
     const results: Array<{ id: string; expected: string; actual: string; elapsedMs: number; amountMatches: boolean }> = [];
 
     for (const scenario of multiAgentReadinessScenarios) {
@@ -45,9 +40,9 @@ describe.skipIf(!enabled)("provider-backed Financial Moment evaluation", () => {
       classificationPasses: results.filter((result) => result.expected === result.actual).length,
       amountPasses: results.filter((result) => result.amountMatches).length,
       latency: summarizeLatencies(results.map((result) => result.elapsedMs)),
-      inputTokens,
-      outputTokens,
-      requestIds,
+      inputTokens: usageReporter.snapshot().reduce((sum, record) => sum + (record.inputTokens ?? 0), 0),
+      outputTokens: usageReporter.snapshot().reduce((sum, record) => sum + (record.outputTokens ?? 0), 0),
+      requestIds: usageReporter.snapshot().flatMap((record) => record.requestId ? [record.requestId] : []),
       cases: results
     };
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

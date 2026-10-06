@@ -1,4 +1,5 @@
 import type { AgentRequest, MoneyMovementMode, ToolCallRequest } from "./types.js";
+import { parseExplicitDollarAmount } from "../domain/financial-events/parse-explicit-amount.js";
 
 export interface PolicyDecision {
   allowed: boolean;
@@ -11,7 +12,7 @@ export type ApprovalResponse =
   | "ambiguous"
   | "not_approval";
 
-export function interpretApprovalResponse(message: string): ApprovalResponse {
+export function interpretApprovalResponse(message: string, expectedAmountCents?: number): ApprovalResponse {
   const normalized = message
     .trim()
     .toLowerCase()
@@ -21,6 +22,15 @@ export function interpretApprovalResponse(message: string): ApprovalResponse {
 
   if (["yes", "yes save it", "record it", "please do", "do it"].includes(normalized)) {
     return "explicit_approval";
+  }
+
+  if (expectedAmountCents !== undefined &&
+      /^yes\s+(?:please\s+)?(?:record|save|log)\b/.test(normalized) &&
+      !/\b(?:move|transfer|send|withdraw|checking|bank account)\b/.test(normalized)) {
+    const explicitAmount = parseExplicitDollarAmount(message);
+    if (explicitAmount.status === "valid" && explicitAmount.amountCents === expectedAmountCents) {
+      return "explicit_approval";
+    }
   }
 
   if (/^(?:no(?: thanks| thank you)?(?: not today)?|nope|nah|not today|i(?:'|’)d rather not)$/.test(normalized)) {

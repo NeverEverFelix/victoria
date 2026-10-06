@@ -1,6 +1,8 @@
 import { formatUsd } from "../domain/money.js";
 import type { FinancialMomentFinding, SavingsAssessment } from "./team-prototype.js";
 
+const noMovementDisclosurePattern = /\bno\s+(?:real\s+)?(?:money|funds)\s+(?:(?:has|have|was|were)\s+)?(?:been\s+)?(?:not\s+)?(?:moved|transferred|sent|deposited)(?:\s+yet)?\b/gi;
+
 /** Locked instructions for the voice specialist; the response guard enforces them afterward. */
 export function requiredDisclosures(finding: FinancialMomentFinding, assessment: SavingsAssessment): readonly string[] {
   if (assessment.outcome === "suggest") {
@@ -42,7 +44,7 @@ function enforceRequiredDisclosures(message: string, finding: FinancialMomentFin
       ? " This amount is an estimate based on the spending information available."
       : "";
     const confirmation = /\bconfirm\b/i.test(message) ? "" : " Please confirm before I record it.";
-    const disclosure = /no real money has moved/i.test(message) ? "" : " No real money has moved.";
+    const disclosure = hasNoMovementDisclosure(message) ? "" : " No real money has moved.";
     return `${message}${estimateDisclosure}${invitation}${confirmation}${disclosure}`.trim();
   }
   if (finding.classification.type === "real_money_movement_request") {
@@ -55,9 +57,28 @@ function enforceRequiredDisclosures(message: string, finding: FinancialMomentFin
 
 function isSafeVoiceDraft(candidate: unknown, finding: FinancialMomentFinding, assessment: SavingsAssessment): candidate is string {
   if (typeof candidate !== "string" || !candidate.trim() || claimsCompletedAction(candidate) || isShaming(candidate)) return false;
+  if (claimsProhibitedMoneyMovement(candidate)) return false;
+  if (/\bguarantee(?:d)?\b|\bprotected balance\b|\bavailable balance\b/i.test(candidate)) return false;
   if (assessment.outcome === "ask" && !candidate.includes("?")) return false;
   if (hasUnsupportedMoneyAmount(candidate, finding, assessment)) return false;
   return true;
+}
+
+function claimsProhibitedMoneyMovement(message: string): boolean {
+  const safeNegations = [
+    /\bno\s+(?:real\s+)?(?:money|funds)\s+(?:(?:has|have|was|were)\s+)?(?:been\s+)?(?:not\s+)?(?:moved|transferred|sent|deposited)(?:\s+yet)?\b/gi,
+    /\b(?:money|funds)\s+(?:(?:has|have|was|were)\s+)?not\s+(?:been\s+)?(?:moved|transferred|sent|deposited)(?:\s+yet)?\b/gi,
+    /\b(?:i|we|you|victoria)\s+(?:did\s+not|didn't|have\s+not|haven't|has\s+not|hasn't|never)\s+(?:move|moves|moved|moving|transfer|transfers|transferred|transferring|send|sends|sent|sending|deposit|deposits|deposited|depositing)\b/gi
+  ];
+  const withoutSafeNegations = safeNegations.reduce((text, pattern) => text.replace(pattern, ""), message);
+  const action = "(?:move|moves|moved|moving|transfer|transfers|transferred|transferring|send|sends|sent|sending|deposit|deposits|deposited|depositing)";
+  const affirmativeActorClaim = new RegExp(`\\b(?:i|we|you|victoria)\\s+(?:(?:can|will|would|have|has|already|just)\\s+)*(?:${action})\\b`, "i");
+  const completedPassiveClaim = new RegExp(`\\b(?:money|funds|a transfer)\\s+(?:was|were|has been|have been)\\s+(?:${action}|made|completed)\\b`, "i");
+  return affirmativeActorClaim.test(withoutSafeNegations) || completedPassiveClaim.test(withoutSafeNegations);
+}
+
+function hasNoMovementDisclosure(message: string): boolean {
+  return stripNoMovementDisclosures(message) !== message;
 }
 
 function isShaming(message: string): boolean {
@@ -80,8 +101,12 @@ function hasUnsupportedMoneyAmount(message: string, finding: FinancialMomentFind
 }
 
 function claimsCompletedAction(message: string): boolean {
-  const withoutSafeNegation = message.replace(/\bno real money has moved\b/gi, "");
+  const withoutSafeNegation = stripNoMovementDisclosures(message);
   return /\b(?:i|we|you|it)\s+(?:have\s+)?(?:transferred|moved|saved|recorded|deposited)\b|\b(?:has been|was)\s+(?:recorded|saved|transferred|moved|deposited)\b|\b(?:money|funds)\s+(?:has|have)\s+moved\b/i.test(withoutSafeNegation);
+}
+
+function stripNoMovementDisclosures(message: string): string {
+  return message.replace(noMovementDisclosurePattern, "");
 }
 
 function deterministicResponse(finding: FinancialMomentFinding, assessment: SavingsAssessment): string {

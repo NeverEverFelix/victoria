@@ -158,6 +158,7 @@ Victoria should:
 Acceptance criteria:
 
 - Given there is a pending savings suggestion, a clear yes confirms it.
+- Given the user says yes and repeats the pending amount in a clear instruction to record it, Victoria confirms only when the amount matches the pending suggestion; a different amount does not approve it.
 - Given there is no pending savings suggestion, a yes does not create a new entry.
 - Given approval refers to another action or user, no entry is created.
 - Given an approved action was already completed, replaying that approval creates no second entry.
@@ -279,6 +280,9 @@ Example:
 Victoria: I recorded $27 in your Victoria savings ledger.
 User: Correct that recorded entry to $24.
 Victoria: I can reduce the recorded amount by $3, making the corrected total $24. The original entry will stay in the history. Please confirm this correction.
+
+User: I need to correct that entry. I avoided $18, not $20.
+Victoria: I can correct the amount to $18. The original entry will stay in the history. Please confirm this correction.
 ```
 
 Acceptance criteria:

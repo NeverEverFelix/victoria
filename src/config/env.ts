@@ -11,6 +11,7 @@ export interface VictoriaEnv {
   openAiApiKey: string;
   openAiModel: string;
   openAiFinancialMomentEnabled: boolean;
+  openAiAgentTeamEnabled: boolean;
   plaidClientId: string;
   plaidSecret: string;
   plaidEnv: PlaidEnv;
@@ -31,7 +32,9 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
   const databaseUrl = requireEnv(source, "DATABASE_URL");
   const openAiApiKey = requireEnv(source, "OPENAI_API_KEY");
   const openAiModel = requireEnv(source, "OPENAI_MODEL");
-  const openAiFinancialMomentEnabled = parseOptionalBoolean(source.OPENAI_FINANCIAL_MOMENT_ENABLED);
+  // Both provider paths default off; when both are on, the complete agent team takes precedence.
+  const openAiFinancialMomentEnabled = parseOptionalBoolean(source.OPENAI_FINANCIAL_MOMENT_ENABLED, "OPENAI_FINANCIAL_MOMENT_ENABLED");
+  const openAiAgentTeamEnabled = parseOptionalBoolean(source.OPENAI_AGENT_TEAM_ENABLED, "OPENAI_AGENT_TEAM_ENABLED");
   const plaidClientId = requireEnv(source, "PLAID_CLIENT_ID");
   const plaidSecret = requireEnv(source, "PLAID_SECRET");
   const authSecret = requireEnv(source, "AUTH_SECRET");
@@ -51,6 +54,7 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
     openAiApiKey,
     openAiModel,
     openAiFinancialMomentEnabled,
+    openAiAgentTeamEnabled,
     plaidClientId,
     plaidSecret,
     plaidEnv,
@@ -62,10 +66,10 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
   };
 }
 
-function parseOptionalBoolean(value: string | undefined): boolean {
+function parseOptionalBoolean(value: string | undefined, name: string): boolean {
   if (value === undefined || value.trim() === "" || value === "false") return false;
   if (value === "true") return true;
-  throw new Error("OPENAI_FINANCIAL_MOMENT_ENABLED must be true or false.");
+  throw new Error(`${name} must be true or false.`);
 }
 
 function parseAppEnv(value: string | undefined): AppEnv {

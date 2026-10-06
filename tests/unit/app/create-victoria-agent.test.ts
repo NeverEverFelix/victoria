@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createVictoriaAgent } from "../../../src/app/create-victoria-agent.js";
 import { parseVictoriaEnv, type EnvSource } from "../../../src/config/index.js";
+import { ProviderUsageReporter } from "../../../src/agent/telemetry/provider-usage-reporter.js";
 
 describe("createVictoriaAgent", () => {
   it("creates a mock-backed Victoria agent for the current skeleton", async () => {
@@ -51,6 +52,182 @@ describe("createVictoriaAgent", () => {
     const confirmed = await agent.respond({ userId: "user_123", conversationId: "provider_flow", message: "Yes" });
     expect(confirmed.decision.action).toBe("create_ledger_entry");
     expect(confirmed.decision.toolCall?.name).toBe("createSavingsEntry");
+  });
+
+  it("routes all three opt-in provider specialists through the core approval gate", async () => {
+    const outputs = [
+      {
+        type: "avoided_spend", confidence: 0.94, merchantName: null, goalName: null,
+        revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+      },
+      {
+        outcome: "suggest", confidence: 0.92, amountCents: 9000, source: "user_provided",
+        rationale: "Using the exact amount provided.", question: null
+      },
+      { response: "That was a thoughtful pause. Would you like to record $90 in your Victoria ledger?" }
+    ];
+    let callCount = 0;
+    const requests: Record<string, unknown>[] = [];
+    const providerUsageReporter = new ProviderUsageReporter();
+    const agent = createVictoriaAgent({
+      env: parseVictoriaEnv(validEnv({ OPENAI_AGENT_TEAM_ENABLED: "true" })),
+      providerUsageReporter,
+      fetcher: async (_input, init) => {
+        requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        const currentCall = callCount++;
+        return new Response(JSON.stringify({
+          usage: { input_tokens: 10 + currentCall, output_tokens: 4 + currentCall },
+          output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(outputs[currentCall]) }] }]
+        }), { status: 200, headers: { "x-request-id": `req-${currentCall}` } });
+      }
+    });
+
+    const proposed = await agent.respond({
+      userId: "user_123", conversationId: "provider_team_flow", message: "I almost bought a $90 jacket but waited."
+    });
+    expect(callCount).toBe(3);
+    expect(requests).toHaveLength(3);
+    expect(requests.every((request) => request.store === false && request.tools === undefined)).toBe(true);
+    expect(requests.every((request) => {
+      const text = request.text as { format?: { type?: string; strict?: boolean } } | undefined;
+      return text?.format?.type === "json_schema" && text.format.strict === true;
+    })).toBe(true);
+    const voiceRequest = requests[2]!;
+    const voiceText = voiceRequest.text as {
+      format?: { schema?: { properties?: { response?: { maxLength?: number } } } };
+    };
+    expect(voiceRequest.instructions).toContain("validated amounts from the assessment");
+    expect(voiceText.format?.schema?.properties?.response?.maxLength).toBe(1000);
+    expect(proposed.decision.action).toBe("suggest_savings");
+    expect(proposed.decision.suggestion?.amountCents).toBe(9000);
+    expect(proposed.decision.toolCall?.requiresApproval).toBe(true);
+    expect(proposed.message).toContain("No real money has moved");
+    expect(providerUsageReporter.snapshot()).toMatchObject([
+      { role: "financial_moment", inputTokens: 10, outputTokens: 4, requestId: "req-0" },
+      { role: "savings_reasoning", inputTokens: 11, outputTokens: 5, requestId: "req-1" },
+      { role: "companion_voice", inputTokens: 12, outputTokens: 6, requestId: "req-2" }
+    ]);
+    expect(providerUsageReporter.snapshot().every((record) => typeof record.elapsedMs === "number")).toBe(true);
+    expect(providerUsageReporter.toJsonLines().split("\n")).toHaveLength(3);
+
+    const recorded = await agent.respond({ userId: "user_123", conversationId: "provider_team_flow", message: "Yes" });
+    expect(recorded.decision.action).toBe("create_ledger_entry");
+    expect(recorded.message).toContain("Victoria savings ledger");
+    expect(callCount).toBe(3);
+  });
+
+  it("rejects an unsupported provider assessment without proposing or recording savings", async () => {
+    const outputs = [
+      {
+        type: "avoided_spend", confidence: 0.94, merchantName: null, goalName: null,
+        revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+      },
+      {
+        outcome: "suggest", confidence: 0.92, amountCents: 9500, source: "user_provided",
+        rationale: "A possible amount.", question: null
+      }
+    ];
+    let callCount = 0;
+    const agent = createVictoriaAgent({
+      env: parseVictoriaEnv(validEnv({ OPENAI_AGENT_TEAM_ENABLED: "true" })),
+      fetcher: async () => jsonResponse({
+        output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(outputs[callCount++]) }] }]
+      })
+    });
+
+    const response = await agent.respond({
+      userId: "user_123", conversationId: "provider_team_bad_assessment", message: "I almost bought a $90 jacket but waited."
+    });
+    expect(callCount).toBe(2);
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.suggestion).toBeUndefined();
+    expect(response.decision.toolCall).toBeUndefined();
+  });
+
+  it("asks safely when provider Savings Reasoning is unavailable", async () => {
+    let callCount = 0;
+    const agent = createVictoriaAgent({
+      env: parseVictoriaEnv(validEnv({ OPENAI_AGENT_TEAM_ENABLED: "true" })),
+      fetcher: async () => {
+        callCount += 1;
+        return callCount === 1
+          ? jsonResponse({ output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
+              type: "avoided_spend", confidence: 0.94, merchantName: null, goalName: null,
+              revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+            }) }] }] })
+          : new Response("{}", { status: 503 });
+      }
+    });
+
+    const response = await agent.respond({
+      userId: "user_123", conversationId: "provider_reasoning_failure", message: "I almost bought a $90 jacket but waited."
+    });
+    expect(callCount).toBe(2);
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.suggestion).toBeUndefined();
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(response.message).toContain("make sure I have the amount right");
+  });
+
+  it("uses guarded deterministic wording when provider Companion Voice is unavailable", async () => {
+    const outputs = [
+      {
+        type: "avoided_spend", confidence: 0.94, merchantName: null, goalName: null,
+        revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+      },
+      {
+        outcome: "suggest", confidence: 0.92, amountCents: 9000, source: "user_provided",
+        rationale: "Using the exact amount provided.", question: null
+      }
+    ];
+    let callCount = 0;
+    const agent = createVictoriaAgent({
+      env: parseVictoriaEnv(validEnv({ OPENAI_AGENT_TEAM_ENABLED: "true" })),
+      fetcher: async () => {
+        if (callCount === 2) return new Response("{}", { status: 503 });
+        return jsonResponse({
+          output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(outputs[callCount++]) }] }]
+        });
+      }
+    });
+
+    const proposed = await agent.respond({
+      userId: "user_123", conversationId: "provider_voice_failure", message: "I almost bought a $90 jacket but waited."
+    });
+    expect(callCount).toBe(2);
+    expect(proposed.decision.action).toBe("suggest_savings");
+    expect(proposed.decision.toolCall?.requiresApproval).toBe(true);
+    expect(proposed.message).toContain("Would you like me to record $90.00");
+    expect(proposed.message).toContain("Please confirm");
+    expect(proposed.message).toContain("No real money has moved");
+
+    const recorded = await agent.respond({ userId: "user_123", conversationId: "provider_voice_failure", message: "Yes" });
+    expect(recorded.decision.action).toBe("create_ledger_entry");
+    expect(callCount).toBe(2);
+  });
+
+  it("keeps transfer requests on the deterministic refusal path without calling other specialists", async () => {
+    let callCount = 0;
+    const agent = createVictoriaAgent({
+      env: parseVictoriaEnv(validEnv({ OPENAI_AGENT_TEAM_ENABLED: "true" })),
+      fetcher: async () => {
+        callCount += 1;
+        return jsonResponse({
+          output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
+            type: "real_money_movement_request", confidence: 0.98, merchantName: null, goalName: null,
+            revisionReason: null, summary: "Asked to transfer funds", needsClarification: false
+          }) }] }]
+        });
+      }
+    });
+
+    const response = await agent.respond({ userId: "user_123", message: "Move $25 to savings now." });
+    expect(callCount).toBe(1);
+    expect(response.decision.action).toBe("refuse");
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(response.message).toContain("can't move real money");
+    expect(response.message).toContain("No transfer has been made");
+    expect(response.message).not.toContain("I transferred");
   });
 
   it("falls back to clarification when the provider Financial Moment fails", async () => {
@@ -134,4 +311,8 @@ function validEnv(overrides: EnvSource = {}): EnvSource {
     AUTH_SECRET: "test-auth-secret",
     ...overrides
   };
+}
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
 }

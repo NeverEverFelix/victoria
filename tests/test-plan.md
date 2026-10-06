@@ -16,7 +16,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - A vague savings message creates no event, proposal, suggestion, tool call, or ledger entry; after the user provides context, the agent can make an approval-gated suggestion.
 - Victoria chooses `estimateAvoidedSpend()` before suggesting a savings action.
 - Victoria refuses to call `eventuallyMoveMoney()` during the MVP, even when approval is present.
-- A natural-language real-transfer request receives a clear limitation response and does not create a mocked entry or call a transfer tool, including when a savings suggestion is pending.
+- A natural-language real-transfer request receives a clear limitation response and does not create a mocked entry or call a transfer tool, including when a savings suggestion is pending; cover sending money to a named goal and withdrawing money from checking.
 
 ## Environment Safety
 
@@ -115,7 +115,9 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Approval from another user cannot approve a proposal, and goal allocation cannot reuse the prior proposal's approval.
 - Explicit amounts with more than two decimal places or a recognized non-USD currency require clarification and create no proposal or ledger entry; an invalid correction cannot approve the prior pending amount.
 - Explicit zero or negative USD amounts require clarification and create no proposal or ledger entry.
-- Multiple explicit dollar amounts require clarification; pending proposal edits with multiple amounts cannot be approved until one amount is specified.
+- Properly grouped thousands separators in explicit USD amounts parse to exact cents; malformed grouping requires clarification and is never partially interpreted.
+- Multiple explicit dollar amounts require clarification unless a recorded-entry correction uses the clear contrast pattern "$18, not $20"; then the first amount is the corrected value and still requires exact approval. Pending proposal edits with multiple amounts cannot be approved until one amount is specified.
+- An approval that repeats the pending amount is accepted only when the repeated amount matches the exact pending proposal; a mismatched amount does not approve the old amount.
 - Victoria makes it clear when an action is only a mocked ledger entry.
 
 ## Agentic Coding Setup
@@ -136,9 +138,12 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Turn submission rejects unauthenticated callers, hides conversations the caller does not own, validates JSON and idempotency headers, applies body limits, and returns no submitted message in the response.
 - Turn submission fails closed when identity, ownership, request fingerprinting, or repository admission is unavailable; internal errors are not exposed to callers.
 - The mock core composition uses Financial Moment classification, validates Savings Reasoning against deterministic estimates, and uses Companion Voice only when its assessment agrees with the core decision.
+- The opt-in OpenAI team composition calls each advisory specialist through mocked HTTP in tests, preserves deterministic assessment validation and exact approval in the core, and blocks provider voice claims about real transfers.
+- The opt-in local provider-team smoke command loads ignored `.env.local`, uses mock memory and ledger tools, sends no approval, and confirms no ledger entry was created.
 - An unsupported or mismatched specialist estimate produces clarification and no proposal; specialist advice never creates a ledger entry or approves an action.
 - Approval replies continue through Victoria's pending-action path without re-running specialists; progress, goal, and correction flows stay in their deterministic core handlers.
 - Companion Voice wording that shames the user, claims a completed action, or introduces an unsupported money amount falls back to safe deterministic wording.
+- Companion Voice wording that promises real money movement or guarantees savings falls back to safe deterministic wording.
 - A vague avoided-spend turn can continue through amount clarification to a pending proposal and only create one ledger entry after explicit approval.
 - A specialist failure or disagreement with the core estimate does not create a proposal; Companion Voice failure preserves the approval request and mocked-ledger disclosure.
 - Low-confidence classification asks for clarification before proposing; a later clear turn can proceed to a pending proposal and requires exact approval.
