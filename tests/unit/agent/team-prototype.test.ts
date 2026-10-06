@@ -101,6 +101,15 @@ describe("AgentTeamPrototype", () => {
     expect(turn.degradedRoles).toContain("companionVoice");
   });
 
+  it("replaces companion wording that promises real money movement", async () => {
+    const specialists = team({ voiceMessage: "I can transfer that $90 to your savings account right away." });
+    const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
+    expect(turn.message).toContain("Would you like me to record $90.00");
+    expect(turn.message).toContain("No real money has moved");
+    expect(turn.message).not.toContain("transfer that");
+    expect(turn.degradedRoles).toContain("companionVoice");
+  });
+
   it("replaces shaming companion wording for regretful spending", async () => {
     const specialists = team({
       classification: {

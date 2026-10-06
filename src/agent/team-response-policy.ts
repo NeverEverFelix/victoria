@@ -55,9 +55,17 @@ function enforceRequiredDisclosures(message: string, finding: FinancialMomentFin
 
 function isSafeVoiceDraft(candidate: unknown, finding: FinancialMomentFinding, assessment: SavingsAssessment): candidate is string {
   if (typeof candidate !== "string" || !candidate.trim() || claimsCompletedAction(candidate) || isShaming(candidate)) return false;
+  if (claimsProhibitedMoneyMovement(candidate)) return false;
+  if (/\bguarantee(?:d)?\b|\bprotected balance\b|\bavailable balance\b/i.test(candidate)) return false;
   if (assessment.outcome === "ask" && !candidate.includes("?")) return false;
   if (hasUnsupportedMoneyAmount(candidate, finding, assessment)) return false;
   return true;
+}
+
+function claimsProhibitedMoneyMovement(message: string): boolean {
+  const withoutSafeDisclosure = message.replace(/\bno real money has moved(?: yet)?\b/gi, "");
+  return /\b(?:move|moves|moved|moving|transfer|transfers|transferred|transferring|send|sends|sent|sending|deposit|deposits|deposited|depositing)\b/i
+    .test(withoutSafeDisclosure);
 }
 
 function isShaming(message: string): boolean {

@@ -196,7 +196,7 @@ See `docs/environments.md` for the environment matrix, required variables, and m
 
 The config parser lives in `src/config/env.ts`. It validates required variables, enforces compatible `APP_ENV` and `NODE_ENV` pairs, keeps environment database names separated, rejects unsafe production secrets, and prevents real money movement or production Plaid settings outside the approved production path. Feature flags derived from that config live in `src/config/feature-flags.ts`.
 
-The agent composition entry point lives in `src/app/create-victoria-agent.ts`. For now it wires mock AI, mock memory, and mock ledger tools only. Real OpenAI, Prisma, and banking adapters should be added behind the same interfaces later.
+The agent composition entry point lives in `src/app/create-victoria-agent.ts`. Mock AI, memory, and ledger tools remain the default. Set `OPENAI_AGENT_TEAM_ENABLED=true` to opt into provider-backed Financial Moment, Savings Reasoning, and Companion Voice specialists. Their outputs remain advisory; deterministic core validation and approval govern every mocked-ledger write, and real money movement remains unavailable.
 
 ## Example Interactions
 

@@ -136,9 +136,12 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Turn submission rejects unauthenticated callers, hides conversations the caller does not own, validates JSON and idempotency headers, applies body limits, and returns no submitted message in the response.
 - Turn submission fails closed when identity, ownership, request fingerprinting, or repository admission is unavailable; internal errors are not exposed to callers.
 - The mock core composition uses Financial Moment classification, validates Savings Reasoning against deterministic estimates, and uses Companion Voice only when its assessment agrees with the core decision.
+- The opt-in OpenAI team composition calls each advisory specialist through mocked HTTP in tests, preserves deterministic assessment validation and exact approval in the core, and blocks provider voice claims about real transfers.
+- The opt-in local provider-team smoke command loads ignored `.env.local`, uses mock memory and ledger tools, sends no approval, and confirms no ledger entry was created.
 - An unsupported or mismatched specialist estimate produces clarification and no proposal; specialist advice never creates a ledger entry or approves an action.
 - Approval replies continue through Victoria's pending-action path without re-running specialists; progress, goal, and correction flows stay in their deterministic core handlers.
 - Companion Voice wording that shames the user, claims a completed action, or introduces an unsupported money amount falls back to safe deterministic wording.
+- Companion Voice wording that promises real money movement or guarantees savings falls back to safe deterministic wording.
 - A vague avoided-spend turn can continue through amount clarification to a pending proposal and only create one ledger entry after explicit approval.
 - A specialist failure or disagreement with the core estimate does not create a proposal; Companion Voice failure preserves the approval request and mocked-ledger disclosure.
 - Low-confidence classification asks for clarification before proposing; a later clear turn can proceed to a pending proposal and requires exact approval.

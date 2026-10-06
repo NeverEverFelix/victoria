@@ -8,6 +8,7 @@ describe("buildFeatureFlags", () => {
 
     expect(flags.useMockAi).toBe(true);
     expect(flags.useProviderFinancialMoment).toBe(false);
+    expect(flags.useProviderAgentTeam).toBe(false);
     expect(flags.useMockLedger).toBe(true);
     expect(flags.useSandboxBanking).toBe(true);
     expect(flags.allowRealTransfers).toBe(false);
@@ -23,6 +24,16 @@ describe("buildFeatureFlags", () => {
     expect(enabled.useMockAi).toBe(false);
     expect(buildFeatureFlags(parseVictoriaEnv(validEnv({ OPENAI_MODEL: "mock", OPENAI_FINANCIAL_MOMENT_ENABLED: "true" })))
       .useProviderFinancialMoment).toBe(false);
+  });
+
+  it("enables the full provider agent team only with its flag and a real model", () => {
+    const enabled = buildFeatureFlags(parseVictoriaEnv(validEnv({ OPENAI_AGENT_TEAM_ENABLED: "true" })));
+    expect(enabled.useProviderAgentTeam).toBe(true);
+    expect(enabled.useProviderFinancialMoment).toBe(false);
+    expect(enabled.useMockAi).toBe(false);
+    expect(buildFeatureFlags(parseVictoriaEnv(validEnv({
+      OPENAI_MODEL: "mock", OPENAI_AGENT_TEAM_ENABLED: "true"
+    }))).useProviderAgentTeam).toBe(false);
   });
 
   it("uses mock AI in test when OPENAI_MODEL is mock", () => {
@@ -92,6 +103,7 @@ function validEnv(overrides: EnvSource = {}): EnvSource {
     DATABASE_URL: "postgresql://victoria:password@localhost:5432/victoria_local",
     OPENAI_API_KEY: "test-openai-key",
     OPENAI_MODEL: "gpt-4.1-mini",
+    OPENAI_AGENT_TEAM_ENABLED: "false",
     PLAID_CLIENT_ID: "test-plaid-client-id",
     PLAID_SECRET: "test-plaid-secret",
     PLAID_ENV: "sandbox",

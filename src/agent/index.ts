@@ -4,6 +4,7 @@ export * from "./validation.js";
 export * from "./confidence-policy.js";
 export * from "./team-prototype.js";
 export * from "./team/mock-specialists.js";
+export * from "./team/openai-specialists.js";
 export * from "./victoria-agent.js";
 export * from "./llm/types.js";
 export * from "./llm/mock-llm.js";

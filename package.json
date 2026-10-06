@@ -17,10 +17,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "eval:provider:financial-moment": "RUN_PROVIDER_EVAL=1 vitest run tests/evaluation/provider-financial-moment.test.ts",
+    "agent:smoke:provider-team": "RUN_PROVIDER_AGENT_TEAM_SMOKE=1 vitest run tests/evaluation/provider-agent-team-live.test.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json"
   },
   "devDependencies": {
+    "@next/env": "^16.3.6",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.3",
     "@types/react": "^19.3.0",
