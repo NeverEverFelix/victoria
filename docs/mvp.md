@@ -189,7 +189,7 @@ The MVP should eventually store:
 - Created timestamp.
 - Whether the entry is mocked or real.
 
-For now, these can be represented through in-memory mocks and test fixtures.
+When explicitly injected, the SQLite context adapter keeps up to 20 user and Victoria messages for 30 minutes and queues a PostgreSQL backup. The default application composition still uses mock memory; no SQLite file path or live PostgreSQL database is configured. Durable conversational memories can store user-scoped preferences, recurring habits, and stated goals as structured facts with evidence and confidence. They are appended as linked facts when understanding changes and never count as action approval. No embedding or vector-search infrastructure is wired. Broader habits and goals beyond the explicitly supported phrase patterns remain future work.
 
 Victoria's memory evolves, but historical events, suggestions, approvals, and ledger entries remain immutable. A later correction, revised estimate, or newly learned habit must create a new linked record instead of changing what Victoria previously observed, suggested, approved, or recorded.
 
@@ -198,8 +198,9 @@ Victoria's memory evolves, but historical events, suggestions, approvals, and le
 The MVP should not include:
 
 - Real bank transfers.
-- Plaid production access.
-- Automatic transaction import.
+- Plaid transfer or payment capabilities.
+- Plaid data retrieval or a Plaid-backed financial profile.
+- Unbounded or undisclosed Plaid data access.
 - Credit card payoff automation.
 - Investment recommendations.
 - Debt payoff optimization.
@@ -207,6 +208,22 @@ The MVP should not include:
 - Subscription cancellation.
 - Multi-user household finances.
 - Tax advice.
+
+## Future Financial Profile Proposal (Outside The MVP)
+
+The repository contains a sandbox-only Link-token adapter and append-only consent storage as isolated server-boundary scaffolding. They are not wired into the default application composition, do not fetch account or transaction data, and do not use production Plaid credentials. A Plaid-backed financial profile remains a proposal outside the current MVP and requires separate product and safety review before implementation.
+
+If this proposal is separately approved, it must be designed around these constraints:
+
+- Plaid data access must follow user authorization and clearly disclosed purpose. Request only the data products needed for agreed profile behavior; “as much data as possible” is not itself a product purpose or default permission.
+- A profile is derived, potentially incomplete context, not ground truth or financial advice. Preserve source, observation time, freshness, and uncertainty for profile facts; do not silently present stale or inferred facts as current.
+- Keep provider data and derived profile data scoped to the correct user, access-controlled, and subject to documented retention, refresh, disconnect, and deletion behavior before implementation.
+- The specialist may produce profile facts or insights but cannot approve actions, create ledger entries, initiate transfers, or override deterministic policies. Provider-derived data does not constitute user approval.
+- Inject only context relevant to the current turn, with explicit limits and provenance. Do not expose raw account identifiers or unnecessary transaction details to the conversation agent.
+- A profile may inform an estimate, but estimates remain estimates and any savings ledger write still requires the existing exact user confirmation.
+- Any future capability must not enable real money movement. Access must be limited to authorized read purposes; it must not enable transfer or payment capabilities.
+
+Product decisions still required before any future implementation include the data products and permitted purposes, profile schema, freshness rules, consent and disconnect lifecycle, retention/deletion requirements, and how profile facts are corrected when source data changes. This is not part of the current MVP sequence.
 
 These may become useful later, but they should not distract from proving the core behavior first.
 

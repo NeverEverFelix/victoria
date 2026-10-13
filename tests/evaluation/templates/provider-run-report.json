@@ -1,0 +1,109 @@
+{
+  "reportType": "provider_comparison",
+  "corpusId": "victoria-provider-eval-v1",
+  "corpusSha256": "",
+  "startedAt": "",
+  "completedAt": "",
+  "environment": "local",
+  "timeoutMs": 8000,
+  "promptVersions": {
+    "financialMoment": "financial-moment-instructions-v1",
+    "savingsReasoning": "savings-assessment-instructions-v1",
+    "companionVoice": "companion-voice-instructions-v1"
+  },
+  "schemaVersions": {
+    "financialMoment": "financial_moment_v1",
+    "savingsReasoning": "savings_assessment_v1",
+    "companionVoice": "companion_voice_v1"
+  },
+  "rateCard": {
+    "effectiveDate": "",
+    "inputUsdPerMillionTokens": 0,
+    "outputUsdPerMillionTokens": 0
+  },
+  "arms": [
+    {
+      "armId": "financial_moment_baseline",
+      "model": "",
+      "turns": [],
+      "summary": {
+        "turns": 0,
+        "completedTurns": 0,
+        "failedOrTimedOutTurns": 0,
+        "safetyFailures": 0,
+        "intentPasses": 0,
+        "actionPasses": 0,
+        "amountPasses": 0,
+        "latencyMs": {"p50": null, "p95": null, "max": null},
+        "costPerTurnUsd": {"p50": null, "p95": null, "max": null},
+        "roleLatencyMs": {
+          "financial_moment": {"p50": null, "p95": null, "max": null},
+          "savings_reasoning": {"p50": null, "p95": null, "max": null},
+          "companion_voice": {"p50": null, "p95": null, "max": null}
+        },
+        "usage": {
+          "effectiveRateDate": "",
+          "calls": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "estimatedCostUsd": null,
+          "estimatedCostUsdByRole": {
+            "financial_moment": 0,
+            "savings_reasoning": 0,
+            "companion_voice": 0
+          },
+          "callsByRole": {"financial_moment": 0, "savings_reasoning": 0, "companion_voice": 0},
+          "tokensByRole": {
+            "financial_moment": {"input": 0, "output": 0},
+            "savings_reasoning": {"input": 0, "output": 0},
+            "companion_voice": {"input": 0, "output": 0}
+          },
+          "requestIds": []
+        },
+        "retryCount": 0
+      }
+    },
+    {
+      "armId": "specialist_team",
+      "model": "",
+      "turns": [],
+      "summary": {
+        "turns": 0,
+        "completedTurns": 0,
+        "failedOrTimedOutTurns": 0,
+        "safetyFailures": 0,
+        "intentPasses": 0,
+        "actionPasses": 0,
+        "amountPasses": 0,
+        "latencyMs": {"p50": null, "p95": null, "max": null},
+        "costPerTurnUsd": {"p50": null, "p95": null, "max": null},
+        "roleLatencyMs": {
+          "financial_moment": {"p50": null, "p95": null, "max": null},
+          "savings_reasoning": {"p50": null, "p95": null, "max": null},
+          "companion_voice": {"p50": null, "p95": null, "max": null}
+        },
+        "usage": {
+          "effectiveRateDate": "",
+          "calls": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "estimatedCostUsd": null,
+          "estimatedCostUsdByRole": {
+            "financial_moment": 0,
+            "savings_reasoning": 0,
+            "companion_voice": 0
+          },
+          "callsByRole": {"financial_moment": 0, "savings_reasoning": 0, "companion_voice": 0},
+          "tokensByRole": {
+            "financial_moment": {"input": 0, "output": 0},
+            "savings_reasoning": {"input": 0, "output": 0},
+            "companion_voice": {"input": 0, "output": 0}
+          },
+          "requestIds": []
+        },
+        "retryCount": 0
+      }
+    }
+  ],
+  "limitations": []
+}

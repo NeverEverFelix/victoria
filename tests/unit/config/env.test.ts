@@ -4,9 +4,13 @@ import { parseVictoriaEnv, type EnvSource } from "../../../src/config/env.js";
 describe("parseVictoriaEnv", () => {
   it("keeps provider Financial Moment disabled unless explicitly enabled", () => {
     expect(parseVictoriaEnv(validEnv()).openAiFinancialMomentEnabled).toBe(false);
+    expect(parseVictoriaEnv(validEnv()).openAiAgentTeamEnabled).toBe(false);
     expect(parseVictoriaEnv(validEnv({ OPENAI_FINANCIAL_MOMENT_ENABLED: "true" })).openAiFinancialMomentEnabled).toBe(true);
+    expect(parseVictoriaEnv(validEnv({ OPENAI_AGENT_TEAM_ENABLED: "true" })).openAiAgentTeamEnabled).toBe(true);
     expect(() => parseVictoriaEnv(validEnv({ OPENAI_FINANCIAL_MOMENT_ENABLED: "yes" })))
       .toThrow("OPENAI_FINANCIAL_MOMENT_ENABLED must be true or false.");
+    expect(() => parseVictoriaEnv(validEnv({ OPENAI_AGENT_TEAM_ENABLED: "yes" })))
+      .toThrow("OPENAI_AGENT_TEAM_ENABLED must be true or false.");
   });
   it("parses a valid local environment", () => {
     const env = parseVictoriaEnv(validEnv());
@@ -331,6 +335,7 @@ function validEnv(overrides: EnvSource = {}): EnvSource {
     DATABASE_URL: "postgresql://victoria:password@localhost:5432/victoria_local",
     OPENAI_API_KEY: "test-openai-key",
     OPENAI_MODEL: "gpt-4.1-mini",
+    OPENAI_AGENT_TEAM_ENABLED: "false",
     PLAID_CLIENT_ID: "test-plaid-client-id",
     PLAID_SECRET: "test-plaid-secret",
     PLAID_ENV: "sandbox",

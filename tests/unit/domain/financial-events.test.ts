@@ -3,11 +3,18 @@ import {
   parseExplicitDollarAmount,
   parseExplicitDollarAmountCents
 } from "../../../src/domain/financial-events/parse-explicit-amount.js";
+import { parseExplicitCorrectionAmount } from "../../../src/domain/financial-events/parse-correction-amount.js";
 
 describe("financial event domain", () => {
   it("parses an explicit dollar amount into cents", () => {
     expect(parseExplicitDollarAmountCents("I almost bought a $90 jacket.")).toBe(9000);
     expect(parseExplicitDollarAmountCents("I skipped a $6.75 coffee.")).toBe(675);
+    expect(parseExplicitDollarAmountCents("I passed on a $1,200 TV.")).toBe(120000);
+    expect(parseExplicitDollarAmountCents("It cost $1,200.50.")).toBe(120050);
+  });
+
+  it("does not parse malformed comma grouping as a smaller amount", () => {
+    expect(parseExplicitDollarAmount("I nearly spent $12,34.")).toEqual({ status: "invalid_value" });
   });
 
   it("returns undefined when no explicit dollar amount exists", () => {
@@ -40,6 +47,12 @@ describe("financial event domain", () => {
       status: "multiple_amounts"
     });
     expect(parseExplicitDollarAmountCents("I chose between a $20 and a $30 order.")).toBeUndefined();
+  });
+
+  it("parses a corrected amount when the second amount is explicitly negated", () => {
+    expect(parseExplicitCorrectionAmount("I avoided $18, not $20.")).toEqual({ status: "valid", amountCents: 1_800 });
+    expect(parseExplicitCorrectionAmount("I avoided $18 and $20.")).toBeNull();
+    expect(parseExplicitCorrectionAmount("I avoided $18, not $20, and saved $3.")).toBeNull();
   });
 
   it("recognizes an unsupported currency instead of treating it as no amount", () => {

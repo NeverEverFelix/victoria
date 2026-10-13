@@ -2,6 +2,17 @@
 
 This file gives coding agents a prioritized list of small implementation slices.
 
+## Conversational Memory Storage Slice
+
+Status: SQLite 20-message short-term context store, PostgreSQL outbox backup, durable evidence-backed conversational memory, and conservative extraction for explicit savings preferences, recurring habits, and stated goals are implemented. Production wiring, live database verification, broad language coverage, and habit/goal integration into the savings domain remain open.
+
+- PostgreSQL stores append-only remembered decisions and backs up current context.
+- SQLite owns short-term context first; it expires after 30 minutes and retries PostgreSQL backup through an outbox.
+- Context retains up to 20 user and Victoria messages and is scoped by user and conversation; durable fact reads use the SQLite cache.
+- Explicit statements such as “I prefer saving $20 rather than $50 at a time,” “I usually make coffee at home on weekdays,” and “My goal is to save $1,000 for a trip to Japan” create evidence-backed facts; uncertain statements do not.
+- Structured facts are a durable source that a future PostgreSQL semantic/vector index can use; embeddings and vector search are not part of this slice.
+- Before production use, configure the SQLite database path/runtime lifecycle and verify migration `0003_conversational_memory.sql` against PostgreSQL.
+
 Agents should work from the top unless the user explicitly chooses a different item. Each slice should be completed with tests and verified with `npm run check`.
 
 ## Working Rules
@@ -11,7 +22,7 @@ Agents should work from the top unless the user explicitly chooses a different i
 - Prefer one slice per change.
 - Write or update tests before implementation when practical.
 - Keep mocked ledger behavior separate from real money movement.
-- Do not add real OpenAI, Plaid, Prisma, or banking transfer integrations unless the slice explicitly asks for it.
+- Do not add external integrations unless a separately approved slice explicitly asks for them. Plaid financial-data access is outside the current MVP; real money movement remains prohibited.
 - Update docs when behavior changes.
 
 ## Slice 1: Avoided Spend With Explicit Amount
@@ -399,6 +410,61 @@ Done when:
 
 ## Backlog Notes
 
+## Slice 17: Consent-Gated Plaid Link Bootstrap
+
+Status: Sandbox-only token creation and append-only PostgreSQL consent storage are implemented as isolated scaffolding. They are not wired to a live route or the default app composition, and do not fetch financial data.
+
+Goal:
+
+Start the user-authorized Plaid connection flow without fetching financial data, building the profile, or adding memory/UI behavior.
+
+Expected behavior:
+
+- Require a verified user identity from an injected authentication boundary.
+- Load consent for that authenticated user; do not accept identity or product scope from the request body.
+- Create a short-lived Link token only for the active consent record's supported read products.
+- Reject unsupported payment/transfer products and fail closed on consent/provider errors.
+- Keep the first provider adapter sandbox-only; never return credentials or access tokens to the client.
+- Do not store financial data or create any financial-profile or agent-memory records in this slice.
+
+Implemented files:
+
+- `src/app/plaid/create-link-token-handler.ts`
+- `src/app/plaid/plaid-link-token-client.ts`
+- `tests/unit/app/plaid-link-token.test.ts`
+
+Any future connection flow requires a separate product and safety approval. The following are not current MVP work:
+
+- Apply migration `0002_plaid_consent_events.sql` and verify behavior against a live PostgreSQL database.
+- Wire the handler to the application's verified session and consent repository.
+- Add the Link client flow and exchange `public_token` only after a user completes Plaid Link.
+- Define initial profile read products/purposes and decide how to store provider credentials securely.
+
+## Proposed Post-MVP: Plaid Financial Profile And Specialist
+
+This is a proposal only, outside the current MVP, pending a separate product and safety decision. Production Plaid behavior and financial-data retrieval must remain disabled.
+
+Goal:
+
+Build a user-authorized Plaid read integration, a user-scoped base financial profile, and a `financialprofilespecialist` that provides validated, relevant profile context to Victoria at inference time.
+
+Required boundaries:
+
+- Define minimum Plaid products/scopes and purpose before requesting access.
+- Define consent, disconnect, refresh, retention, deletion, and profile correction behavior.
+- Preserve profile provenance, observed time, freshness, and uncertainty.
+- Keep provider data and specialist context user-scoped and minimize injected data.
+- Keep specialist outputs advisory; deterministic policy retains action and approval authority.
+- No transfer/payment capabilities and no real money movement.
+- Implement and verify headlessly before beginning UI work.
+
+Done when:
+
+- Tests cover authorization, user isolation, stale/missing/conflicting data, specialist failure, bounded inference injection, and disconnect/deletion semantics.
+- Profile-derived estimates remain estimates and savings ledger writes still require exact approval.
+- Plaid transfer/payment behavior is unavailable in all MVP environments.
+- `npm run check` passes.
+
 ## Slice 13: Correct A Recorded Savings Amount
 
 Source story: `docs/user-stories.md` Story 11
@@ -524,9 +590,11 @@ These are useful later, but should wait until the core loop works:
 
 ## Multi-Agent Prototype Status
 
-The non-UI, in-memory behavior queue is implemented; durable-adapter uniqueness (`IDM-004`) remains deferred until persistence exists. The standalone prototype remains in `src/agent/team-prototype.ts`. The mock composition injects specialists into the live headless `VictoriaAgent`: Financial Moment classifies, and Savings Reasoning plus Companion Voice handle supported avoided-spend, unclear, and regretful-spend turns. An opt-in OpenAI Responses adapter now supports Financial Moment only and is disabled by default via `OPENAI_FINANCIAL_MOMENT_ENABLED`. Deterministic core checks retain proposal, approval, ledger, progress, goal, correction, and transfer authority. The optional seven-case provider smoke evaluation does not validate provider quality or cost; broader evaluation and server-boundary work remain.
+The non-UI, in-memory behavior queue is implemented; durable-adapter uniqueness (`IDM-004`) remains deferred until persistence exists. The mock composition injects specialists into the live headless `VictoriaAgent`; an opt-in OpenAI specialist team now supports Financial Moment, Savings Reasoning, and Companion Voice behind `OPENAI_AGENT_TEAM_ENABLED`. The full provider team is disabled by default. Deterministic core checks retain proposal, approval, ledger, progress, goal, correction, and transfer authority. Provider-team behavior is covered with mocked HTTP responses; live model quality and cost remain unevaluated. Production server/durable-state work remains separate.
 
 The server/durable-state track has a pure turn lifecycle, a user-scoped repository contract with an in-memory adapter under `src/app/turns/`, and a headless submission handler in `src/app/http/submit-turn-handler.ts`. The user confirmed that product behavior and mock multi-agent integration should continue before production authentication or server rollout. Keep these server foundations isolated while that work proceeds; the current in-memory adapter does not survive restarts or coordinate across processes.
+
+The first durable slice adds `PostgresTurnRepository`, a shared `pg` pool factory, `npm run db:migrate`, and `db/migrations/0001_victoria_turns.sql`. It uses database uniqueness for `(user_id, idempotency_key)` and row locks for revision transitions. The adapter is not wired into the default app composition. A database instance and production route are not configured. Pending proposal/ledger state and cross-process conversation leases are still outstanding.
 
 See [`multi-agent-readiness.md`](architecture/multi-agent-readiness.md) for staged prerequisites and acceptance evidence. The deterministic cases under `tests/evaluation/` are scripted smoke checks, not a benchmark of real specialist models.
 

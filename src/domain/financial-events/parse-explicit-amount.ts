@@ -11,7 +11,7 @@ export function parseExplicitDollarAmount(message: string): ExplicitDollarAmount
     return { status: "unsupported_currency" };
   }
 
-  const matches = [...message.matchAll(/(?:-\$|\$-?)(\d+(?:\.\d+)?)/g)];
+  const matches = [...message.matchAll(/(?:-\$|\$-?)([\d,]+(?:\.\d+)?)/g)];
   if (matches.length > 1) {
     return { status: "multiple_amounts" };
   }
@@ -25,12 +25,15 @@ export function parseExplicitDollarAmount(message: string): ExplicitDollarAmount
   if (match[0].includes("-")) {
     return { status: "invalid_value" };
   }
+  if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(amountText)) {
+    return { status: "invalid_value" };
+  }
   const fractionalDigits = amountText?.split(".")[1]?.length ?? 0;
   if (fractionalDigits > 2) {
     return { status: "invalid_precision" };
   }
 
-  const amountCents = Math.round(Number(amountText) * 100);
+  const amountCents = Math.round(Number(amountText.replaceAll(",", "")) * 100);
   return !Number.isSafeInteger(amountCents) || amountCents <= 0
     ? { status: "invalid_value" }
     : { status: "valid", amountCents };

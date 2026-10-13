@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { OpenAiFinancialMomentAdapter } from "../../../src/agent/llm/openai-financial-moment.js";
+import { ProviderUsageReporter } from "../../../src/agent/telemetry/provider-usage-reporter.js";
 
 describe("OpenAiFinancialMomentAdapter", () => {
   it("uses strict structured output and derives the amount from the user message", async () => {
@@ -10,8 +11,8 @@ describe("OpenAiFinancialMomentAdapter", () => {
         revisionReason: null, summary: "Paused a jacket purchase", needsClarification: false
       }) }] }]
     }));
-    const onUsage = vi.fn();
-    const adapter = new OpenAiFinancialMomentAdapter({ apiKey: "test-key", model: "gpt-test", fetcher, onUsage });
+    const usageReporter = new ProviderUsageReporter();
+    const adapter = new OpenAiFinancialMomentAdapter({ apiKey: "test-key", model: "gpt-test", fetcher, usageReporter });
 
     const result = await adapter.classifyMessage({
       userMessage: "I almost bought a $90 jacket at Tailor but waited.",
@@ -24,7 +25,10 @@ describe("OpenAiFinancialMomentAdapter", () => {
     expect(request.store).toBe(false);
     expect(request.text.format).toMatchObject({ type: "json_schema", name: "financial_moment_v1", strict: true });
     expect(request.tools).toBeUndefined();
-    expect(onUsage).toHaveBeenCalledWith({ inputTokens: 21, outputTokens: 13 });
+    expect(usageReporter.snapshot()).toMatchObject([
+      { role: "financial_moment", inputTokens: 21, outputTokens: 13 }
+    ]);
+    expect(usageReporter.snapshot()[0]?.elapsedMs).toEqual(expect.any(Number));
   });
 
   it("marks malformed explicit amounts for clarification", async () => {

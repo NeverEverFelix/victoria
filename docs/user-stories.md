@@ -158,6 +158,7 @@ Victoria should:
 Acceptance criteria:
 
 - Given there is a pending savings suggestion, a clear yes confirms it.
+- Given the user says yes and repeats the pending amount in a clear instruction to record it, Victoria confirms only when the amount matches the pending suggestion; a different amount does not approve it.
 - Given there is no pending savings suggestion, a yes does not create a new entry.
 - Given approval refers to another action or user, no entry is created.
 - Given an approved action was already completed, replaying that approval creates no second entry.
@@ -267,8 +268,6 @@ Acceptance criteria:
 - Given the user wants to record the amount, Victoria can continue with the mocked ledger flow.
 - Given any real transfer tool exists later, Victoria still requires explicit approval and production-safe configuration.
 
-## Priority Order
-
 ## Story 11: Correct A Recorded Savings Amount
 
 As a user, I want to correct an amount Victoria recorded so the ledger reflects updated information without losing the original history.
@@ -279,6 +278,9 @@ Example:
 Victoria: I recorded $27 in your Victoria savings ledger.
 User: Correct that recorded entry to $24.
 Victoria: I can reduce the recorded amount by $3, making the corrected total $24. The original entry will stay in the history. Please confirm this correction.
+
+User: I need to correct that entry. I avoided $18, not $20.
+Victoria: I can correct the amount to $18. The original entry will stay in the history. Please confirm this correction.
 ```
 
 Acceptance criteria:
@@ -288,6 +290,59 @@ Acceptance criteria:
 - Approval appends a signed adjustment linked to the original entry; the original remains unchanged.
 - Effective weekly totals use the corrected amount while retaining the original entry's reporting week.
 - If the target entry is unclear, Victoria asks which entry and makes no change.
+
+## Post-MVP Proposal: Build And Use A Financial Profile
+
+As a user, I want Victoria to use financial information I have authorized it to access so that its support can reflect my financial context.
+
+This is a post-MVP proposal, not an approved current behavior. The current repository does not fetch Plaid financial data or wire profile data into inference. Any future implementation requires separate product and safety review.
+
+Expected behavior:
+
+- Victoria explains the data purpose and asks the user to connect/authorize before accessing Plaid data.
+- The connection requests only the agreed data products and scopes needed for profile features.
+- The specialist records source, observation time, freshness, and uncertainty for derived facts, and distinguishes observed facts from estimates or inferences.
+- Victoria uses relevant profile context without exposing unnecessary raw transaction or account details.
+- Missing, stale, conflicting, or unavailable data leads to cautious wording or a clarifying question; it is not silently treated as current fact.
+- The user can disconnect access and invoke documented data deletion/retention behavior.
+- Profile data never approves an action. Savings suggestions still require explicit approval, and no profile flow may move real money.
+
+Acceptance criteria:
+
+- Given no active user authorization, no Plaid data is fetched or injected.
+- Given data belongs to another user, it cannot appear in the profile or inference context.
+- Given a profile fact is stale or inferred, its status is available to the agent and uncertainty is reflected in the response.
+- Given the specialist fails or returns invalid/conflicting data, Victoria falls back safely without a financial mutation.
+- Given a user disconnects, future refreshes and inference use stop and the agreed retention/deletion behavior is applied.
+- Given a profile-based estimate is suggested, exact user confirmation remains required before a mocked ledger entry is created.
+
+## Story 12: Remember Explicit Preferences, Habits, And Goals
+
+As a user, I want Victoria to remember clear preferences, recurring habits, and stated goals so future conversations can reflect what matters to me.
+
+Example:
+
+```text
+I prefer saving $20 rather than $50 at a time.
+```
+
+Expected behavior:
+
+- Victoria records a user-scoped preference with the user's wording as evidence and a confidence value.
+- Victoria records a recurring habit only when the user states a recurring pattern, and a goal only when the user states a goal or saving target.
+- Victoria acknowledges a remembered fact without suggesting a savings entry or creating a goal allocation.
+- A clearly stated newer fact is appended and linked to the prior fact it supersedes; identical facts are not duplicated.
+- Tentative, ambiguous, or conflicting statements are not stored as facts.
+
+Acceptance criteria:
+
+- Given a direct savings-amount preference, the fact is available in that user's conversational memory.
+- Given a direct recurring habit or stated goal, its evidence-backed fact is available in that user's conversational memory.
+- Given a tentative statement, no fact is stored.
+- Given a newer fact on the same topic, the earlier record remains unchanged and the new fact links to it.
+- Remembering a fact never counts as approval for a mocked ledger or goal-allocation action.
+
+## Priority Order
 
 The first implementation should focus on:
 

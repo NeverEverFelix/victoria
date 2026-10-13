@@ -1,11 +1,15 @@
 import type { ClassifiedMessage } from "../types.js";
 import { parseExplicitDollarAmount } from "../../domain/financial-events/parse-explicit-amount.js";
+import { parseExplicitCorrectionAmount } from "../../domain/financial-events/parse-correction-amount.js";
 import type { ClassifyMessageInput, DraftResponseInput, LlmAdapter } from "./types.js";
 
 export class MockLlmAdapter implements LlmAdapter {
   async classifyMessage(input: ClassifyMessageInput): Promise<ClassifiedMessage> {
     const message = input.userMessage.toLowerCase();
-    const contextualMessage = [...(input.conversationContext ?? []), input.userMessage].join(" ").toLowerCase();
+    const contextualMessage = [
+      ...(isContextualReply(input.userMessage) ? (input.conversationContext ?? []).filter((item) => !item.startsWith("Victoria: ")).slice(-1) : []),
+      input.userMessage
+    ].join(" ").toLowerCase();
     const amountParse = parseExplicitDollarAmount(input.userMessage);
     const amountCents = amountParse.status === "valid" ? amountParse.amountCents : undefined;
     const amountIssue = amountParse.status === "invalid_value" || amountParse.status === "multiple_amounts" || amountParse.status === "invalid_precision" || amountParse.status === "unsupported_currency"
@@ -27,14 +31,15 @@ export class MockLlmAdapter implements LlmAdapter {
 
     if (/\b(correct|correction|fix|change|revise)\b/.test(contextualMessage) &&
         /\b(entry|recorded|saved amount|savings amount)\b/.test(contextualMessage)) {
+      const correctionAmount = parseExplicitCorrectionAmount(input.userMessage);
       return {
         type: "entry_correction",
         confidence: 0.9,
-        ...(amountCents !== undefined ? { amountCents } : {}),
-        ...(amountIssue ? { amountIssue } : {}),
+        ...(correctionAmount ? { amountCents: correctionAmount.amountCents } : amountCents !== undefined ? { amountCents } : {}),
+        ...(!correctionAmount && amountIssue ? { amountIssue } : {}),
         ...(revisionReason ? { revisionReason } : {}),
         summary: input.userMessage,
-        needsClarification: amountIssue !== undefined || amountCents === undefined
+        needsClarification: !correctionAmount && (amountIssue !== undefined || amountCents === undefined)
       };
     }
 
@@ -122,6 +127,12 @@ export class MockLlmAdapter implements LlmAdapter {
   }
 }
 
+function isContextualReply(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  if (/^(?:about\s*)?\$?\d/.test(normalized)) return false;
+  return normalized.length < 40 && /^(?:yes\b|no\b|yeah\b|yep\b|i did\b|it was\b|that one\b|this one\b|emergency fund\b|trip fund\b|same amount\b)/.test(normalized);
+}
+
 function inferGoalName(message: string): string | undefined {
   const normalized = message.toLowerCase();
   if (/\bemergency fund\b/.test(normalized)) return "Emergency fund";
@@ -144,8 +155,9 @@ function isRealMoneyMovementRequest(message: string): boolean {
     /\b(move|transfer|send)\b.{0,40}\b(money|funds|cash)\b/.test(message) ||
     /\b(money|funds|cash)\b.{0,40}\b(move|transfer|send)\b/.test(message) ||
     /\b(bank|account)\s+transfer\b/.test(message) ||
-    /\b(move|transfer|send)\b.{0,35}\b(to|into)\b.{0,35}\b(savings|checking|bank|account)\b/.test(message) ||
-    /\b(move|transfer|send)\b.{0,40}\b(from|between)\b.{0,40}\b(to|into)\b/.test(message)
+    /\b(move|transfer|send)\b.{0,35}\b(to|into)\b.{0,40}\b(savings|checking|bank|account|emergency fund)\b/.test(message) ||
+    /\b(move|transfer|send)\b.{0,40}\b(from|between)\b.{0,40}\b(to|into)\b/.test(message) ||
+    /\b(withdraw|take|pull|remove)\b.{0,50}\b(from|out of)\b.{0,35}\b(checking|savings|bank|account)\b/.test(message)
   );
 }
 

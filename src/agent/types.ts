@@ -52,6 +52,7 @@ export interface AgentMemory {
   habits: UserHabit[];
   goals: SavingsGoal[];
   recentDecisions: FinancialDecision[];
+  conversationalMemories?: readonly import("./memory/types.js").ConversationalMemory[];
 }
 
 export interface UserHabit {

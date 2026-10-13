@@ -13,6 +13,29 @@ import type { SavingsEntry } from "../../../src/domain/savings/types.js";
 describe("VictoriaAgent", () => {
   afterEach(() => vi.useRealTimers());
 
+  it("provides the rolling user and Victoria conversation to later classifications", async () => {
+    const contexts: (readonly string[])[] = [];
+    const base = new MockLlmAdapter();
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({
+      llm: {
+        async classifyMessage(input) {
+          contexts.push(input.conversationContext ?? []);
+          return base.classifyMessage(input);
+        },
+        draftResponse: (input) => base.draftResponse(input)
+      },
+      memory,
+      tools: new MockVictoriaTools()
+    });
+    const request = { userId: "user_context", conversationId: "chat_context" };
+    await agent.respond({ ...request, message: "I almost bought a $9 book but decided to wait." });
+    await agent.respond({ ...request, message: "I made coffee at home instead of going to Blue Bottle." });
+
+    expect(contexts.some((context) => context.includes("I almost bought a $9 book but decided to wait."))).toBe(true);
+    expect(contexts.some((context) => context.some((message) => message.startsWith("Victoria: ")))).toBe(true);
+  });
+
   it("[COR-001] returns frozen financial history snapshots that cannot rewrite an approved proposal or entry", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);
@@ -421,6 +444,20 @@ describe("VictoriaAgent", () => {
     expect(response.message).toContain("can't move real money");
     expect(response.message).toContain("mocked Victoria savings ledger");
     expect(response.decision.toolCall).toBeUndefined();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it.each([
+    "Can you send $100 to my emergency fund?",
+    "Take $30 out of checking and put it away for me."
+  ])("[FIN-001] refuses a transfer request phrased as a goal or withdrawal: %s", async (message) => {
+    const tools = new MockVictoriaTools();
+    const response = await createAgent([], tools).respond({ userId: "user_123", message });
+
+    expect(response.decision.classification.type).toBe("real_money_movement_request");
+    expect(response.decision.action).toBe("refuse");
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(response.message).toContain("can't move real money");
     expect(await tools.listSavingsEntries("user_123")).toEqual([]);
   });
 
