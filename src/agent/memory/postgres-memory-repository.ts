@@ -27,7 +27,7 @@ export class PostgresMemoryRepository implements MemoryProvider {
   async listGoals(userId: string): Promise<SavingsGoal[]> { void userId; return []; }
 
   async listDecisions(userId: string): Promise<FinancialDecision[]> {
-    const result = await this.db.query<{ id: string; decision: FinancialDecision; created_at: string | Date }>(
+    const result = await this.db.query<{ id: string; decision: Omit<FinancialDecision, "id" | "createdAt">; created_at: string | Date }>(
       "SELECT id, decision, created_at FROM victoria_memory_decisions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50", [userId]
     );
     return result.rows.map((row) => Object.freeze({ ...row.decision, id: row.id, createdAt: new Date(row.created_at).toISOString() }));
@@ -43,7 +43,7 @@ export class PostgresMemoryRepository implements MemoryProvider {
 
   async setConversationContext(userId: string, conversationId: string, messages: readonly string[]): Promise<void> {
     await this.db.query(
-      `INSERT INTO victoria_conversation_context (user_id, conversation_id, messages, updated_at)
+      `INSERT INTO victoria_conversation_context (user_id, conversation_id, messages, updated_at, expires_at)
        VALUES ($1, $2, $3::jsonb, now(), $4)
        ON CONFLICT (user_id, conversation_id) DO UPDATE SET messages = EXCLUDED.messages,
          updated_at = EXCLUDED.updated_at, expires_at = EXCLUDED.expires_at`,

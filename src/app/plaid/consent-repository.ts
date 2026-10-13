@@ -150,7 +150,7 @@ export class PostgresPlaidConsentRepository implements PlaidConsentRepository {
 }
 
 async function lockUser(client: PostgresClient, userId: string): Promise<void> {
-  await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [userId]);
+  await client.query("SELECT pg_advisory_xact_lock(0, hashtext($1))", [userId]);
 }
 
 async function latestForUpdate(client: PostgresClient, userId: string): Promise<PlaidConsentEventRow | null> {

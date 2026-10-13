@@ -178,10 +178,13 @@ describe("PlaidLinkTokenClient", () => {
     const client = new PlaidLinkTokenClient({ clientId: "client", secret: "secret", fetcher });
 
     await expect(client.create({ clientUserId: "user-a", products: ["transactions"] })).resolves.toBe("link-token");
+    expect(fetcher.mock.calls[0]?.[1]?.headers).toMatchObject({ "Plaid-Version": "2020-09-14" });
 
     expect(fetcher).toHaveBeenCalledWith("https://sandbox.plaid.com/link/token/create", expect.objectContaining({
       method: "POST",
-      headers: expect.objectContaining({ "PLAID-CLIENT-ID": "client", "PLAID-SECRET": "secret" }),
+      headers: expect.objectContaining({
+        "PLAID-CLIENT-ID": "client", "PLAID-SECRET": "secret", "Plaid-Version": "2020-09-14"
+      }),
       body: JSON.stringify({
         user: { client_user_id: "user-a" },
         client_name: "Victoria",

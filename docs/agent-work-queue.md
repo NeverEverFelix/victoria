@@ -22,7 +22,7 @@ Agents should work from the top unless the user explicitly chooses a different i
 - Prefer one slice per change.
 - Write or update tests before implementation when practical.
 - Keep mocked ledger behavior separate from real money movement.
-- Do not add external integrations unless the slice explicitly asks for them. Financial profile work is confirmed MVP scope but must follow its own approved slice; real money movement remains prohibited.
+- Do not add external integrations unless a separately approved slice explicitly asks for them. Plaid financial-data access is outside the current MVP; real money movement remains prohibited.
 - Update docs when behavior changes.
 
 ## Slice 1: Avoided Spend With Explicit Amount
@@ -412,7 +412,7 @@ Done when:
 
 ## Slice 17: Consent-Gated Plaid Link Bootstrap
 
-Status: Headless token creation and append-only PostgreSQL consent storage are implemented. The handler still needs verified application-auth wiring and the consent store wired to a live route.
+Status: Sandbox-only token creation and append-only PostgreSQL consent storage are implemented as isolated scaffolding. They are not wired to a live route or the default app composition, and do not fetch financial data.
 
 Goal:
 
@@ -433,16 +433,16 @@ Implemented files:
 - `src/app/plaid/plaid-link-token-client.ts`
 - `tests/unit/app/plaid-link-token.test.ts`
 
-Remaining work before this is a complete production connection flow:
+Any future connection flow requires a separate product and safety approval. The following are not current MVP work:
 
 - Apply migration `0002_plaid_consent_events.sql` and verify behavior against a live PostgreSQL database.
 - Wire the handler to the application's verified session and consent repository.
 - Add the Link client flow and exchange `public_token` only after a user completes Plaid Link.
 - Define initial profile read products/purposes and decide how to store provider credentials securely.
 
-## Future MVP Slice: Plaid Financial Profile And Specialist
+## Proposed Post-MVP: Plaid Financial Profile And Specialist
 
-This is confirmed MVP scope, but it is not ready for implementation until the open product choices in `docs/decisions.md` are resolved and converted into a bounded headless work slice.
+This is a proposal only, outside the current MVP, pending a separate product and safety decision. Production Plaid behavior and financial-data retrieval must remain disabled.
 
 Goal:
 
@@ -594,7 +594,7 @@ The non-UI, in-memory behavior queue is implemented; durable-adapter uniqueness 
 
 The server/durable-state track has a pure turn lifecycle, a user-scoped repository contract with an in-memory adapter under `src/app/turns/`, and a headless submission handler in `src/app/http/submit-turn-handler.ts`. The user confirmed that product behavior and mock multi-agent integration should continue before production authentication or server rollout. Keep these server foundations isolated while that work proceeds; the current in-memory adapter does not survive restarts or coordinate across processes.
 
-The first durable slice now adds `PostgresTurnRepository`, a shared `pg` pool factory, `npm run db:migrate`, and `db/migrations/0001_victoria_turns.sql`. It uses database uniqueness for `(user_id, idempotency_key)` and row locks for revision transitions. A database instance and production route are not configured. Pending proposal/ledger state and cross-process conversation leases are still outstanding.
+The first durable slice adds `PostgresTurnRepository`, a shared `pg` pool factory, `npm run db:migrate`, and `db/migrations/0001_victoria_turns.sql`. It uses database uniqueness for `(user_id, idempotency_key)` and row locks for revision transitions. The adapter is not wired into the default app composition. A database instance and production route are not configured. Pending proposal/ledger state and cross-process conversation leases are still outstanding.
 
 See [`multi-agent-readiness.md`](architecture/multi-agent-readiness.md) for staged prerequisites and acceptance evidence. The deterministic cases under `tests/evaluation/` are scripted smoke checks, not a benchmark of real specialist models.
 

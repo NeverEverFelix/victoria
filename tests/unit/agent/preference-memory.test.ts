@@ -2,6 +2,32 @@ import { describe, expect, it } from "vitest";
 import { MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
 
 describe("explicit savings preference memory", () => {
+  it("keeps a pending savings approval visible when a separate preference is stated", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools });
+
+    const proposal = await agent.respond({
+      userId: "user_pref_pending", conversationId: "chat_pref_pending",
+      message: "I almost bought a $30 book but decided to wait."
+    });
+    expect(proposal.decision.action).toBe("suggest_savings");
+
+    const preference = await agent.respond({
+      userId: "user_pref_pending", conversationId: "chat_pref_pending",
+      message: "I prefer saving $20 rather than $50 at a time."
+    });
+    expect(preference.decision.action).toBe("ask_follow_up");
+    expect(preference.message).toContain("clear yes or no about the pending savings entry");
+    expect(await memory.listConversationalMemories("user_pref_pending")).toHaveLength(1);
+
+    const recorded = await agent.respond({
+      userId: "user_pref_pending", conversationId: "chat_pref_pending", message: "Yes"
+    });
+    expect(recorded.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries("user_pref_pending")).toHaveLength(1);
+  });
+
   it("[MEM-002] remembers an explicit preferred amount without suggesting or recording savings", async () => {
     const memory = new MockMemoryProvider();
     const tools = new MockVictoriaTools();

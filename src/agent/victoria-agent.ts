@@ -87,25 +87,6 @@ export class VictoriaAgent {
   }
 
   private async respondTurn(request: AgentRequest, conversationContext: readonly string[]): Promise<AgentResponse> {
-    const extractedMemory = extractConversationalMemory(request.message);
-    if (extractedMemory) {
-      const existing = await this.dependencies.memory.listConversationalMemories(request.userId);
-      const prior = [...existing].reverse().find((item) => item.category === extractedMemory.category && item.key === extractedMemory.key);
-      const isDuplicate = prior?.value === extractedMemory.value;
-      if (!isDuplicate) {
-        await this.dependencies.memory.rememberConversationalMemory(request.userId, {
-          ...extractedMemory,
-          evidence: request.message,
-          ...(prior ? { supersedesId: prior.id } : {})
-        });
-      }
-      const message = `Got it. I'll remember: “${extractedMemory.value}”`;
-      const classification: ClassifiedMessage = {
-        type: "general_finance", confidence: 1, summary: request.message, needsClarification: false
-      };
-      return { message, decision: { action: "reflect", classification, userFacingMessage: message } };
-    }
-
     const conversationKey = this.conversationKey(request);
     const pendingCorrectionId = this.pendingEntryCorrectionIdsByConversation.get(conversationKey);
     const pendingCorrection = pendingCorrectionId
@@ -245,6 +226,37 @@ export class VictoriaAgent {
           }
         };
       }
+    }
+
+    const extractedMemory = extractConversationalMemory(request.message);
+    if (extractedMemory) {
+      const existing = await this.dependencies.memory.listConversationalMemories(request.userId);
+      const prior = [...existing].reverse().find((item) => item.category === extractedMemory.category && item.key === extractedMemory.key);
+      const isDuplicate = prior?.value === extractedMemory.value;
+      if (!isDuplicate) {
+        await this.dependencies.memory.rememberConversationalMemory(request.userId, {
+          ...extractedMemory,
+          evidence: request.message,
+          ...(prior ? { supersedesId: prior.id } : {})
+        });
+      }
+      const message = `Got it. I'll remember: “${extractedMemory.value}”`;
+      const classification: ClassifiedMessage = {
+        type: "general_finance", confidence: 1, summary: request.message, needsClarification: false
+      };
+      if (pendingCorrection || pendingGoalAction || pendingAction) {
+        const pendingPrompt = pendingCorrection
+          ? "Please also give me a clear yes or no about the pending correction."
+          : pendingGoalAction
+            ? "Please also give me a clear yes or no about the pending goal allocation."
+            : "Please also give me a clear yes or no about the pending savings entry.";
+        const followUp = `${message} ${pendingPrompt}`;
+        return {
+          message: followUp,
+          decision: { action: "ask_follow_up", classification, userFacingMessage: followUp }
+        };
+      }
+      return { message, decision: { action: "reflect", classification, userFacingMessage: message } };
     }
 
     const memory = await this.dependencies.memory.getMemoryForUser(request.userId);

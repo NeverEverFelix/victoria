@@ -22,8 +22,8 @@ describe.skipIf(!enabled)("live provider comparison", () => {
       throw new Error("The provider comparison requires MONEY_MOVEMENT_MODE=mock_ledger.");
     }
 
-    const model = process.env.OPENAI_MODEL?.trim();
-    if (!model || model === "mock") throw new Error("Set OPENAI_MODEL to a real provider model.");
+    const model = process.env.OPENAI_EVAL_MODEL?.trim();
+    if (!model || model === "mock") throw new Error("Set OPENAI_EVAL_MODEL to a real provider model.");
     const rateCard = {
       effectiveDate: requiredEnvironmentValue("OPENAI_EVAL_RATE_CARD_DATE"),
       inputUsdPerMillionTokens: parseNonNegativeRate("OPENAI_EVAL_INPUT_USD_PER_MILLION"),

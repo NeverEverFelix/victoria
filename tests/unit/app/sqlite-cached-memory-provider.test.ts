@@ -5,6 +5,7 @@ import type { PostgresQueryable, PostgresQueryResult } from "../../../src/app/tu
 
 class MemoryDatabase implements PostgresQueryable {
   readonly contexts = new Map<string, string[]>();
+  readonly contextInsertSql: string[] = [];
   readonly decisions: Array<{ id: string; userId: string; decision: { type: "avoided_spend"; summary: string }; createdAt: string }> = [];
   readonly memories: Array<{ id: string; userId: string; category: string; key: string; value: string; evidence: string; confidence: number; createdAt: string; supersedesId?: string }> = [];
   available = true;
@@ -12,6 +13,7 @@ class MemoryDatabase implements PostgresQueryable {
   async query<Row>(sql: string, values: readonly unknown[] = []): Promise<PostgresQueryResult<Row>> {
     if (!this.available) throw new Error("postgres unavailable");
     if (sql.includes("INSERT INTO victoria_conversation_context")) {
+      this.contextInsertSql.push(sql);
       this.contexts.set(`${values[0]}:${values[1]}`, JSON.parse(String(values[2])) as string[]);
       return { rows: [] };
     }
@@ -47,9 +49,10 @@ describe("SQLite cached conversational memory", () => {
     const database = new MemoryDatabase();
     const provider = new SqliteCachedMemoryProvider(new PostgresMemoryRepository(database));
     await provider.setConversationContext("user-a", "chat-1", ["I saved money", "I skipped coffee", "follow-up", "last detail", "bounded"]);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await provider.flushPendingContextBackups();
 
     expect(database.contexts.get("user-a:chat-1")).toEqual(["I saved money", "I skipped coffee", "follow-up", "last detail", "bounded"]);
+    expect(database.contextInsertSql[0]).toMatch(/messages, updated_at, expires_at\)/);
     expect(await provider.getConversationContext("user-a", "chat-1")).toEqual(["I saved money", "I skipped coffee", "follow-up", "last detail", "bounded"]);
     expect(await provider.getConversationContext("user-b", "chat-1")).toEqual([]);
     expect(await provider.getConversationContext("user-a", "chat-2")).toEqual([]);
@@ -60,7 +63,7 @@ describe("SQLite cached conversational memory", () => {
     const provider = new SqliteCachedMemoryProvider(new PostgresMemoryRepository(new MemoryDatabase()));
     const messages = Array.from({ length: 25 }, (_, index) => `message ${index + 1}`);
     await provider.setConversationContext("user-a", "chat-1", messages);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await provider.flushPendingContextBackups();
     expect(await provider.getConversationContext("user-a", "chat-1")).toEqual(messages.slice(-20));
     provider.close();
   });
@@ -98,7 +101,7 @@ describe("SQLite cached conversational memory", () => {
     expect(database.contexts.has("user-a:chat-1")).toBe(false);
     database.available = true;
     expect(await provider.getConversationContext("user-a", "chat-1")).toEqual(["clarification"]);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await provider.flushPendingContextBackups();
     expect(database.contexts.get("user-a:chat-1")).toEqual(["clarification"]);
     provider.close();
   });

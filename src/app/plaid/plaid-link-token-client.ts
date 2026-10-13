@@ -4,6 +4,7 @@ export interface PlaidLinkTokenClientOptions {
   readonly clientId: string;
   readonly secret: string;
   readonly fetcher?: typeof fetch;
+  readonly apiVersion?: string;
 }
 
 interface PlaidLinkTokenResponse {
@@ -28,7 +29,8 @@ export class PlaidLinkTokenClient {
       headers: {
         "Content-Type": "application/json",
         "PLAID-CLIENT-ID": this.options.clientId,
-        "PLAID-SECRET": this.options.secret
+        "PLAID-SECRET": this.options.secret,
+        "Plaid-Version": this.options.apiVersion ?? "2020-09-14"
       },
       body: JSON.stringify({
         user: { client_user_id: input.clientUserId },

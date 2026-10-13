@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createQueuedTurn } from "../../../src/domain/turns/lifecycle.js";
-import { PostgresTurnRepository, type PostgresClient, type PostgresPool, type PostgresQueryResult } from "../../../src/app/index.js";
+import {
+  PostgresTurnRepository,
+  type PostgresClient,
+  type PostgresPool,
+  type PostgresQueryResult
+} from "../../../src/app/turns/postgres-turn-repository.js";
 
 type Row = Record<string, unknown>;
 

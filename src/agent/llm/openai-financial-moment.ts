@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import { parseExplicitDollarAmount } from "../../domain/financial-events/parse-explicit-amount.js";
 import { parseExplicitCorrectionAmount } from "../../domain/financial-events/parse-correction-amount.js";
@@ -74,7 +75,7 @@ export class OpenAiFinancialMomentAdapter implements LlmAdapter {
         input: JSON.stringify({
           currentMessage: input.userMessage,
           recentConversation: (input.conversationContext ?? []).slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT),
-          userMemories: input.memory.conversationalMemories ?? []
+          userMemories: input.memory?.conversationalMemories ?? []
         }),
         text: {
           format: {

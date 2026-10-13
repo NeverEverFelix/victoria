@@ -159,9 +159,9 @@ Implications:
 - UI implementation becomes the final product phase after the non-UI work queue is complete and `npm run check` passes.
 - End-to-end browser journeys and production deployment follow the UI phase.
 
-### Financial Profile And Plaid Specialist Are In MVP Scope
+### Historical Proposal: Financial Profile And Plaid Specialist
 
-Decision: Confirmed on 2026-10-07. Financial profiles built from user-authorized Plaid data, including the `financialprofilespecialist` and relevant profile context injected at inference time, are part of the MVP. Real money transfers remain out of scope.
+The 2026-10-07 scope decision is superseded by the current repository safety boundary: Plaid production behavior and Plaid data retrieval are outside the MVP. The existing sandbox Link-token adapter is isolated scaffolding and is not wired into the default application composition.
 
 Scope:
 
@@ -197,7 +197,7 @@ Open decisions include:
 
 Current default:
 
-Do not implement the Plaid/profile slice until these decisions are reviewed and its headless acceptance criteria are defined. The capability itself is confirmed MVP scope.
+Do not implement a Plaid/profile slice until a future product and safety review approves it and defines headless acceptance criteria. This capability is not current MVP scope.
 
 ### What Makes Saved Money Feel Protected With One Account?
 

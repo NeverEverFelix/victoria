@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import { OpenAiFinancialMomentAdapter } from "../llm/openai-financial-moment.js";
 import type { AgentTeamSpecialists, SavingsAssessment } from "../team-prototype.js";

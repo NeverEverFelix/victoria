@@ -8,6 +8,7 @@ import { PostgresMemoryRepository } from "./postgres-memory-repository.js";
 export class SqliteCachedMemoryProvider implements MemoryProvider {
   private readonly db: DatabaseSync;
   private readonly shortTermContextTtlMs: number;
+  private readonly pendingContextFlushes = new Set<Promise<void>>();
 
   constructor(
     private readonly durable: PostgresMemoryRepository,
@@ -63,7 +64,7 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
       WHERE user_id = ? AND conversation_id = ?`).get(userId, conversationId) as { messages: string; expires_at: number } | undefined;
     if (row) {
       if (row.expires_at > Date.now()) {
-        void this.flushContextOutbox(userId, conversationId);
+        this.scheduleContextFlush(userId, conversationId);
         return JSON.parse(row.messages) as string[];
       }
       this.db.prepare("DELETE FROM conversation_context_cache WHERE user_id = ? AND conversation_id = ?").run(userId, conversationId);
@@ -93,7 +94,17 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
       this.db.exec("ROLLBACK");
       throw error;
     }
-    void this.flushContextOutbox(userId, conversationId);
+    this.scheduleContextFlush(userId, conversationId);
+  }
+
+  async flushPendingContextBackups(): Promise<void> {
+    await Promise.all([...this.pendingContextFlushes]);
+  }
+
+  private scheduleContextFlush(userId: string, conversationId: string): void {
+    const flush = this.flushContextOutbox(userId, conversationId);
+    this.pendingContextFlushes.add(flush);
+    void flush.finally(() => this.pendingContextFlushes.delete(flush));
   }
 
   private cacheShortTermContext(userId: string, conversationId: string, messages: readonly string[], expiresAt: number): void {

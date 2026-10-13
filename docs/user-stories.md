@@ -268,11 +268,11 @@ Acceptance criteria:
 - Given the user wants to record the amount, Victoria can continue with the mocked ledger flow.
 - Given any real transfer tool exists later, Victoria still requires explicit approval and production-safe configuration.
 
-## Story 12: Build And Use A Financial Profile
+## Proposed Post-MVP Story 12: Build And Use A Financial Profile
 
 As a user, I want Victoria to use financial information I have authorized it to access so that its support can reflect my financial context.
 
-This capability is part of the MVP. It includes a dedicated `financialprofilespecialist` that builds or refreshes a user-scoped base profile from approved Plaid data and its metadata, then makes only relevant profile context available to Victoria during inference. It does not include real money transfers.
+This is a post-MVP proposal, not an approved current behavior. The current repository does not fetch Plaid financial data or wire profile data into inference. Any future implementation requires separate product and safety review.
 
 Expected behavior:
 

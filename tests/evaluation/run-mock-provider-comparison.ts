@@ -65,7 +65,9 @@ const expectedAgentActions: Record<ExpectedAction, AgentActionType> = {
 export async function runMockProviderComparison(): Promise<MockProviderComparisonReport> {
   const corpusBytes = readFileSync(corpusUrl);
   const corpusSha256 = createHash("sha256").update(corpusBytes).digest("hex");
-  if (corpusSha256 !== expectedCorpusHash) throw new Error("Frozen provider evaluation corpus hash changed.");
+  if (corpusSha256 !== expectedCorpusHash) {
+    throw new Error(`Frozen provider evaluation corpus hash changed: ${corpusSha256}`);
+  }
 
   const turns = corpus.turns;
   const baseline = await runArm("deterministic_baseline", turns, false);

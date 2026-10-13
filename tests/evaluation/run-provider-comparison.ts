@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { readFileSync } from "node:fs";
 import { OpenAiFinancialMomentAdapter } from "../../src/agent/llm/openai-financial-moment.js";
 import { createOpenAiAgentTeamSpecialists } from "../../src/agent/team/openai-specialists.js";

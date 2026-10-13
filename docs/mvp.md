@@ -189,7 +189,7 @@ The MVP should eventually store:
 - Created timestamp.
 - Whether the entry is mocked or real.
 
-Short-term memory is the rolling current conversation: up to 20 user and Victoria messages, scoped by user and conversation and held in SQLite for 30 minutes. A local outbox backs it up to PostgreSQL when available. Durable conversational memories store user-scoped preferences, recurring habits, and stated goals as structured facts with evidence and confidence; PostgreSQL is authoritative and SQLite caches reads. Victoria stores these only from direct, clear statements, acknowledges them without treating them as approval for a savings or goal-allocation action, and appends a linked fact when the user changes their understanding. These source facts can support future semantic/vector indexing in PostgreSQL; this slice does not generate embeddings. Broader habits and goals beyond the explicitly supported phrase patterns remain future work.
+When explicitly injected, the SQLite context adapter keeps up to 20 user and Victoria messages for 30 minutes and queues a PostgreSQL backup. The default application composition still uses mock memory; no SQLite file path or live PostgreSQL database is configured. Durable conversational memories can store user-scoped preferences, recurring habits, and stated goals as structured facts with evidence and confidence. They are appended as linked facts when understanding changes and never count as action approval. No embedding or vector-search infrastructure is wired. Broader habits and goals beyond the explicitly supported phrase patterns remain future work.
 
 Victoria's memory evolves, but historical events, suggestions, approvals, and ledger entries remain immutable. A later correction, revised estimate, or newly learned habit must create a new linked record instead of changing what Victoria previously observed, suggested, approved, or recorded.
 
@@ -199,6 +199,7 @@ The MVP should not include:
 
 - Real bank transfers.
 - Plaid transfer or payment capabilities.
+- Plaid data retrieval or a Plaid-backed financial profile.
 - Unbounded or undisclosed Plaid data access.
 - Credit card payoff automation.
 - Investment recommendations.
@@ -208,11 +209,11 @@ The MVP should not include:
 - Multi-user household finances.
 - Tax advice.
 
-## Financial Profile Capability
+## Future Financial Profile Proposal (Outside The MVP)
 
-The MVP includes a financial profile capability. It uses user-authorized Plaid data to build a user-scoped profile, with a dedicated `financialprofilespecialist` responsible for interpreting the available data and metadata. Victoria receives relevant, bounded profile context at inference time to improve responses and estimates. This does not include real money transfers.
+The repository contains a sandbox-only Link-token adapter and append-only consent storage as isolated server-boundary scaffolding. They are not wired into the default application composition, do not fetch account or transaction data, and do not use production Plaid credentials. A Plaid-backed financial profile remains a proposal outside the current MVP and requires separate product and safety review before implementation.
 
-The proposed capability must be designed around these constraints:
+If this proposal is separately approved, it must be designed around these constraints:
 
 - Plaid data access must follow user authorization and clearly disclosed purpose. Request only the data products needed for agreed profile behavior; “as much data as possible” is not itself a product purpose or default permission.
 - A profile is derived, potentially incomplete context, not ground truth or financial advice. Preserve source, observation time, freshness, and uncertainty for profile facts; do not silently present stale or inferred facts as current.
@@ -220,9 +221,9 @@ The proposed capability must be designed around these constraints:
 - The specialist may produce profile facts or insights but cannot approve actions, create ledger entries, initiate transfers, or override deterministic policies. Provider-derived data does not constitute user approval.
 - Inject only context relevant to the current turn, with explicit limits and provenance. Do not expose raw account identifiers or unnecessary transaction details to the conversation agent.
 - A profile may inform an estimate, but estimates remain estimates and any savings ledger write still requires the existing exact user confirmation.
-- This capability does not enable real money movement. Plaid access is limited to the authorized read purposes defined for the profile; it must not enable transfer or payment capabilities.
+- Any future capability must not enable real money movement. Access must be limited to authorized read purposes; it must not enable transfer or payment capabilities.
 
-Product decisions still required before implementation include the initial Plaid data products and permitted purposes, profile schema, freshness rules, consent and disconnect lifecycle, retention/deletion requirements, and how profile facts are corrected when source data changes. This work is part of the non-UI MVP sequence and must be verified headlessly before UI work begins.
+Product decisions still required before any future implementation include the data products and permitted purposes, profile schema, freshness rules, consent and disconnect lifecycle, retention/deletion requirements, and how profile facts are corrected when source data changes. This is not part of the current MVP sequence.
 
 These may become useful later, but they should not distract from proving the core behavior first.
 

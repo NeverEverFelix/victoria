@@ -1,7 +1,8 @@
 import { describe, it } from "vitest";
 
 /**
- * Contract cases for the confirmed financial-profile MVP slice.
+ * Post-MVP proposal scenarios. These are intentionally pending until a separate
+ * product and safety review approves financial-data access.
  * Keep pending until the profile, authorization, and inference-context
  * interfaces are defined; do not encode a guessed Plaid product scope here.
  */
