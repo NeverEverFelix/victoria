@@ -31,6 +31,8 @@ import type {
   SavingsSuggestion,
   PendingSavingsEntryCorrection
 } from "./types.js";
+import { DEFAULT_CONVERSATION_CONTEXT_LIMIT } from "./memory/types.js";
+import { extractConversationalMemory } from "./memory/extract-preference.js";
 
 export interface VictoriaAgentDependencies {
   llm: LlmAdapter;
@@ -63,7 +65,6 @@ export class VictoriaAgent {
     string,
     { userId: string; classification: ClassifiedMessage; savingsEvent: SavingsEvent }
   >();
-  private readonly pendingIntentClarifications = new Map<string, { messages: readonly string[] }>();
   private nextActionNumber = 1;
   private nextEventNumber = 1;
   private nextProposalNumber = 1;
@@ -75,10 +76,36 @@ export class VictoriaAgent {
   constructor(private readonly dependencies: VictoriaAgentDependencies) {}
 
   async respond(request: AgentRequest): Promise<AgentResponse> {
-    return immutableSnapshot(await this.respondTurn(request));
+    const conversationId = request.conversationId ?? "default";
+    const priorContext = await this.dependencies.memory.getConversationContext(request.userId, conversationId);
+    const withUserMessage = [...priorContext, request.message].slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT);
+    await this.dependencies.memory.setConversationContext(request.userId, conversationId, withUserMessage);
+    const response = immutableSnapshot(await this.respondTurn(request, priorContext));
+    await this.dependencies.memory.setConversationContext(request.userId, conversationId,
+      [...withUserMessage, `Victoria: ${response.message}`].slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT));
+    return response;
   }
 
-  private async respondTurn(request: AgentRequest): Promise<AgentResponse> {
+  private async respondTurn(request: AgentRequest, conversationContext: readonly string[]): Promise<AgentResponse> {
+    const extractedMemory = extractConversationalMemory(request.message);
+    if (extractedMemory) {
+      const existing = await this.dependencies.memory.listConversationalMemories(request.userId);
+      const prior = [...existing].reverse().find((item) => item.category === extractedMemory.category && item.key === extractedMemory.key);
+      const isDuplicate = prior?.value === extractedMemory.value;
+      if (!isDuplicate) {
+        await this.dependencies.memory.rememberConversationalMemory(request.userId, {
+          ...extractedMemory,
+          evidence: request.message,
+          ...(prior ? { supersedesId: prior.id } : {})
+        });
+      }
+      const message = `Got it. I'll remember: “${extractedMemory.value}”`;
+      const classification: ClassifiedMessage = {
+        type: "general_finance", confidence: 1, summary: request.message, needsClarification: false
+      };
+      return { message, decision: { action: "reflect", classification, userFacingMessage: message } };
+    }
+
     const conversationKey = this.conversationKey(request);
     const pendingCorrectionId = this.pendingEntryCorrectionIdsByConversation.get(conversationKey);
     const pendingCorrection = pendingCorrectionId
@@ -221,15 +248,16 @@ export class VictoriaAgent {
     }
 
     const memory = await this.dependencies.memory.getMemoryForUser(request.userId);
-    const pendingIntentContext = this.pendingIntentClarifications.get(conversationKey);
-    const classificationMessages = [...(pendingIntentContext?.messages ?? []), request.message].slice(-4);
     const { classification, teamAdvice } = await this.classifyWithTeam(
-      request.message, memory, pendingIntentContext?.messages ?? []
+      request.message, memory, conversationContext
     );
-    if (classification.type === "unclear") {
-      this.pendingIntentClarifications.set(conversationKey, { messages: classificationMessages });
-    } else {
-      this.pendingIntentClarifications.delete(conversationKey);
+    if (["avoided_spend", "regretful_spend", "pattern_reflection"].includes(classification.type)) {
+      await this.dependencies.memory.rememberDecision(request.userId, {
+        type: classification.type,
+        summary: classification.summary,
+        ...(classification.amountCents === undefined ? {} : { amountCents: classification.amountCents }),
+        ...(classification.merchantName === undefined ? {} : { merchantName: classification.merchantName })
+      });
     }
 
     if (classification.type === "real_money_movement_request") {

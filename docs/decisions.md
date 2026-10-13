@@ -77,7 +77,7 @@ Implications:
 
 Decision:
 
-The MVP must not initiate bank transfers or wire production Plaid behavior.
+The MVP must not initiate bank transfers or enable Plaid transfer/payment behavior.
 
 Why:
 
@@ -86,7 +86,7 @@ Real money movement requires stronger approvals, auditing, idempotency, error ha
 Implications:
 
 - `eventuallyMoveMoney` should remain blocked or unused in MVP flows.
-- Plaid production access should not be added yet.
+- Plaid read access for the confirmed financial-profile capability is handled only through its bounded, separately reviewed MVP slice; it cannot enable real transfers.
 - Any future real transfer work needs explicit approval and new tests.
 
 ### Memory Evolves While Financial History Remains Immutable
@@ -106,6 +106,22 @@ Implications:
 - A revised estimate creates a new suggestion rather than changing an earlier suggestion.
 - A correction, reversal, or superseding action creates a new linked record rather than deleting or overwriting the original.
 - Approvals remain bound to the exact historical proposal and user that were approved.
+
+### SQLite Owns Short-Term Context; PostgreSQL Backs It Up
+
+Decision: Confirmed on 2026-10-13. Store short-lived current-conversation clarification context in SQLite first, with a local outbox retrying its PostgreSQL backup. Store durable remembered conversational decisions in PostgreSQL and cache reads in SQLite.
+
+Implications:
+
+- SQLite is authoritative for short-term clarification context; it remains available during a PostgreSQL outage and expires after 30 minutes.
+- A SQLite outbox retries the PostgreSQL backup on later context access. This local-first order applies to short-term context; durable decisions still commit to PostgreSQL before refreshing their SQLite cache.
+- PostgreSQL can restore unexpired short-term context after the SQLite cache is rebuilt. SQLite is per-process and is not a cross-instance coordination mechanism.
+- Current conversation context includes the latest 20 user and Victoria messages, scoped by user and conversation.
+- Durable remembered decisions are append-only. Financial events, approvals, and ledger entries remain owned by their separate immutable repositories.
+- Durable conversational facts record category, key, value, evidence, confidence, and optional link to a superseded fact. A changed preference appends a new linked fact rather than mutating the old one.
+- Victoria automatically records only direct, clear USD savings-amount preferences in this slice; tentative or ambiguous wording is not saved. Remembering a preference never approves a ledger action.
+- The extractor also supports direct general preferences, recurring habit statements, and explicit goal statements. These structured facts are source records for a future semantic/vector index; this does not generate embeddings or authorize a goal allocation.
+- This does not yet persist learned habits or goals or select a SQLite file path for a deployed runtime.
 
 ### Recorded Amount Corrections Use Linked Adjustment Records
 
@@ -143,7 +159,45 @@ Implications:
 - UI implementation becomes the final product phase after the non-UI work queue is complete and `npm run check` passes.
 - End-to-end browser journeys and production deployment follow the UI phase.
 
+### Financial Profile And Plaid Specialist Are In MVP Scope
+
+Decision: Confirmed on 2026-10-07. Financial profiles built from user-authorized Plaid data, including the `financialprofilespecialist` and relevant profile context injected at inference time, are part of the MVP. Real money transfers remain out of scope.
+
+Scope:
+
+Build a user-scoped financial profile from data the user has authorized Victoria to access through Plaid. A dedicated `financialprofilespecialist` builds or refreshes the base profile and provides relevant context to Victoria at inference time.
+
+Constraints for any future design:
+
+- Authorization, data purpose, and the specific Plaid products/scopes must be clear before access; do not equate “as much data as possible” with appropriate default access.
+- Profile facts carry provenance, observed time, freshness, and uncertainty, and distinguish source observations from derived inferences.
+- Only relevant, bounded context should be injected; raw account identifiers and unnecessary transaction details should not be sent to the conversation agent.
+- Profile data is advisory context. The specialist cannot approve actions, create ledger entries, or move money. Existing user confirmation remains required for savings entries.
+- User separation, access controls, retention, refresh, disconnect, and deletion behavior must be defined before implementation.
+- This scope does not include Plaid transfer or payment capabilities, or real money movement.
+
+The exact Plaid data products, profile schema, consent flow, and retention schedule remain unresolved. Profile work belongs in the non-UI MVP sequence; UI remains deferred until non-UI work is complete.
+
 ## Open Questions
+
+### What Should Victoria's Financial Profile Contain?
+
+Question:
+
+Which user-authorized Plaid data products and metadata are needed to build a useful base profile, and what purposes will each serve?
+
+Open decisions include:
+
+- The minimum necessary Plaid products/scopes for the first profile version.
+- Which profile facts are directly observed, derived, or inferred, and how each is represented.
+- Freshness thresholds and how stale, missing, or conflicting records affect inference.
+- Consent language, connection/disconnection, retention, refresh, deletion, and correction behavior.
+- What profile context can be injected into inference and how it is minimized and isolated per user.
+- How the specialist is evaluated and how its outputs remain advisory.
+
+Current default:
+
+Do not implement the Plaid/profile slice until these decisions are reviewed and its headless acceptance criteria are defined. The capability itself is confirmed MVP scope.
 
 ### What Makes Saved Money Feel Protected With One Account?
 

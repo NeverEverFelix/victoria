@@ -53,7 +53,7 @@ Recommended starting stack:
 - Prisma for modeling and querying the database from TypeScript.
 - OpenAI for natural language understanding, reasoning, and agent behavior.
 - A mocked savings ledger before any real money movement.
-- Plaid or similar banking integrations later, after the core behavior is proven.
+- User-authorized Plaid read access for the MVP financial profile, after its product and data-safety decisions are defined. Transfers remain out of scope.
 
 The first version should prove the behavioral loop before it tries to become a bank. Victoria can begin by recording saved amounts in an internal ledger, showing progress, and building trust. Real transfers should come later and should always require explicit user approval.
 
@@ -133,7 +133,7 @@ Database
 
 Integrations
   OpenAI
-  Plaid later
+  Plaid financial-profile reads (MVP, bounded and user-authorized)
   Banking or payment movement later
   Push, SMS, or email notifications later
 ```

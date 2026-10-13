@@ -13,6 +13,29 @@ import type { SavingsEntry } from "../../../src/domain/savings/types.js";
 describe("VictoriaAgent", () => {
   afterEach(() => vi.useRealTimers());
 
+  it("provides the rolling user and Victoria conversation to later classifications", async () => {
+    const contexts: (readonly string[])[] = [];
+    const base = new MockLlmAdapter();
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({
+      llm: {
+        async classifyMessage(input) {
+          contexts.push(input.conversationContext ?? []);
+          return base.classifyMessage(input);
+        },
+        draftResponse: (input) => base.draftResponse(input)
+      },
+      memory,
+      tools: new MockVictoriaTools()
+    });
+    const request = { userId: "user_context", conversationId: "chat_context" };
+    await agent.respond({ ...request, message: "I almost bought a $9 book but decided to wait." });
+    await agent.respond({ ...request, message: "I made coffee at home instead of going to Blue Bottle." });
+
+    expect(contexts.some((context) => context.includes("I almost bought a $9 book but decided to wait."))).toBe(true);
+    expect(contexts.some((context) => context.some((message) => message.startsWith("Victoria: ")))).toBe(true);
+  });
+
   it("[COR-001] returns frozen financial history snapshots that cannot rewrite an approved proposal or entry", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);

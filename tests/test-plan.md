@@ -88,6 +88,16 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria stores conversation context needed for follow-up questions.
 - Victoria avoids using stale or unrelated memory for a new decision.
 - Victoria can use updated memory for a future suggestion without rewriting an earlier suggestion.
+- PostgreSQL is authoritative for remembered decisions, while SQLite caches those durable reads.
+- Current conversation context is short-term SQLite memory, scoped by user and conversation, retaining up to 20 user and Victoria messages; it remains available during a PostgreSQL outage while a local outbox retries its backup.
+- PostgreSQL can restore unexpired clarification context after SQLite cache loss, and expired context is not returned.
+- Durable conversational memories retain user-stated preferences with evidence and confidence, isolate by user, and supersede earlier facts through linked append-only records.
+- Durable conversational decisions are append-only and cannot mutate financial event, approval, or ledger history.
+- An explicit “I prefer saving $20 rather than $50 at a time” statement creates an evidence-backed user preference but no savings proposal or ledger entry.
+- Tentative, ambiguous, equal-amount, or malformed savings preference statements do not create a memory fact.
+- A changed explicit preference appends a fact linked to the prior preference; another user's preference is never returned.
+- A direct preference, recurring habit, or stated goal is stored as an evidence-backed structured fact; an identical repeat is deduplicated and an uncertain statement is ignored.
+- Remembering a habit or goal does not create a savings proposal or goal allocation; structured facts remain available as source records for future PostgreSQL semantic/vector indexing.
 
 ## Conversation Quality
 
@@ -136,6 +146,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Turn acceptance replays the original user-scoped idempotent request, rejects reuse with a different conversation or request fingerprint, and compare-and-transition permits only one caller at an expected revision.
 - Turn reads and transitions return no data across user/conversation boundaries; the in-memory adapter is explicitly limited to a single process.
 - Turn submission rejects unauthenticated callers, hides conversations the caller does not own, validates JSON and idempotency headers, applies body limits, and returns no submitted message in the response.
+- PostgreSQL turn storage enforces user-scoped idempotency in the database, replays identical submissions, rejects key reuse with different content, scopes reads by user and conversation, and applies lifecycle transitions under a row lock and expected revision.
 - Turn submission fails closed when identity, ownership, request fingerprinting, or repository admission is unavailable; internal errors are not exposed to callers.
 - The mock core composition uses Financial Moment classification, validates Savings Reasoning against deterministic estimates, and uses Companion Voice only when its assessment agrees with the core decision.
 - The opt-in OpenAI team composition calls each advisory specialist through mocked HTTP in tests, preserves deterministic assessment validation and exact approval in the core, and blocks provider voice claims about real transfers.
@@ -167,6 +178,19 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 
 ## Future Integration Boundaries
 
+The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-link-token.test.ts`](unit/app/plaid-link-token.test.ts). Broader financial-profile cases remain pending in [`contracts/financial-profile.pending.test.ts`](contracts/financial-profile.pending.test.ts); convert them to executable assertions as the corresponding bounded interfaces and behaviors are implemented.
+
+- Financial profile setup fetches no Plaid data before explicit user authorization.
+- Plaid profile access is limited to the approved read products and purposes; transfer/payment capabilities are unavailable.
+- Financial profile data and derived facts remain scoped to the owning user across storage, specialist inputs, and inference context.
+- Profile facts preserve source, observation time, freshness, and uncertainty; stale, missing, conflicting, or malformed data cannot be presented as certain current fact.
+- `financialprofilespecialist` failures or invalid outputs fall back safely and cannot approve actions, create ledger entries, or trigger transfers.
+- Inference receives only relevant bounded profile context and excludes unnecessary raw account identifiers and transaction details.
+- Disconnect prevents future fetches/injection and applies the documented retention/deletion behavior.
+- Plaid consent grants and revocations are append-only, user-scoped events; a revoke applies only to the exact current grant and repeated revoke is idempotent.
+- Re-grant after revocation creates a new event with the newly approved product scope; prior grant and revocation history remain unchanged.
+- The consent repository rejects empty/unsupported product scopes and does not reveal another user's current consent.
+- Profile-informed savings estimates still require explicit approval before a mocked ledger write.
 - Plaid transaction imports normalize merchant names consistently.
 - Banking transfer requests are idempotent.
 - Failed transfer attempts do not create completed savings entries.

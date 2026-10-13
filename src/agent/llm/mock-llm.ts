@@ -6,7 +6,10 @@ import type { ClassifyMessageInput, DraftResponseInput, LlmAdapter } from "./typ
 export class MockLlmAdapter implements LlmAdapter {
   async classifyMessage(input: ClassifyMessageInput): Promise<ClassifiedMessage> {
     const message = input.userMessage.toLowerCase();
-    const contextualMessage = [...(input.conversationContext ?? []), input.userMessage].join(" ").toLowerCase();
+    const contextualMessage = [
+      ...(isContextualReply(input.userMessage) ? (input.conversationContext ?? []).filter((item) => !item.startsWith("Victoria: ")).slice(-1) : []),
+      input.userMessage
+    ].join(" ").toLowerCase();
     const amountParse = parseExplicitDollarAmount(input.userMessage);
     const amountCents = amountParse.status === "valid" ? amountParse.amountCents : undefined;
     const amountIssue = amountParse.status === "invalid_value" || amountParse.status === "multiple_amounts" || amountParse.status === "invalid_precision" || amountParse.status === "unsupported_currency"
@@ -122,6 +125,12 @@ export class MockLlmAdapter implements LlmAdapter {
   async draftResponse(input: DraftResponseInput): Promise<string> {
     return input.responseGoal;
   }
+}
+
+function isContextualReply(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  if (/^(?:about\s*)?\$?\d/.test(normalized)) return false;
+  return normalized.length < 40 && /^(?:yes\b|no\b|yeah\b|yep\b|i did\b|it was\b|that one\b|this one\b|emergency fund\b|trip fund\b|same amount\b)/.test(normalized);
 }
 
 function inferGoalName(message: string): string | undefined {

@@ -1,7 +1,7 @@
 import { formatUsd } from "../domain/money.js";
 import type { FinancialMomentFinding, SavingsAssessment } from "./team-prototype.js";
 
-const noMovementDisclosurePattern = /\bno\s+(?:real\s+)?(?:money|funds)\s+(?:(?:has|have|was|were)\s+)?(?:been\s+)?(?:not\s+)?(?:moved|transferred|sent|deposited)(?:\s+yet)?\b/gi;
+const noMovementDisclosurePattern = /\bno\s+(?:real\s+)?(?:money|funds)\s+(?:(?:has|have|was|were)\s+)?(?:been\s+)?(?:moved|transferred|sent|deposited)(?:\s+yet)?\b/gi;
 
 /** Locked instructions for the voice specialist; the response guard enforces them afterward. */
 export function requiredDisclosures(finding: FinancialMomentFinding, assessment: SavingsAssessment): readonly string[] {
@@ -65,8 +65,11 @@ function isSafeVoiceDraft(candidate: unknown, finding: FinancialMomentFinding, a
 }
 
 function claimsProhibitedMoneyMovement(message: string): boolean {
+  if (/\bno\s+(?:real\s+)?(?:money|funds)\s+(?:has|have|was|were)\s+not\s+(?:been\s+)?(?:moved|transferred|sent|deposited)\b/i.test(message)) {
+    return true;
+  }
   const safeNegations = [
-    /\bno\s+(?:real\s+)?(?:money|funds)\s+(?:(?:has|have|was|were)\s+)?(?:been\s+)?(?:not\s+)?(?:moved|transferred|sent|deposited)(?:\s+yet)?\b/gi,
+    /\bno\s+(?:real\s+)?(?:money|funds)\s+(?:(?:has|have|was|were)\s+)?(?:been\s+)?(?:moved|transferred|sent|deposited)(?:\s+yet)?\b/gi,
     /\b(?:money|funds)\s+(?:(?:has|have|was|were)\s+)?not\s+(?:been\s+)?(?:moved|transferred|sent|deposited)(?:\s+yet)?\b/gi,
     /\b(?:i|we|you|victoria)\s+(?:did\s+not|didn't|have\s+not|haven't|has\s+not|hasn't|never)\s+(?:move|moves|moved|moving|transfer|transfers|transferred|transferring|send|sends|sent|sending|deposit|deposits|deposited|depositing)\b/gi
   ];

@@ -221,6 +221,8 @@ Real-transfer idempotency and provider retry policies are deferred because real 
 | ID      | Normative rule                                                                                                         | Status                       | Executable coverage                                  |
 | ------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------- |
 | MEM-001 | User-specific habits, goals, and remembered decisions **MUST** be returned only to the user they belong to.            | Enforced in mock memory and estimates | `tests/unit/agent/victoria-agent.test.ts` |
+| MEM-002 | A preference, recurring habit, or stated goal **MUST** be stored only from a direct, unambiguous user statement with source wording and confidence; remembering it **MUST NOT** count as approval for a savings or goal-allocation action. | Enforced for explicit preferences, habits, and goals | `tests/unit/agent/preference-memory.test.ts` |
+| MEM-003 | A changed conversational memory fact **MUST** append a new fact linked to the prior fact and **MUST NOT** rewrite the prior fact; an identical repeated fact **SHOULD NOT** create a duplicate. | Enforced by memory provider contract | `tests/unit/agent/preference-memory.test.ts` |
 
 Example: an approved $27 entry later corrected to $24 retains the $27 entry and appends a linked adjustment of -300 cents. The corrected effective amount is $24.
 

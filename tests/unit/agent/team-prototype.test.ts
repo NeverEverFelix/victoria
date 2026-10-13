@@ -230,6 +230,15 @@ describe("AgentTeamPrototype", () => {
     expect(turn.message).toContain("You do not need to transfer anything");
     expect(turn.message).toContain("No real money has been transferred");
   });
+
+  it("rejects double-negative no-movement disclosures", async () => {
+    const specialists = team({ voiceMessage: "No real money has not moved." });
+    const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
+
+    expect(turn.degradedRoles).toContain("companionVoice");
+    expect(turn.message).toContain("No real money has moved.");
+    expect(turn.message).not.toContain("has not moved");
+  });
 });
 
 function team(overrides: {
