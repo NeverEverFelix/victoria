@@ -86,7 +86,7 @@ Real money movement requires stronger approvals, auditing, idempotency, error ha
 Implications:
 
 - `eventuallyMoveMoney` should remain blocked or unused in MVP flows.
-- Plaid read access for the confirmed financial-profile capability is handled only through its bounded, separately reviewed MVP slice; it cannot enable real transfers.
+- Plaid production access and financial-profile data retrieval are outside the MVP. Any future Plaid/profile work requires a separately approved scope and safety review.
 - Any future real transfer work needs explicit approval and new tests.
 
 ### Memory Evolves While Financial History Remains Immutable
