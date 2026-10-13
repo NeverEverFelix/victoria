@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS victoria_plaid_consent_events (
   products text[] NOT NULL CHECK (
     cardinality(products) > 0 AND
     array_position(products, NULL) IS NULL AND
-    products <@ ARRAY['assets', 'auth', 'employment', 'identity', 'income_verification', 'investments', 'liabilities', 'transactions']::text[]
+    products <@ ARRAY['transactions']::text[]
   ),
   purpose text NOT NULL CHECK (purpose = 'financial_profile'),
   happened_at timestamptz NOT NULL,

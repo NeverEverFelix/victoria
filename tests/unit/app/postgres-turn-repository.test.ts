@@ -77,7 +77,7 @@ describe("PostgresTurnRepository", () => {
   it("scopes reads and locks the row before compare-and-transition", async () => {
     const pool = new ScriptedPool((sql) => {
       if (sql.startsWith("SELECT")) return { rows: [row()], rowCount: 1 };
-      if (sql.startsWith("UPDATE")) return { rows: [], rowCount: 1 };
+      if (sql.startsWith("UPDATE")) return { rows: [{ id: "turn-1" }] };
       return { rows: [], rowCount: 0 };
     });
     const repository = new PostgresTurnRepository(pool);

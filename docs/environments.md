@@ -53,7 +53,7 @@ The config parser enforces the most important environment boundaries:
 - `APP_ENV=production` requires `NODE_ENV=production`.
 - `DATABASE_URL` must use `postgresql://` or `postgres://`.
 - `DB_SSL=true` enables TLS with certificate verification for the migration runner and explicit PostgreSQL turn-store factory; use `false` only for trusted local/test PostgreSQL.
-- `npm run db:migrate` requires `ALLOW_DB_MIGRATE=1` and refuses when `APP_ENV` or `NODE_ENV` is `production`. Production migrations require a separately reviewed deployment process.
+- `npm run db:migrate` requires `ALLOW_DB_MIGRATE=true`, a matching local/development or test/test environment pair, a loopback database host, and a database name ending in `_local` or `_test`. Production migrations require a separately reviewed deployment process.
 - Production `DATABASE_URL` must not point to `localhost`, `127.0.0.1`, or `0.0.0.0`.
 - Production `DATABASE_URL` must not use example hosts or placeholder passwords.
 - Local, test, staging, and production database names must not be reused across environments.

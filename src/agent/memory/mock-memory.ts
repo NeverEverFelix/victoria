@@ -59,6 +59,11 @@ export class MockMemoryProvider implements MemoryProvider {
   async rememberConversationalMemory(
     userId: string, memory: Omit<ConversationalMemory, "id" | "createdAt">
   ): Promise<ConversationalMemory> {
+    if (!userId.trim() || !memory.key.trim() || !memory.value.trim() || !memory.evidence.trim() ||
+        !Number.isFinite(memory.confidence) || memory.confidence < 0 || memory.confidence > 1 ||
+        !["preference", "goal", "habit", "other"].includes(memory.category)) {
+      throw new Error("Conversational memory must have a user, key, value, evidence, and confidence from 0 to 1.");
+    }
     const userMemories = this.memoriesByUser.get(userId) ?? [];
     const saved = immutableSnapshot({ ...memory, id: `memory_${userMemories.length + 1}`, createdAt: new Date().toISOString() });
     userMemories.push(saved);

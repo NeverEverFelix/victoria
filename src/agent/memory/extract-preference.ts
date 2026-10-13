@@ -6,7 +6,7 @@ export interface SavingsAmountPreference {
   readonly comparisonAmountCents: number;
 }
 
-export type ExtractedConversationalMemory = Omit<ConversationalMemory, "id" | "createdAt" | "evidence" | "supersedesId">;
+export type ExtractedConversationalMemory = Omit<ConversationalMemory, "id" | "createdAt" | "supersedesId">;
 
 const amount = String.raw`\$(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)`;
 const preferencePattern = new RegExp(
@@ -38,6 +38,7 @@ export function extractConversationalMemory(message: string): ExtractedConversat
       category: "preference",
       key: "savings_contribution_amount",
       value: `Prefers saving ${formatAmount(savingsPreference.preferredAmountCents)} rather than ${formatAmount(savingsPreference.comparisonAmountCents)} at a time.`,
+      evidence: message,
       confidence: 1
     };
   }
@@ -51,6 +52,7 @@ export function extractConversationalMemory(message: string): ExtractedConversat
         category: "preference",
         key: preferenceKey(subject),
         value: `Prefers ${subject}.`,
+        evidence: message,
         confidence: 0.95
       };
     }
@@ -63,6 +65,7 @@ export function extractConversationalMemory(message: string): ExtractedConversat
       category: "habit",
       key: habitKey(action),
       value: `Regularly ${action}.`,
+      evidence: message,
       confidence: 0.9
     };
   }
@@ -74,6 +77,7 @@ export function extractConversationalMemory(message: string): ExtractedConversat
       category: "goal",
       key: goalKey(target),
       value: `Wants to save for ${target}.`,
+      evidence: message,
       confidence: 0.95
     };
   }

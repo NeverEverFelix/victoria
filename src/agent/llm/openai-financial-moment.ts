@@ -3,6 +3,7 @@ import { z } from "zod";
 import { parseExplicitDollarAmount } from "../../domain/financial-events/parse-explicit-amount.js";
 import { parseExplicitCorrectionAmount } from "../../domain/financial-events/parse-correction-amount.js";
 import type { ProviderUsageReporter } from "../telemetry/provider-usage-reporter.js";
+import type { ConversationalMemory } from "../memory/types.js";
 import type { ClassifiedMessage } from "../types.js";
 import { validateClassifiedMessage } from "../validation.js";
 import type { ClassifyMessageInput, LlmAdapter } from "./types.js";
@@ -75,7 +76,7 @@ export class OpenAiFinancialMomentAdapter implements LlmAdapter {
         input: JSON.stringify({
           currentMessage: input.userMessage,
           recentConversation: (input.conversationContext ?? []).slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT),
-          userMemories: input.memory?.conversationalMemories ?? []
+          userMemories: providerSafeMemories(input.memory?.conversationalMemories)
         }),
         text: {
           format: {
@@ -154,4 +155,12 @@ function getOutputText(payload: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function providerSafeMemories(memories: readonly ConversationalMemory[] | undefined): Array<{
+  category: ConversationalMemory["category"];
+  key: string;
+  value: string;
+}> {
+  return (memories ?? []).slice(0, 20).map(({ category, key, value }) => ({ category, key, value }));
 }

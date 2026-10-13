@@ -1,12 +1,4 @@
-export type PlaidReadProduct =
-  | "assets"
-  | "auth"
-  | "employment"
-  | "identity"
-  | "income_verification"
-  | "investments"
-  | "liabilities"
-  | "transactions";
+export type PlaidReadProduct = "transactions";
 
 export interface PlaidConnectionConsent {
   readonly userId: string;
@@ -22,9 +14,7 @@ export interface PlaidLinkTokenDependencies {
   createLinkToken(input: { clientUserId: string; products: readonly PlaidReadProduct[] }): Promise<string>;
 }
 
-const PLAID_READ_PRODUCTS: readonly PlaidReadProduct[] = [
-  "assets", "auth", "employment", "identity", "income_verification", "investments", "liabilities", "transactions"
-];
+const PLAID_READ_PRODUCTS: readonly PlaidReadProduct[] = ["transactions"];
 
 export function isPlaidReadProduct(value: unknown): value is PlaidReadProduct {
   return typeof value === "string" && PLAID_READ_PRODUCTS.includes(value as PlaidReadProduct);

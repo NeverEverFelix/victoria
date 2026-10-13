@@ -146,10 +146,10 @@ describe("PostgresPlaidConsentRepository", () => {
     const repository = new PostgresPlaidConsentRepository(pool);
 
     const refreshed = await repository.recordGrant({
-      eventId: "grant-2", userId: "user-1", products: ["auth", "transactions"], grantedAt: "2026-10-07T14:00:00.000Z"
+      eventId: "grant-2", userId: "user-1", products: ["transactions"], grantedAt: "2026-10-07T14:00:00.000Z"
     });
 
-    expect(refreshed).toMatchObject({ consentId: "grant-2", status: "active", products: ["auth", "transactions"] });
+    expect(refreshed).toMatchObject({ consentId: "grant-2", status: "active", products: ["transactions"] });
     expect(pool.statements.find(({ sql }) => sql.startsWith("INSERT"))?.values.at(-1)).toBe("revoke-1");
   });
 });

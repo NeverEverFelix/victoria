@@ -9,11 +9,13 @@ describe("database migration runner safety gates", () => {
       cwd: process.cwd(),
       encoding: "utf8",
       env: {
-        ...process.env,
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
         APP_ENV: "local",
         NODE_ENV: "development",
         DATABASE_URL: "postgresql://example:example@127.0.0.1:5432/example",
-        ALLOW_DB_MIGRATE: "false"
+        ALLOW_DB_MIGRATE: "false",
+        DB_SSL: "false"
       }
     });
 
@@ -27,16 +29,38 @@ describe("database migration runner safety gates", () => {
       cwd: process.cwd(),
       encoding: "utf8",
       env: {
-        ...process.env,
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
         APP_ENV: "production",
         NODE_ENV: "production",
         DATABASE_URL: "postgresql://example:example@127.0.0.1:5432/example",
-        ALLOW_DB_MIGRATE: "1"
+        ALLOW_DB_MIGRATE: "true",
+        DB_SSL: "false"
       }
     });
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("disabled in production");
+    expect(result.stderr).toContain("correctly paired local or test environment");
+    expect(result.stderr).not.toContain("ECONNREFUSED");
+  });
+
+  it("refuses a remote database even when local environment flags are correct", () => {
+    const result = spawnSync(process.execPath, [migrationScript.pathname], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        APP_ENV: "local",
+        NODE_ENV: "development",
+        DATABASE_URL: "postgresql://example:example@db.example.com:5432/victoria_local",
+        ALLOW_DB_MIGRATE: "true",
+        DB_SSL: "true"
+      }
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("loopback PostgreSQL host");
     expect(result.stderr).not.toContain("ECONNREFUSED");
   });
 });

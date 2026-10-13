@@ -117,14 +117,15 @@ export class PostgresTurnRepository implements TurnRepository {
         throw new TurnRevisionConflictError(input.expectedRevision, current.revision);
       }
       const updated = transitionTurn(current, input.transition);
-      const result = await client.query(
+      const result = await client.query<{ id: string }>(
         `UPDATE victoria_turns
          SET status = $1, attempt = $2, revision = $3, updated_at = $4, result_id = $5, failure_code = $6
-         WHERE id = $7 AND user_id = $8 AND conversation_id = $9 AND revision = $10`,
+         WHERE id = $7 AND user_id = $8 AND conversation_id = $9 AND revision = $10
+         RETURNING id`,
         [updated.status, updated.attempt, updated.revision, updated.updatedAt, updated.resultId ?? null,
           updated.failureCode ?? null, input.turnId, input.userId, input.conversationId, input.expectedRevision]
       );
-      if (result.rowCount !== 1) {
+      if (result.rows.length !== 1) {
         throw new TurnRevisionConflictError(input.expectedRevision, input.expectedRevision + 1);
       }
       await client.query("COMMIT");
