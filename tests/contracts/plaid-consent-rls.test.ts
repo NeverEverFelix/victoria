@@ -5,6 +5,8 @@ const migration = readFileSync(new URL("../../db/migrations/0007_plaid_consent_r
 
 describe("Plaid consent event database boundary", () => {
   it("limits authenticated access to owner reads and keeps writes server-side", () => {
+    expect(migration).toMatch(/to_regprocedure\('auth\.uid\(\)'\)/i);
+    expect(migration).toMatch(/requires Supabase auth\.uid\(\)/i);
     expect(migration).toMatch(/ALTER TABLE victoria_plaid_consent_events ENABLE ROW LEVEL SECURITY/i);
     expect(migration).toMatch(/FOR SELECT TO authenticated[\s\S]*auth\.uid\(\)::text/i);
     expect(migration).toMatch(/REVOKE ALL ON victoria_plaid_consent_events FROM PUBLIC, anon, authenticated/i);

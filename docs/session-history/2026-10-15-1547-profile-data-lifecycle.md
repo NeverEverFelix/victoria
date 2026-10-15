@@ -12,6 +12,7 @@ Added owner-scoped RLS for Plaid consent history and a concrete but unapproved p
 ## Work Completed
 
 - Added [migration 0007](../../db/migrations/0007_plaid_consent_rls.sql): authenticated users may read only their own consent history; only the server role can write it.
+- Added a migration preflight that fails clearly unless the Supabase `auth.uid()` function and expected roles are present.
 - Added [consent RLS contract test](../../tests/contracts/plaid-consent-rls.test.ts) and coverage expectation in [test-plan.md](../../tests/test-plan.md).
 - Wrote [the data-lifecycle proposal](../specification/financial-profile-data-lifecycle-proposal.md), covering proposed 90-day transaction retention, disconnect deletion, consent-history/account-erasure conflict, backups, and key rotation.
 - Updated [decisions.md](../decisions.md) and [agent-work-queue.md](../agent-work-queue.md) to distinguish the new RLS boundary from the still-unapproved lifecycle decisions and incomplete deployment verification.
@@ -28,6 +29,7 @@ Added owner-scoped RLS for Plaid consent history and a concrete but unapproved p
 - `npx vitest run tests/contracts/plaid-consent-rls.test.ts tests/contracts/plaid-data-boundary.test.ts tests/unit/app/migration-script.test.ts` passed: 3 files, 5 tests.
 - Local PostgreSQL scratch DB applied migrations `0002`, `0005`, `0006`, and `0007`. With a stub `auth.uid()`, an authenticated user saw one of two users' consent and transaction rows, had no Item-token table access, and could not insert consent history.
 - `npm run check` passed: 52 files passed, 6 skipped; 425 tests passed, 4 skipped, 9 todo.
+- AI review questioned the Supabase prerequisite and table-owner bypass. The migration now reports its required Supabase auth setup explicitly; RLS is for client roles, while the table owner remains a trusted server boundary. No live application database role was configured to validate a forced-RLS alternative.
 - One pre-existing lint warning remains in `tests/unit/agent/memory-orchestrator.test.ts:48`; Node reports the existing experimental SQLite warning.
 - Full migrations `0001`-`0007` were not applied as a chain. Local PostgreSQL has no `vector` extension available, and Docker is not running; no Supabase project or credentials were used.
 
