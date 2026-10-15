@@ -21,6 +21,12 @@ describe("Plaid lifecycle contract", () => {
     expect(lifecycleMigration).toMatch(/DELETE FROM public\.victoria_memory_embeddings/i);
     expect(lifecycleMigration).toMatch(/DELETE FROM public\.victoria_conversational_memories/i);
     expect(lifecycleMigration).toMatch(/WITH RECURSIVE doomed/i);
+    const purgeFunctionStart = lifecycleMigration.indexOf("CREATE OR REPLACE FUNCTION victoria_purge_plaid_profile_memories");
+    const expiryFunctionStart = lifecycleMigration.indexOf("CREATE OR REPLACE FUNCTION victoria_expire_plaid_data");
+    const purgeFunction = lifecycleMigration.slice(purgeFunctionStart, expiryFunctionStart);
+    expect(purgeFunction).toMatch(/GET DIAGNOSTICS removed_embeddings = ROW_COUNT/i);
+    expect(purgeFunction).toMatch(/RETURN removed_memories \+ removed_embeddings/i);
+    expect(lifecycleMigration).toMatch(/RETURN removed_transactions \+ removed_embeddings \+ removed_memories/i);
   });
 
   it("LIFE-004 stores only encrypted token envelopes in the persistent retry record", () => {

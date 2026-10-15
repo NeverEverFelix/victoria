@@ -59,7 +59,9 @@ $$;
 CREATE OR REPLACE FUNCTION victoria_purge_plaid_profile_memories(p_user_id text)
 RETURNS integer LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, public AS $$
-DECLARE removed integer;
+DECLARE
+  removed_memories integer;
+  removed_embeddings integer;
 BEGIN
   IF p_user_id IS NULL OR length(trim(p_user_id)) = 0 THEN
     RAISE EXCEPTION 'user id required';
@@ -78,6 +80,7 @@ BEGIN
       ) SELECT id, user_id FROM doomed
     ) d
     WHERE e.user_id = d.user_id AND e.memory_id = d.id;
+  GET DIAGNOSTICS removed_embeddings = ROW_COUNT;
   DELETE FROM public.victoria_conversational_memories
     WHERE user_id = p_user_id AND id IN (
       WITH RECURSIVE doomed(id) AS (
@@ -88,8 +91,8 @@ BEGIN
           JOIN doomed parent ON child.user_id = p_user_id AND child.supersedes_id = parent.id
       ) SELECT id FROM doomed
     );
-  GET DIAGNOSTICS removed = ROW_COUNT;
-  RETURN removed;
+  GET DIAGNOSTICS removed_memories = ROW_COUNT;
+  RETURN removed_memories + removed_embeddings;
 END;
 $$;
 REVOKE ALL ON FUNCTION victoria_purge_plaid_profile_memories(text) FROM PUBLIC, authenticated;
@@ -98,10 +101,13 @@ GRANT EXECUTE ON FUNCTION victoria_purge_plaid_profile_memories(text) TO service
 CREATE OR REPLACE FUNCTION victoria_expire_plaid_data(p_now timestamptz DEFAULT now())
 RETURNS integer LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, public AS $$
-DECLARE removed integer;
+DECLARE
+  removed_transactions integer;
+  removed_memories integer;
+  removed_embeddings integer;
 BEGIN
   DELETE FROM public.victoria_plaid_transactions WHERE expires_at <= p_now;
-  GET DIAGNOSTICS removed = ROW_COUNT;
+  GET DIAGNOSTICS removed_transactions = ROW_COUNT;
   PERFORM set_config('app.plaid_profile_purge_user', 'retention-job', true);
   DELETE FROM public.victoria_memory_embeddings e
     USING public.victoria_conversational_memories m
@@ -110,12 +116,14 @@ BEGIN
       AND coalesce(m.observed_through, m.created_at::date) < (p_now::date - 90)
       AND NOT EXISTS (SELECT 1 FROM public.victoria_conversational_memories child
         WHERE child.user_id=m.user_id AND child.supersedes_id=m.id);
+  GET DIAGNOSTICS removed_embeddings = ROW_COUNT;
   DELETE FROM public.victoria_conversational_memories m
     WHERE m.source_type = 'plaid_transaction_profile'
       AND coalesce(m.observed_through, m.created_at::date) < (p_now::date - 90)
       AND NOT EXISTS (SELECT 1 FROM public.victoria_conversational_memories child
         WHERE child.user_id=m.user_id AND child.supersedes_id=m.id);
-  RETURN removed;
+  GET DIAGNOSTICS removed_memories = ROW_COUNT;
+  RETURN removed_transactions + removed_embeddings + removed_memories;
 END;
 $$;
 REVOKE ALL ON FUNCTION victoria_expire_plaid_data(timestamptz) FROM PUBLIC, authenticated;
