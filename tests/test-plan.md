@@ -241,6 +241,7 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Apply added/modified/removed cursor pages atomically with the cursor and enforce Item ownership.
 - Recheck consent between pages; revoked consent blocks provider access and profile refresh.
 - Authenticated database clients cannot select encrypted Plaid Item token envelopes; the transaction read model remains user-scoped by RLS.
+- Authenticated database clients can read only their own append-only Plaid consent history; consent writes remain server-side.
 - The injected Plaid runtime requires explicit opt-in and refuses production and non-sandbox environments.
 - Refresh compact 90-day posted USD merchant/category facts only after a complete sync, then persist them as append-only semantic memories.
 - Test OpenAI embedding request/response behavior with a mocked fetcher. Do not make live Plaid, OpenAI, or Supabase calls in unit tests.

@@ -178,6 +178,8 @@ Constraints for any future design:
 
 The profile input, aggregation, persistence mapping, and semantic memory schema are implemented. Secure Item-token storage, transaction sync/cursor persistence, refresh schedule, retention/deletion, and production enablement remain unresolved and must be decided before live reads are wired. Profile work belongs in the non-UI MVP sequence; UI remains deferred until non-UI work is complete.
 
+The data-lifecycle choices are collected in [the financial profile lifecycle proposal](specification/financial-profile-data-lifecycle-proposal.md). They remain proposals pending user review; the 90-day freshness boundary is not, by itself, approval to retain raw transaction rows for 90 days.
+
 ### Typical Merchant Spend Statistic For A Future Provider
 
 Status: Confirmed for transaction-derived merchant estimates and the transactions-only profile.
@@ -194,7 +196,7 @@ Question:
 
 How should Victoria refresh, retain, delete, and disconnect transaction-derived profile facts, and how should corrections to transaction history be represented?
 
-Open decisions include refresh and deletion lifecycle, reconciliation of changed/removed transactions, and production enablement. The approved profile scope remains transaction history only; adding another Plaid product requires a new product decision.
+Open decisions include refresh and deletion lifecycle, reconciliation of changed/removed transactions, account-erasure handling for append-only consent history, backup/key operations, and production enablement. The approved profile scope remains transaction history only; adding another Plaid product requires a new product decision.
 
 Current default:
 
