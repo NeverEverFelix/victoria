@@ -41,7 +41,7 @@ describe("PostgresPlaidDataRepository lifecycle", () => {
 
     expect(queued).toMatchObject([{ userId: "user-a", itemId: "item-a", token: { ciphertext: "cipher-a", keyVersion: "v1" }, attempts: 2 }]);
     expect(db.statements.find(({ sql }) => sql.includes("INSERT INTO victoria_plaid_revocation_queue"))?.sql)
-      .not.toContain("claimed_until");
+      .toContain("ON CONFLICT (user_id,item_id) DO NOTHING");
     expect(db.statements.find(({ sql }) => sql.includes("UPDATE victoria_plaid_revocation_queue q"))?.sql)
       .toContain("q.access_token_auth_tag,q.encryption_key_version,q.attempts");
     expect(db.statements.find(({ sql }) => sql.includes("INSERT INTO victoria_plaid_revocation_queue"))?.values)
@@ -118,6 +118,7 @@ describe("PostgresPlaidDataRepository lifecycle", () => {
     expect(db.statements[0]?.sql).toContain("status = 'pending'");
     expect(db.statements[0]?.sql).toContain("user_id=$2");
     expect(db.statements[0]?.sql).toContain("item_id=$3");
+    expect(db.statements[0]?.sql).toContain("q.user_id = due.user_id AND q.item_id = due.item_id");
     expect(db.statements[0]?.values).toEqual([12, "user-a", "item-a"]);
   });
 
@@ -127,7 +128,7 @@ describe("PostgresPlaidDataRepository lifecycle", () => {
       ? { rows: [{ access_token_ciphertext: envelope.ciphertext, access_token_iv: envelope.iv,
         access_token_auth_tag: envelope.authTag, encryption_key_version: envelope.keyVersion }], rowCount: 1 }
       : sql.startsWith("UPDATE victoria_plaid_revocation_queue") ? { rows: [], rowCount: 0 } : { rows: [], rowCount: 1 });
-    const repository = new PostgresPlaidTokenMaintenanceRepository(db);
+    const repository = new PostgresPlaidTokenMaintenanceRepository(db, true);
 
     await expect(repository.replaceToken("user-a", "item-a", envelope)).resolves.toEqual(envelope);
 
@@ -146,12 +147,24 @@ describe("PostgresPlaidDataRepository lifecycle", () => {
     const db = new ScriptedPool((sql) => sql.includes("SELECT access_token_ciphertext")
       ? { rows: [], rowCount: 0 }
       : sql.startsWith("UPDATE victoria_plaid_revocation_queue") ? { rows: [], rowCount: 0 } : { rows: [], rowCount: 1 });
-    const repository = new PostgresPlaidTokenMaintenanceRepository(db);
+    const repository = new PostgresPlaidTokenMaintenanceRepository(db, true);
 
     await expect(repository.replaceToken("user-a", "item-a", {
       ciphertext: "cipher", iv: "iv", authTag: "tag", keyVersion: "v2"
     })).rejects.toThrow("Plaid token rotation verification failed.");
     expect(db.statements.at(-1)?.sql).toBe("ROLLBACK");
+  });
+
+  it("LIFE-005 refuses cross-user token maintenance unless its dedicated flag is enabled", async () => {
+    const db = new ScriptedPool(() => ({ rows: [], rowCount: 0 }));
+    const repository = new PostgresPlaidTokenMaintenanceRepository(db, false);
+
+    await expect(repository.listAllEncryptedTokens())
+      .rejects.toThrow("PLAID_TOKEN_MAINTENANCE_ENABLED=true");
+    await expect(repository.replaceToken("user-a", "item-a", {
+      ciphertext: "cipher", iv: "iv", authTag: "tag", keyVersion: "v2"
+    })).rejects.toThrow("PLAID_TOKEN_MAINTENANCE_ENABLED=true");
+    expect(db.statements).toHaveLength(0);
   });
 });
 

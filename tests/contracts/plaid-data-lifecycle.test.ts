@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const lifecycleMigration = readFileSync(new URL("../../db/migrations/0007_plaid_data_lifecycle.sql", import.meta.url), "utf8");
+const revocationScopeMigration = readFileSync(new URL("../../db/migrations/0008_plaid_revocation_user_scope.sql", import.meta.url), "utf8");
 const dataRepository = readFileSync(new URL("../../src/app/plaid/plaid-data-repository.ts", import.meta.url), "utf8");
 
 describe("Plaid lifecycle contract", () => {
@@ -43,5 +44,11 @@ describe("Plaid lifecycle contract", () => {
     expect(lifecycleMigration).toMatch(/ADD COLUMN IF NOT EXISTS last_error_code text/i);
     expect(lifecycleMigration).toMatch(/status IN \('pending', 'manual_review'\)/i);
     expect(dataRepository).toMatch(/FOR UPDATE SKIP LOCKED/i);
+  });
+
+  it("LIFE-004 keys queued revocations by authenticated user and Item", () => {
+    expect(revocationScopeMigration).toMatch(/PRIMARY KEY \(user_id, item_id\)/i);
+    expect(dataRepository).toMatch(/ON CONFLICT \(user_id,item_id\) DO NOTHING/i);
+    expect(dataRepository).toMatch(/q\.user_id\s*=\s*due\.user_id AND q\.item_id\s*=\s*due\.item_id/i);
   });
 });

@@ -12,6 +12,12 @@ describe("parseVictoriaEnv", () => {
     expect(() => parseVictoriaEnv(validEnv({ OPENAI_AGENT_TEAM_ENABLED: "yes" })))
       .toThrow("OPENAI_AGENT_TEAM_ENABLED must be true or false.");
   });
+  it("keeps cross-user Plaid token maintenance disabled unless explicitly enabled", () => {
+    expect(parseVictoriaEnv(validEnv()).plaidTokenMaintenanceEnabled).toBe(false);
+    expect(parseVictoriaEnv(validEnv({ PLAID_TOKEN_MAINTENANCE_ENABLED: "true" })).plaidTokenMaintenanceEnabled).toBe(true);
+    expect(() => parseVictoriaEnv(validEnv({ PLAID_TOKEN_MAINTENANCE_ENABLED: "yes" })))
+      .toThrow("PLAID_TOKEN_MAINTENANCE_ENABLED must be true or false.");
+  });
   it("parses a valid local environment", () => {
     const env = parseVictoriaEnv(validEnv());
 

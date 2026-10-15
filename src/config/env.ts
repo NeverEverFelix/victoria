@@ -15,6 +15,7 @@ export interface VictoriaEnv {
   plaidClientId: string;
   plaidSecret: string;
   plaidEnv: PlaidEnv;
+  plaidTokenMaintenanceEnabled: boolean;
   moneyMovementMode: MoneyMovementMode;
   authSecret: string;
   isProduction: boolean;
@@ -29,6 +30,10 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
   const nodeEnv = parseNodeEnv(source.NODE_ENV);
   const moneyMovementMode = parseMoneyMovementMode(source.MONEY_MOVEMENT_MODE);
   const plaidEnv = parsePlaidEnv(source.PLAID_ENV);
+  const plaidTokenMaintenanceEnabled = parseOptionalBoolean(
+    source.PLAID_TOKEN_MAINTENANCE_ENABLED,
+    "PLAID_TOKEN_MAINTENANCE_ENABLED"
+  );
   const databaseUrl = requireEnv(source, "DATABASE_URL");
   const openAiApiKey = requireEnv(source, "OPENAI_API_KEY");
   const openAiModel = requireEnv(source, "OPENAI_MODEL");
@@ -58,6 +63,7 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
     plaidClientId,
     plaidSecret,
     plaidEnv,
+    plaidTokenMaintenanceEnabled,
     moneyMovementMode,
     authSecret,
     isProduction: appEnv === "production",
