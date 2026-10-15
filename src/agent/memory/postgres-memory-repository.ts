@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FinancialDecision, SavingsGoal, UserHabit, AgentMemory } from "../types.js";
-import type { PostgresQueryable } from "../../app/turns/postgres-turn-repository.js";
+import type { PostgresQueryable } from "../../app/shared/postgres-types.js";
 import { DEFAULT_CONVERSATION_CONTEXT_LIMIT, type ConversationalMemory, type MemoryProvider } from "./types.js";
 import { toPgVectorLiteral, validateSemanticEmbedding, type SemanticEmbeddingProvider } from "./semantic-embedding.js";
 import type { TransactionFinancialProfile } from "../../domain/financial-profile.js";

@@ -3,7 +3,7 @@ import {
   type PlaidConnectionConsent,
   type PlaidReadProduct
 } from "./create-link-token-handler.js";
-import type { PostgresClient, PostgresPool, PostgresQueryResult } from "../turns/postgres-turn-repository.js";
+import type { PostgresClient, PostgresPool, PostgresQueryResult } from "../shared/postgres-types.js";
 
 export type PlaidConsentTransactionClient = PostgresClient;
 export type PlaidConsentTransactionPool = Pick<PostgresPool, "connect" | "query">;

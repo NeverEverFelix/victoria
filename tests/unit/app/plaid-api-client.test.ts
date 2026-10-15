@@ -52,8 +52,24 @@ describe("PlaidApiClient", () => {
     await expect(malformed.syncTransactions({ accessToken: "access", cursor: null })).rejects.toThrow("Invalid Plaid transaction amount.");
 
     const failed = new PlaidApiClient({ clientId: "client-test", secret: "secret-test", environment: "sandbox",
-      fetcher: vi.fn<typeof fetch>().mockResolvedValue(response({ error_message: "sensitive provider details" }, false)) });
-    await expect(failed.exchangePublicToken("public-test")).rejects.toThrow("Plaid API request failed.");
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ error_code: "INVALID_ACCESS_TOKEN",
+        error_message: "sensitive provider details" }), { status: 400 })) });
+    await expect(failed.exchangePublicToken("public-test")).rejects.toMatchObject({
+      message: "Plaid API request failed.", providerCode: "INVALID_ACCESS_TOKEN"
+    });
+  });
+
+  it("classifies provider response failures for bounded retry handling", async () => {
+    const permanent = new PlaidApiClient({ clientId: "client-test", secret: "secret-test", environment: "sandbox",
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(new Response("{}", { status: 401 })) });
+    const transient = new PlaidApiClient({ clientId: "client-test", secret: "secret-test", environment: "sandbox",
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(new Response("{}", { status: 503 })) });
+
+    await expect(permanent.revokeItem("access"))
+      .rejects.toMatchObject({ name: "PlaidApiError", status: 401, retryable: false });
+    await expect(transient.revokeItem("access"))
+      .rejects.toMatchObject({ name: "PlaidApiError", status: 503, retryable: true });
+    await expect(permanent.revokeItem(" ")).rejects.toThrow("A valid Plaid access token is required.");
   });
 });
 
@@ -68,10 +84,23 @@ describe("PlaidAccessTokenCipher", () => {
     expect(cipher.decrypt(first)).toBe("access-sample");
     expect(() => new PlaidAccessTokenCipher(new Uint8Array(32).fill(18)).decrypt(first)).toThrow();
     expect(() => new PlaidAccessTokenCipher(new Uint8Array(32).fill(17), "v2").decrypt(first))
-      .toThrow("key version does not match");
+      .toThrow("key version is unavailable");
   });
 
   it("rejects keys that are not exactly 32 bytes", () => {
     expect(() => new PlaidAccessTokenCipher(new Uint8Array(16))).toThrow("must be 32 bytes");
+  });
+
+  it("decrypts configured prior versions and rotates using only the active key", () => {
+    const oldKey = new Uint8Array(32).fill(3);
+    const newKey = new Uint8Array(32).fill(4);
+    const oldEnvelope = new PlaidAccessTokenCipher(oldKey, "2026-01").encrypt("access-rotated");
+    const rotating = new PlaidAccessTokenCipher(newKey, "2026-10", new Map([["2026-01", oldKey]]));
+    const rotated = rotating.rotate(oldEnvelope);
+
+    expect(rotated.keyVersion).toBe("2026-10");
+    expect(rotating.decrypt(rotated)).toBe("access-rotated");
+    expect(() => new PlaidAccessTokenCipher(newKey, "2026-10").decrypt(oldEnvelope))
+      .toThrow("key version is unavailable");
   });
 });

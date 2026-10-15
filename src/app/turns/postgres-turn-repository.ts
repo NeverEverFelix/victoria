@@ -6,24 +6,9 @@ import {
   type AcceptTurnResult,
   type TurnRepository
 } from "./turn-repository.js";
+import type { PostgresClient, PostgresPool } from "../shared/postgres-types.js";
 
-/** Minimal pg-compatible interfaces keep database connection setup outside the app layer. */
-export interface PostgresQueryResult<Row> {
-  readonly rows: readonly Row[];
-  readonly rowCount?: number | null;
-}
-
-export interface PostgresQueryable {
-  query<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<PostgresQueryResult<Row>>;
-}
-
-export interface PostgresPool extends PostgresQueryable {
-  connect(): Promise<PostgresClient>;
-}
-
-export interface PostgresClient extends PostgresQueryable {
-  release(): void;
-}
+export type { PostgresClient, PostgresPool, PostgresQueryable, PostgresQueryResult } from "../shared/postgres-types.js";
 
 interface TurnRow {
   id: string;

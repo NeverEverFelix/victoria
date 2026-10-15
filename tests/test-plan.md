@@ -204,7 +204,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - AI review keeps trusted instructions separate from untrusted diff content.
 - Oversized diffs list every changed path, prioritize safety-sensitive excerpts, and cannot satisfy required AI review.
 - AI review uses a 2,000-token default per-pass output budget and rejects values outside the bounded range.
-- Every PR update and each commit pushed to an open PR trigger AI review; secret-bearing push reviews run only on `main`. Review passes are processed concurrently and adaptively split on output truncation.
+- Pull request events trigger AI review through `pull_request_target` using trusted base-branch code; secret-bearing push reviews run only on `main`. Review passes are processed concurrently and adaptively split on output truncation.
 - Large AI review diffs retain complete coverage; every pass must complete before any review is posted, within the configured bounded call cap.
 - GPT-5 AI review requests use low reasoning effort so internal reasoning does not consume the response-token allowance needed for findings.
 
@@ -243,6 +243,13 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - The injected Plaid runtime requires explicit opt-in and refuses production and non-sandbox environments.
 - Refresh compact 90-day posted USD merchant/category facts only after a complete sync, then persist them as append-only semantic memories.
 - Test OpenAI embedding request/response behavior with a mocked fetcher. Do not make live Plaid, OpenAI, or Supabase calls in unit tests.
+- Raw transaction rows expire exactly 90 days after the transaction date and cannot enter profile reads after expiry (`LIFE-001`).
+- Authenticated Item disconnect and delete-all purge local tokens, cursors, transactions, and derived profile facts/embeddings before remote revocation; delete-all also appends consent revocation (`LIFE-002`, `LIFE-003`).
+- Retryable remote revocation failures keep only an encrypted retry record with backoff; permanent provider rejections move the record to manual review; concurrent workers cannot claim the same due Item; success clears it (`LIFE-004`).
+- Rotation decrypts configured prior key versions, writes under the active key, verifies persisted ciphertext, and fails closed when a key is missing (`LIFE-005`).
+- A foreign Item ID cannot enqueue credentials or trigger deletion of another user's data; local item reads remain user-scoped and ignore disconnected Items (`LIFE-002`).
+- Revocation between cursor pages prevents the next Plaid call and prevents profile-memory refresh (`LIFE-006`).
+- Lifecycle SQL functions and RLS must be verified against disposable PostgreSQL/Supabase before any live Plaid reads are enabled.
 
 ## Memory Orchestration
 

@@ -12,7 +12,7 @@ If this specification conflicts with `docs/mvp.md` or `docs/user-stories.md`, us
 
 The key words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 
-Each rule has a stable identifier:
+Each rule has a stable identifier, including `LIFE` for financial-profile data lifecycle requirements:
 
 - `FIN`: financial invariants.
 - `ARC`: agent and deterministic-code responsibilities.
@@ -283,13 +283,24 @@ Required successful-recording meaning:
 
 Equivalent wording is allowed only if both facts remain unmistakable.
 
+## 11. Transactions Profile Lifecycle
+
+| ID | Normative rule | Status | Executable coverage |
+| --- | --- | --- | --- |
+| LIFE-001 | Raw synced Plaid transaction details **MUST** expire 90 days after the transaction date and **MUST NOT** be returned after expiry. | Enforced (repository writes, cleanup, and query); Deferred (scheduled invocation) | `tests/contracts/plaid-data-lifecycle.test.ts`; `tests/unit/app/plaid-data-repository.test.ts` |
+| LIFE-002 | An authenticated Item disconnect **MUST** disable local access, delete that Item's active token, cursor, and transactions, and clear Plaid-derived profile facts and embeddings before attempting remote revocation. The encrypted retry copy is retained until remote revocation succeeds. | Enforced (lifecycle service); Specified (live database verification) | `tests/unit/app/plaid-disconnect-handler.test.ts`; `tests/unit/app/plaid-data-repository.test.ts` |
+| LIFE-003 | Delete-all **MUST** revoke Transactions consent, remove every local Item and Plaid-derived profile fact/embedding (including linked successor facts), and retain only encrypted credentials required for remote revocation retry. | Enforced (lifecycle service); Specified (live verification) | `tests/contracts/plaid-data-lifecycle.test.ts`; `tests/unit/app/plaid-data-repository.test.ts`; `tests/unit/app/plaid-data-lifecycle.test.ts` |
+| LIFE-004 | A retryable remote revocation failure **MUST** keep local access disabled and retain an encrypted retry record with backoff. A permanent provider rejection **MUST** retain the encrypted record for manual review and **MUST NOT** be retried automatically. Successful revocation **MUST** delete the record. | Enforced (lifecycle service); Deferred (scheduler and manual-review operations) | `tests/contracts/plaid-data-lifecycle.test.ts`; `tests/unit/app/plaid-data-lifecycle.test.ts` |
+| LIFE-005 | Token rotation **MUST** encrypt new writes with the active key, decrypt only configured versions, persist and verify each rotated envelope, and fail closed when a needed key is unavailable. A prior key **MUST NOT** be retired until every stored envelope verifies under the active key. | Enforced (cipher and lifecycle service); Deferred (operational rehearsal) | `tests/unit/app/plaid-api-client.test.ts`; `tests/unit/app/plaid-data-lifecycle.test.ts` |
+| LIFE-006 | A sync **MUST** recheck user-owned active Transactions consent before every provider page and **MUST NOT** persist a profile refresh after consent is revoked. | Enforced | `tests/unit/app/financial-profile-sync.test.ts` |
+
 ## Traceability And Change Control
 
 The executable contract suite is `tests/contracts/mvp-safety-contract.test.ts`. Lower-level tests may also enforce the same rule. Test titles must include every rule ID they claim to cover.
 
 | Rule group                                      | Primary current test location                      | Completion gate                                                      |
 | ----------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------- |
-| `FIN`, `ARC`, `INT`, `APR`, `STA`, `ERR`, `AUD`, `MEM` | Agent contract and unit tests                      | Relevant agent slice cannot complete without applicable tests        |
+| `FIN`, `ARC`, `INT`, `APR`, `STA`, `ERR`, `AUD`, `MEM`, `LIFE` | Agent contract and unit tests | Relevant slice cannot complete without applicable tests |
 | `AMT`                                           | Domain money and parser tests                      | Amount-handling slice cannot complete while rules remain `Specified` |
 | `IDM`                                           | Agent replay test; future ledger integration tests | Persistent ledger slice requires durable idempotency coverage        |
 | `COR`                                           | Type contracts; future ledger integration tests    | Correction slice requires linked-record and effective-total tests    |

@@ -30,6 +30,13 @@ export interface PlaidApiClientOptions {
   readonly timeoutMs?: number;
 }
 
+export class PlaidApiError extends Error {
+  constructor(readonly status: number, readonly retryable: boolean, readonly providerCode: string | null = null) {
+    super("Plaid API request failed.");
+    this.name = "PlaidApiError";
+  }
+}
+
 interface PlaidTransactionPayload {
   transaction_id?: unknown;
   amount?: unknown;
@@ -89,6 +96,11 @@ export class PlaidApiClient {
     });
   }
 
+  async revokeItem(accessToken: string): Promise<void> {
+    if (typeof accessToken !== "string" || !accessToken.trim()) throw new Error("A valid Plaid access token is required.");
+    await this.post("/item/remove", { access_token: accessToken });
+  }
+
   private async post(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const response = await this.fetcher(`${this.baseUrl}${path}`, {
       method: "POST",
@@ -103,7 +115,14 @@ export class PlaidApiClient {
       body: JSON.stringify(body),
       cache: "no-store"
     });
-    if (!response.ok) throw new Error("Plaid API request failed.");
+    if (!response.ok) {
+      let providerCode: string | null = null;
+      try {
+        const error = await response.json() as { error_code?: unknown };
+        if (typeof error.error_code === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(error.error_code)) providerCode = error.error_code;
+      } catch { /* status remains sufficient for retry classification */ }
+      throw new PlaidApiError(response.status, response.status === 429 || response.status >= 500, providerCode);
+    }
     let result: unknown;
     try { result = await response.json(); } catch { throw new Error("Invalid Plaid API response."); }
     if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("Invalid Plaid API response.");

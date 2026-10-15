@@ -415,7 +415,7 @@ Done when:
 
 ## Slice 17: Consent-Gated Plaid Link Bootstrap
 
-Status: Consent-gated Link creation, public-token exchange, encrypted Item-token persistence, cursor-based Transactions sync, and profile refresh are implemented behind injected server handlers and an explicit runtime factory. The factory requires explicit opt-in and currently rejects non-sandbox Plaid environments. The handlers are not mounted to a live route or default app composition; no live provider/database verification was performed.
+Status: Consent-gated Link creation, public-token exchange, encrypted Item-token persistence, cursor-based Transactions sync, profile refresh, 90-day retention cleanup, authenticated disconnect/delete-all handling, remote revocation retry queue, and versioned token-key rotation are implemented behind injected server handlers and an explicit runtime factory. The factory requires explicit opt-in and currently rejects non-sandbox Plaid environments. Lifecycle scheduling, production route mounting, live database/provider verification, and key retirement operations are not configured; no live verification was performed.
 
 Goal:
 
@@ -441,11 +441,15 @@ The transactions-only read-only profile scope is approved. Production Plaid acce
 - Apply migration `0002_plaid_consent_events.sql` and verify behavior against a live PostgreSQL database.
 - Mount the handlers behind the application's verified session.
 - Apply and verify migrations against the selected PostgreSQL/Supabase project.
-- Define transaction retention, disconnect/deletion, and encryption-key rotation before live enablement.
+- Mount the authenticated disconnect handler and schedule expiry, revocation retry, and key-rotation maintenance operations.
+- Provide an authenticated operator workflow to resolve and resume encrypted `manual_review` revocation records before live reads are enabled.
+- Verify migration `0007_plaid_data_lifecycle.sql` and lifecycle operations against a disposable PostgreSQL/Supabase database.
+- Run a controlled key rotation and verify all active and queued Item tokens before retiring prior keys.
+- Lifecycle unit and contract tests cover 90-day expiry/filter boundaries, user-scoped deletion, revoked consent during pagination, concurrent-safe provider retry claims, permanent-rejection manual review, and key-rotation verification failures.
 
 ## Transactions-Only Financial Profile
 
-The user confirmed a transactions-only profile on 2026-10-13. Domain aggregation, append-only profile-fact persistence mapping, pgvector schema, semantic retrieval, a concrete embedding adapter, and an explicit persistent runtime are implemented. Live provider/database verification, deployment route mounting, and retention/deletion/key-rotation policy remain follow-up work.
+The user confirmed a transactions-only profile on 2026-10-13 and lifecycle policy on 2026-10-15. Domain aggregation, append-only profile-fact persistence mapping, pgvector schema, semantic retrieval, a concrete embedding adapter, an explicit persistent runtime, retention/deletion operations, remote revocation retries, and versioned key rotation are implemented. Live provider/database verification and deployment scheduling/route mounting remain follow-up work.
 
 Status: Deterministic context-source selection and an optional transaction-history provider seam exist for avoided-spend estimates. The Plaid adapter now uses the user's standing bank-link authorization, enforces user scoping and consent, and returns no profile facts after revoked consent. Victoria does not ask for per-lookup approval. Live route configuration remains outstanding.
 
@@ -471,7 +475,7 @@ Done when:
 - Plaid transfer/payment behavior is unavailable in all MVP environments.
 - `npm run check` passes.
 
-Current status: domain aggregation, `rememberFinancialProfile` persistence mapping, source provenance, HNSW embeddings, Supabase RLS, per-turn semantic retrieval, conversational correction of a clear recent financial fact, encrypted Item-token storage, cursor-based Plaid transaction persistence, consent-checked profile refresh, optional metadata coverage/enrichment, explicit runtime composition, and the `MemoryOrchestrator` lifecycle boundary are implemented. Next: connect the profile provider to estimate decisions, implement authenticated application route composition, configure secrets and the target Supabase project, verify migrations/RLS, and decide transaction retention, Item deletion, and encryption-key rotation before enabling live reads. Broader natural-memory extraction remains later personalization work; users do not review or edit memory through a separate interface. No live calls or credentials were used here.
+Current status: domain aggregation, `rememberFinancialProfile` persistence mapping, source provenance, HNSW embeddings, Supabase RLS, per-turn semantic retrieval, conversational correction of a clear recent financial fact, encrypted Item-token storage, cursor-based Plaid transaction persistence, consent-checked profile refresh, optional metadata coverage/enrichment, explicit runtime composition, `MemoryOrchestrator` lifecycle, 90-day cleanup, authenticated disconnect/delete-all, queued remote revocation retries, and versioned token-key rotation are implemented. Next: connect the profile provider to estimate decisions, mount authenticated routes and scheduled maintenance, configure secrets and the target Supabase project, verify migrations/RLS, and perform a controlled key-rotation rehearsal before enabling live reads. Broader natural-memory extraction remains later personalization work; users do not review or edit memory through a separate interface. No live calls or credentials were used here.
 
 ## Slice 13: Correct A Recorded Savings Amount
 
