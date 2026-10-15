@@ -217,13 +217,13 @@ The approved transactions-only profile is designed around these constraints:
 
 - Plaid data access must follow user authorization and clearly disclosed purpose. This profile requests Transactions only; balances, identity data, account metadata, transfer, and payment scopes are excluded.
 - A profile is derived, potentially incomplete context, not ground truth or financial advice. Preserve source, observation time, freshness, and uncertainty for profile facts; do not silently present stale or inferred facts as current.
-- Keep provider data and derived profile data scoped to the correct user, access-controlled, and subject to documented retention, refresh, disconnect, and deletion behavior before implementation.
+- Keep provider data and derived profile data scoped to the correct user and access-controlled. Raw transactions are retained for at most 90 days and pruned after a complete successful sync and profile write. Disconnect revokes consent, removes linked transactions and Plaid-derived memories/embeddings, and preserves all non-Plaid user memory and personalization, including corrections linked to removed profile facts.
 - The profile and its retrieval layer may provide context but cannot approve actions, create ledger entries, initiate transfers, or override deterministic policies. Provider-derived data does not constitute user approval.
 - Inject only context relevant to the current turn, with explicit limits and provenance. Do not expose raw account identifiers or unnecessary transaction details to the conversation agent.
 - A profile may inform an estimate, but estimates remain estimates and any savings ledger write still requires the existing exact user confirmation.
 - Any future capability must not enable real money movement. Access must be limited to authorized read purposes; it must not enable transfer or payment capabilities.
 
-Before live transaction reads are enabled, deploy and verify the migrations, configure authenticated routes and secret-managed keys, and define transaction retention plus Item disconnect/deletion and encryption-key rotation. No live provider or database testing has been performed as part of this implementation.
+Before live transaction reads are enabled, deploy and verify the migrations, configure authenticated routes and secret-managed keys, and define backup deletion plus encryption-key rotation windows. Consent history is retained until full account deletion, then erased through a controlled service-role procedure after provider and local Plaid cleanup. No live provider or database testing has been performed as part of this implementation.
 
 These may become useful later, but they should not distract from proving the core behavior first.
 

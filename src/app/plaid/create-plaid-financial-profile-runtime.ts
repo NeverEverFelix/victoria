@@ -15,6 +15,8 @@ import { PlaidApiClient } from "./plaid-api-client.js";
 import { PostgresPlaidDataRepository } from "./plaid-data-repository.js";
 import { PlaidLinkTokenClient } from "./plaid-link-token-client.js";
 import { createPlaidPublicTokenExchangeHandler } from "./public-token-exchange-handler.js";
+import { FinancialProfileLifecycleService } from "./financial-profile-lifecycle.js";
+import { createFinancialProfileDisconnectHandler } from "./financial-profile-disconnect-handler.js";
 
 /** Explicitly opted-in Supabase/Postgres + Plaid runtime. Never called by default composition. */
 export function createPlaidFinancialProfileRuntime(options: {
@@ -55,6 +57,7 @@ export function createPlaidFinancialProfileRuntime(options: {
   const agentMemory = new MemoryOrchestrator(sqliteMemory, { financialProfiles: profiles });
   const agent = createVictoriaAgent({ env: options.env, memory: agentMemory, ...(options.fetcher ? { fetcher: options.fetcher } : {}) });
   const sync = new FinancialProfileSyncService({ consent, data, plaid, cipher, profiles: agentMemory });
+  const lifecycle = new FinancialProfileLifecycleService({ consent, data, plaid, cipher, memories: agentMemory });
   return Object.freeze({
     pool,
     agent,
@@ -64,10 +67,12 @@ export function createPlaidFinancialProfileRuntime(options: {
     data,
     profiles,
     sync,
+    lifecycle,
     createLinkToken: createPlaidLinkTokenHandler({ authenticate: options.authenticate,
       getConsent: (userId) => consent.getConsent(userId), createLinkToken: (input) => link.create(input) }),
     exchangePublicToken: createPlaidPublicTokenExchangeHandler({ authenticate: options.authenticate,
       consent, plaid, data, cipher, sync }),
-    refreshFinancialProfile: createFinancialProfileSyncHandler({ authenticate: options.authenticate, sync })
+    refreshFinancialProfile: createFinancialProfileSyncHandler({ authenticate: options.authenticate, sync }),
+    disconnectFinancialProfile: createFinancialProfileDisconnectHandler({ authenticate: options.authenticate, lifecycle })
   });
 }

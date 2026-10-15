@@ -202,6 +202,11 @@ export class PostgresMemoryRepository implements MemoryProvider {
     return Object.freeze(memories);
   }
 
+  async erasePlaidFinancialProfile(userId: string): Promise<void> {
+    if (!userId.trim()) throw new Error("A user ID is required.");
+    await this.db.query("SELECT victoria_erase_plaid_profile_memories($1)", [userId]);
+  }
+
   private async storeEmbedding(userId: string, memoryId: string, text: string): Promise<void> {
     if (!this.embeddings?.modelId.trim()) return;
     try {

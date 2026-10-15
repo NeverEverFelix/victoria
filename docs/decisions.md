@@ -178,7 +178,7 @@ Constraints for any future design:
 
 The profile input, aggregation, persistence mapping, and semantic memory schema are implemented. Secure Item-token storage, transaction sync/cursor persistence, refresh schedule, retention/deletion, and production enablement remain unresolved and must be decided before live reads are wired. Profile work belongs in the non-UI MVP sequence; UI remains deferred until non-UI work is complete.
 
-The data-lifecycle choices are collected in [the financial profile lifecycle proposal](specification/financial-profile-data-lifecycle-proposal.md). They remain proposals pending user review; the 90-day freshness boundary is not, by itself, approval to retain raw transaction rows for 90 days.
+The user confirmed these lifecycle defaults on 2026-10-15: raw transaction rows are retained for at most 90 days and pruned only after a complete successful sync/profile write; disconnect removes linked Plaid data and Plaid-derived memories/embeddings while preserving all user-authored memories and personalization; minimal consent history remains until full account deletion and is then erased through a controlled service-role procedure. Disconnect re-roots preserved user corrections if they pointed to deleted Plaid facts. These choices do not authorize live Plaid reads, production access, or real money movement. Operational backup deletion and key-rotation windows, and deployed migration verification, remain open. See [the financial profile lifecycle record](specification/financial-profile-data-lifecycle-proposal.md).
 
 ### Typical Merchant Spend Statistic For A Future Provider
 

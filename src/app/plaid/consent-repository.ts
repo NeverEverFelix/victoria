@@ -35,6 +35,7 @@ export interface PlaidConsentRepository {
   recordGrant(input: RecordPlaidConsentGrantInput): Promise<PlaidConsentSnapshot>;
   getConsent(userId: string): Promise<PlaidConsentSnapshot | null>;
   revoke(input: RevokePlaidConsentInput): Promise<PlaidConsentSnapshot | null>;
+  eraseConsentHistoryForDeletedAccount(userId: string): Promise<void>;
 }
 
 export class InvalidPlaidConsentError extends Error {
@@ -146,6 +147,12 @@ export class PostgresPlaidConsentRepository implements PlaidConsentRepository {
     } finally {
       client.release();
     }
+  }
+
+  /** Called only by the controlled full-account deletion workflow, after Plaid cleanup completes. */
+  async eraseConsentHistoryForDeletedAccount(userId: string): Promise<void> {
+    assertUserId(userId);
+    await this.pool.query("SELECT victoria_erase_plaid_consent_history($1)", [userId.trim()]);
   }
 }
 

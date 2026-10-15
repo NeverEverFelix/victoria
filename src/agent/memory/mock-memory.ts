@@ -60,6 +60,17 @@ export class MockMemoryProvider implements MemoryProvider {
     return immutableSnapshot(this.memoriesByUser.get(userId) ?? []);
   }
 
+  async erasePlaidFinancialProfile(userId: string): Promise<void> {
+    const memories = this.memoriesByUser.get(userId) ?? [];
+    const plaidIds = new Set(memories.filter((memory) => memory.sourceType === "plaid_transaction_profile").map((memory) => memory.id));
+    this.memoriesByUser.set(userId, memories.filter((memory) => memory.sourceType !== "plaid_transaction_profile")
+      .map((memory) => {
+        if (!memory.supersedesId || !plaidIds.has(memory.supersedesId)) return memory;
+        const detached = Object.fromEntries(Object.entries(memory).filter(([key]) => key !== "supersedesId")) as ConversationalMemory;
+        return immutableSnapshot(detached);
+      }));
+  }
+
   private async listCurrentConversationalMemories(userId: string): Promise<readonly ConversationalMemory[]> {
     const memories = this.memoriesByUser.get(userId) ?? [];
     const supersededIds = new Set(memories.flatMap((memory) => memory.supersedesId ? [memory.supersedesId] : []));

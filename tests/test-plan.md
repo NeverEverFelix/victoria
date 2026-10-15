@@ -226,6 +226,9 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - `financialprofilespecialist` failures or invalid outputs fall back safely and cannot approve actions, create ledger entries, or trigger transfers.
 - Inference receives only relevant bounded profile context and excludes unnecessary raw account identifiers and transaction details.
 - Disconnect prevents future fetches/injection and applies the documented retention/deletion behavior.
+- Profile disconnect revokes consent, removes raw transactions and only Plaid-derived memory/embeddings, preserves and re-roots user-authored corrections, invalidates the memory cache, and retains only an encrypted sync-disabled token for provider-removal retries.
+- Raw transaction rows older than 90 days are pruned only after full sync and profile persistence succeed; an incomplete sync or profile-write failure does not prune.
+- Minimal consent history remains append-only until account deletion; only the controlled service-role erasure procedure may remove it.
 - Plaid consent grants and revocations are append-only, user-scoped events; a revoke applies only to the exact current grant and repeated revoke is idempotent.
 - Re-grant after revocation creates a new event with the newly approved product scope; prior grant and revocation history remain unchanged.
 - The consent repository rejects empty/unsupported product scopes and does not reveal another user's current consent.

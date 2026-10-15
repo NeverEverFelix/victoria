@@ -11,7 +11,7 @@ export interface FinancialProfileWriter {
 export class FinancialProfileSyncService {
   constructor(private readonly dependencies: {
     consent: { getConsent(userId: string): Promise<{ readonly userId: string; readonly status: string; readonly products: readonly string[] } | null> };
-    data: Pick<PlaidDataRepository, "listItems" | "applySyncPage" | "listTransactions">;
+    data: Pick<PlaidDataRepository, "listItems" | "applySyncPage" | "listTransactions" | "pruneTransactionsBefore">;
     plaid: Pick<PlaidApiClient, "syncTransactions">;
     cipher: PlaidAccessTokenCipher;
     profiles: FinancialProfileWriter;
@@ -69,6 +69,9 @@ export class FinancialProfileSyncService {
       }))
     });
     await this.dependencies.profiles.rememberFinancialProfile(profile);
+    // Enforce maximum raw-row age only after the entire sync and profile write succeeded.
+    const retentionCutoff = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10);
+    await this.dependencies.data.pruneTransactionsBefore(userId, retentionCutoff);
     return Object.freeze({ profile, syncedPages });
   }
 }

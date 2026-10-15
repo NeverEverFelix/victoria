@@ -436,16 +436,16 @@ Implemented files:
 - `src/app/plaid/plaid-link-token-client.ts`
 - `tests/unit/app/plaid-link-token.test.ts`
 
-The transactions-only read-only profile scope is approved. Production Plaid access and money movement remain disabled. The mocked, headless acceptance path verifies authenticated identity through profile refresh, user-scoped estimate lookup, disclosure, and exact approval before a mock-ledger write. Migration `0007_plaid_consent_rls.sql` now restricts consent history to owner reads and server-side writes. A local PostgreSQL scratch database verified migrations `0002`, `0005`, `0006`, and `0007` with a stub Supabase `auth.uid()` function; this did not verify `0004_semantic_user_memory.sql`, a Supabase deployment, or provider behavior. The lifecycle proposal is documented but awaits user decisions. Remaining deployment work includes:
+The transactions-only read-only profile scope is approved. Production Plaid access and money movement remain disabled. The mocked, headless acceptance path verifies authenticated identity through profile refresh, user-scoped estimate lookup, disclosure, and exact approval before a mock-ledger write. Migration `0007_plaid_consent_rls.sql` restricts consent history to owner reads and server-side writes. Lifecycle defaults are now user-approved and implemented locally: maximum 90-day raw transaction retention after a successful sync/profile write; disconnect removes Plaid transactions and profile memories while preserving all non-Plaid personalization; minimal consent history remains until controlled account erasure. Migration `0008_profile_data_lifecycle.sql` adds scoped erasure procedures. The prior local PostgreSQL scratch verification covered migrations `0002`, `0005`, `0006`, and `0007`, not migration `0008`, `0004_semantic_user_memory.sql`, a Supabase deployment, or provider behavior. Remaining deployment work includes:
 
 - Apply migration `0002_plaid_consent_events.sql` and verify behavior against a live PostgreSQL database.
 - Mount the handlers behind the application's verified session.
 - Apply and verify migrations against the selected PostgreSQL/Supabase project.
-- Define transaction retention, disconnect/deletion, and encryption-key rotation before live enablement.
+- Choose backup deletion and encryption-key rotation windows before live enablement.
 
 ## Transactions-Only Financial Profile
 
-The user confirmed a transactions-only profile on 2026-10-13. Domain aggregation, append-only profile-fact persistence mapping, pgvector schema, semantic retrieval, a concrete embedding adapter, and an explicit persistent runtime are implemented. Live provider/database verification, deployment route mounting, and retention/deletion/key-rotation policy remain follow-up work.
+The user confirmed a transactions-only profile on 2026-10-13. Domain aggregation, append-only profile-fact persistence mapping, pgvector schema, semantic retrieval, a concrete embedding adapter, and an explicit persistent runtime are implemented. Lifecycle defaults and local disconnect/retention implementation are complete; live provider/database verification, deployment route mounting, backup policy, and key-rotation policy remain follow-up work.
 
 Status: Deterministic context-source selection and an optional transaction-history provider seam exist for avoided-spend estimates. The Plaid adapter uses standing Transactions consent, enforces user scoping, and returns no profile facts after revocation. A mocked end-to-end acceptance test verifies the authenticated refresh-to-estimate path, source disclosure, cross-user isolation, revoked-consent stop, and approval gate. Victoria does not ask for per-lookup approval. This test does not verify live provider or database behavior.
 
@@ -456,7 +456,7 @@ Build a user-scoped profile from Plaid Transactions history only. Keep profile f
 Required boundaries:
 
 - Request Transactions only for the profile; transfer and payment capabilities stay unavailable.
-- Define consent, disconnect, refresh, retention, deletion, and profile correction behavior.
+- Implement consent, disconnect, refresh, retention, deletion, and profile correction behavior.
 - Preserve profile provenance, observed time, freshness, and uncertainty.
 - Keep provider data and specialist context user-scoped and minimize injected data.
 - Keep specialist outputs advisory; deterministic policy retains action and approval authority.
@@ -471,7 +471,7 @@ Done when:
 - Plaid transfer/payment behavior is unavailable in all MVP environments.
 - `npm run check` passes.
 
-Current status: domain aggregation, `rememberFinancialProfile` persistence mapping, source provenance, HNSW embeddings, Supabase RLS, per-turn semantic retrieval, conversational correction of a clear recent financial fact, encrypted Item-token storage, cursor-based Plaid transaction persistence, consent-checked profile refresh, optional metadata coverage/enrichment, explicit runtime composition, and the `MemoryOrchestrator` lifecycle boundary are implemented. The optional profile provider is connected to estimate decisions, and a mocked composition test covers authenticated identity, user isolation, consent revocation, disclosure, and approval. Migration `0007` adds owner-scoped read access for consent events; selected Plaid migrations were checked in a local PostgreSQL scratch database. Next: review the lifecycle proposal, verify all migrations/RLS in a pgvector-enabled non-production Supabase-compatible database, then implement disconnect/deletion and authenticated route composition under the approved lifecycle. Broader natural-memory extraction remains later personalization work; users do not review or edit memory through a separate interface. No live calls or credentials were used here.
+Current status: domain aggregation, `rememberFinancialProfile` persistence mapping, source provenance, HNSW embeddings, Supabase RLS, per-turn semantic retrieval, conversational correction of a clear recent financial fact, encrypted Item-token storage, cursor-based Plaid transaction persistence, consent-checked profile refresh, optional metadata coverage/enrichment, explicit runtime composition, and the `MemoryOrchestrator` lifecycle boundary are implemented. The optional profile provider is connected to estimate decisions, and a mocked composition test covers authenticated identity, user isolation, consent revocation, disclosure, and approval. Migrations `0007` and `0008` define consent access and controlled lifecycle erasure. Next: verify all migrations/RLS in a pgvector-enabled non-production Supabase-compatible database and configure backup/key-rotation windows. Disconnect and 90-day retention behavior are implemented locally under the user-approved lifecycle defaults. Broader natural-memory extraction remains later personalization work; users do not review or edit memory through a separate interface. No live calls or credentials were used here.
 
 ## Slice 13: Correct A Recorded Savings Amount
 
