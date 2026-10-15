@@ -5,6 +5,15 @@ import { MockProfileTransactionHistoryProvider } from "../../../src/app/financia
 import { MockTransactionHistoryProvider } from "../../fixtures/mock-transaction-history-provider.js";
 
 describe("explicit savings preference memory", () => {
+  it("does not persist direct-extractor evidence containing contact details", async () => {
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
+
+    await agent.respond({ userId: "user_contact_evidence", message: "I prefer reminders at alex@example.com." });
+
+    expect(await memory.listConversationalMemories("user_contact_evidence")).toEqual([]);
+  });
+
   it("learns a stable contextual preference from ordinary conversation and retrieves it later", async () => {
     const memory = new MockMemoryProvider();
     const evidence = "I work late shifts, so afternoon reminders are easier for me.";

@@ -44,7 +44,7 @@ import {
 import { selectFinancialContextSource } from "./context-source-policy.js";
 import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } from "./transaction-history-provider.js";
 import { isRealMoneyMovementRequest } from "./money-movement-intent.js";
-import { validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
+import { isExplicitUserEvidence, validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
 import { isUsableEpisodicSummary, validateEpisodicSummary, type EpisodicMemorySummarizer } from "./memory/episodic-summary.js";
 
 export interface VictoriaAgentDependencies {
@@ -306,7 +306,9 @@ export class VictoriaAgent {
       };
     }
 
-    const extractedMemory = extractConversationalMemory(request.message);
+    const extractedCandidate = extractConversationalMemory(request.message);
+    const extractedMemory = extractedCandidate && extractedCandidate.evidence.length <= 240 &&
+      isExplicitUserEvidence(request.message, extractedCandidate.evidence) ? extractedCandidate : null;
     if (extractedMemory) {
       let memoryToRemember = extractedMemory;
       let acknowledgement: string | undefined;
