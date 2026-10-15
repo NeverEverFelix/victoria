@@ -436,7 +436,7 @@ Implemented files:
 - `src/app/plaid/plaid-link-token-client.ts`
 - `tests/unit/app/plaid-link-token.test.ts`
 
-The transactions-only read-only profile scope is approved. Production Plaid access and money movement remain disabled. Remaining deployment work includes:
+The transactions-only read-only profile scope is approved. Production Plaid access and money movement remain disabled. The mocked, headless acceptance path now verifies authenticated identity through profile refresh, user-scoped estimate lookup, disclosure, and exact approval before a mock-ledger write. Remaining deployment work includes:
 
 - Apply migration `0002_plaid_consent_events.sql` and verify behavior against a live PostgreSQL database.
 - Mount the handlers behind the application's verified session.
@@ -447,7 +447,7 @@ The transactions-only read-only profile scope is approved. Production Plaid acce
 
 The user confirmed a transactions-only profile on 2026-10-13. Domain aggregation, append-only profile-fact persistence mapping, pgvector schema, semantic retrieval, a concrete embedding adapter, and an explicit persistent runtime are implemented. Live provider/database verification, deployment route mounting, and retention/deletion/key-rotation policy remain follow-up work.
 
-Status: Deterministic context-source selection and an optional transaction-history provider seam exist for avoided-spend estimates. The Plaid adapter now uses the user's standing bank-link authorization, enforces user scoping and consent, and returns no profile facts after revoked consent. Victoria does not ask for per-lookup approval. Live route configuration remains outstanding.
+Status: Deterministic context-source selection and an optional transaction-history provider seam exist for avoided-spend estimates. The Plaid adapter uses standing Transactions consent, enforces user scoping, and returns no profile facts after revocation. A mocked end-to-end acceptance test verifies the authenticated refresh-to-estimate path, source disclosure, cross-user isolation, revoked-consent stop, and approval gate. Victoria does not ask for per-lookup approval. This test does not verify live provider or database behavior.
 
 Goal:
 
@@ -471,7 +471,7 @@ Done when:
 - Plaid transfer/payment behavior is unavailable in all MVP environments.
 - `npm run check` passes.
 
-Current status: domain aggregation, `rememberFinancialProfile` persistence mapping, source provenance, HNSW embeddings, Supabase RLS, per-turn semantic retrieval, conversational correction of a clear recent financial fact, encrypted Item-token storage, cursor-based Plaid transaction persistence, consent-checked profile refresh, optional metadata coverage/enrichment, explicit runtime composition, and the `MemoryOrchestrator` lifecycle boundary are implemented. Next: connect the profile provider to estimate decisions, implement authenticated application route composition, configure secrets and the target Supabase project, verify migrations/RLS, and decide transaction retention, Item deletion, and encryption-key rotation before enabling live reads. Broader natural-memory extraction remains later personalization work; users do not review or edit memory through a separate interface. No live calls or credentials were used here.
+Current status: domain aggregation, `rememberFinancialProfile` persistence mapping, source provenance, HNSW embeddings, Supabase RLS, per-turn semantic retrieval, conversational correction of a clear recent financial fact, encrypted Item-token storage, cursor-based Plaid transaction persistence, consent-checked profile refresh, optional metadata coverage/enrichment, explicit runtime composition, and the `MemoryOrchestrator` lifecycle boundary are implemented. The optional profile provider is connected to estimate decisions, and a mocked composition test covers authenticated identity, user isolation, consent revocation, disclosure, and approval. Next: verify authenticated route composition with production-grade identity, configure and verify migrations/RLS against the selected non-production database, and decide transaction retention, Item deletion, and encryption-key rotation before enabling live reads. Broader natural-memory extraction remains later personalization work; users do not review or edit memory through a separate interface. No live calls or credentials were used here.
 
 ## Slice 13: Correct A Recorded Savings Amount
 
