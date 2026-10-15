@@ -176,7 +176,14 @@ Constraints for any future design:
 - User separation, access controls, retention, refresh, disconnect, and deletion behavior must be defined before implementation.
 - This scope does not include Plaid transfer or payment capabilities, or real money movement.
 
-The profile input, aggregation, persistence mapping, and semantic memory schema are implemented. Secure Item-token storage, transaction sync/cursor persistence, refresh schedule, retention/deletion, and production enablement remain unresolved and must be decided before live reads are wired. Profile work belongs in the non-UI MVP sequence; UI remains deferred until non-UI work is complete.
+The profile input, aggregation, persistence mapping, semantic memory schema, secure Item-token storage, and transaction sync/cursor persistence are implemented. The user confirmed the following lifecycle policy on 2026-10-15:
+
+- Keep raw synced transaction details for 90 days from the transaction date, matching the profile lookback, then purge them.
+- Profile facts and embeddings are derived and refreshable. On Item disconnect, immediately disable local access, request remote Item revocation, remove that Item's local token/cursor/transactions, and clear all of the user's Plaid-derived profile facts, embeddings, and linked successor facts; the next authorized sync rebuilds the profile from any remaining Items. On delete-all, revoke the user's Transactions consent and apply that cleanup to every linked Item.
+- Preserve a minimal consent revocation audit event. If remote revocation fails, retain only the encrypted token in a retry queue, keep local access disabled, and retry with backoff until Plaid confirms revocation.
+- Encrypt Item tokens with versioned AES-256-GCM keys. New writes use the active key; configured prior versions are decrypt-only. Rotate and verify every persisted active or queued token before retiring an old key. Missing keys fail closed.
+
+The maintenance operations are implemented, but scheduling, authenticated route mounting, and live database/provider verification remain deployment tasks. Production Plaid access remains disabled until those gates are completed.
 
 ### Typical Merchant Spend Statistic For A Future Provider
 
@@ -194,11 +201,11 @@ Question:
 
 How should Victoria refresh, retain, delete, and disconnect transaction-derived profile facts, and how should corrections to transaction history be represented?
 
-Open decisions include refresh and deletion lifecycle, reconciliation of changed/removed transactions, and production enablement. The approved profile scope remains transaction history only; adding another Plaid product requires a new product decision.
+The user confirmed lifecycle policy on 2026-10-15: raw transactions expire after 90 days; disconnect/delete removes linked transaction data and derived profile facts; remote Item revocation failures are retried while local access stays disabled; and token keys rotate through versioned decrypt-old/encrypt-new migration with verification before retirement. Transaction correction/reconciliation and production enablement remain open. The approved profile scope remains transaction history only; adding another Plaid product requires a new product decision.
 
 Current default:
 
-Build the transactions-only profile within the headless MVP sequence. Live Plaid reads remain blocked on secure credential storage, sync lifecycle, retention/deletion, and deployment review.
+Build the transactions-only profile within the headless MVP sequence. Live Plaid reads remain blocked on authenticated deployment route composition, scheduled lifecycle jobs, live migration verification, retention/deletion operational checks, and deployment review.
 
 ### What Makes Saved Money Feel Protected With One Account?
 

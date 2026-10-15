@@ -53,4 +53,24 @@ describe("FinancialProfileSyncService", () => {
     expect(syncTransactions).not.toHaveBeenCalled();
     expect(rememberFinancialProfile).not.toHaveBeenCalled();
   });
+
+  it("LIFE-006 stops a multi-page refresh as soon as consent is revoked", async () => {
+    const cipher = new PlaidAccessTokenCipher(new Uint8Array(32).fill(6));
+    const item = { userId: "user-1", itemId: "item-1", token: cipher.encrypt("access-token"), cursor: null };
+    const active = { userId: "user-1", status: "active", products: ["transactions"] };
+    const revoked = { userId: "user-1", status: "revoked", products: ["transactions"] };
+    const getConsent = vi.fn().mockResolvedValueOnce(active).mockResolvedValueOnce(active).mockResolvedValueOnce(revoked);
+    const syncTransactions = vi.fn().mockResolvedValue({ added: [transaction], modified: [], removed: [], nextCursor: "next", hasMore: true });
+    const applySyncPage = vi.fn();
+    const rememberFinancialProfile = vi.fn();
+    const service = new FinancialProfileSyncService({ consent: { getConsent },
+      data: { listItems: vi.fn().mockResolvedValue([item]), applySyncPage,
+        listTransactions: vi.fn().mockResolvedValue([{ ...transaction, itemId: "item-1" }]) },
+      plaid: { syncTransactions }, cipher, profiles: { rememberFinancialProfile } });
+
+    await expect(service.syncUser("user-1")).rejects.toThrow("Active Transactions consent is required.");
+    expect(syncTransactions).toHaveBeenCalledTimes(1);
+    expect(applySyncPage).toHaveBeenCalledTimes(1);
+    expect(rememberFinancialProfile).not.toHaveBeenCalled();
+  });
 });

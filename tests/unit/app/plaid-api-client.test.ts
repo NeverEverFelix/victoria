@@ -68,10 +68,23 @@ describe("PlaidAccessTokenCipher", () => {
     expect(cipher.decrypt(first)).toBe("access-sample");
     expect(() => new PlaidAccessTokenCipher(new Uint8Array(32).fill(18)).decrypt(first)).toThrow();
     expect(() => new PlaidAccessTokenCipher(new Uint8Array(32).fill(17), "v2").decrypt(first))
-      .toThrow("key version does not match");
+      .toThrow("key version is unavailable");
   });
 
   it("rejects keys that are not exactly 32 bytes", () => {
     expect(() => new PlaidAccessTokenCipher(new Uint8Array(16))).toThrow("must be 32 bytes");
+  });
+
+  it("decrypts configured prior versions and rotates using only the active key", () => {
+    const oldKey = new Uint8Array(32).fill(3);
+    const newKey = new Uint8Array(32).fill(4);
+    const oldEnvelope = new PlaidAccessTokenCipher(oldKey, "2026-01").encrypt("access-rotated");
+    const rotating = new PlaidAccessTokenCipher(newKey, "2026-10", new Map([["2026-01", oldKey]]));
+    const rotated = rotating.rotate(oldEnvelope);
+
+    expect(rotated.keyVersion).toBe("2026-10");
+    expect(rotating.decrypt(rotated)).toBe("access-rotated");
+    expect(() => new PlaidAccessTokenCipher(newKey, "2026-10").decrypt(oldEnvelope))
+      .toThrow("key version is unavailable");
   });
 });

@@ -283,13 +283,24 @@ Required successful-recording meaning:
 
 Equivalent wording is allowed only if both facts remain unmistakable.
 
+## 11. Transactions Profile Lifecycle
+
+| ID | Normative rule | Status | Executable coverage |
+| --- | --- | --- | --- |
+| LIFE-001 | Raw synced Plaid transaction details **MUST** expire 90 days after the transaction date and **MUST NOT** be returned after expiry. | Implemented in migration and repository query; scheduled invocation required | `tests/contracts/plaid-data-lifecycle.test.ts`; `tests/unit/app/plaid-data-repository.test.ts` |
+| LIFE-002 | An authenticated Item disconnect **MUST** disable local access and delete that Item's token, cursor, and transactions before attempting remote revocation. Derived Plaid profile facts and embeddings **MUST** be cleared for rebuilding from remaining authorized Items. | Implemented behind lifecycle service; live database verification required | `tests/unit/app/plaid-disconnect-handler.test.ts`; `tests/unit/app/plaid-data-repository.test.ts` |
+| LIFE-003 | Delete-all **MUST** revoke Transactions consent, remove every local Item and Plaid-derived profile fact/embedding (including linked successor facts), and retain only encrypted credentials required for remote revocation retry. | Implemented behind lifecycle service; live verification required | `tests/contracts/plaid-data-lifecycle.test.ts`; `tests/unit/app/plaid-data-repository.test.ts`; `tests/unit/app/plaid-data-lifecycle.test.ts` |
+| LIFE-004 | A failed remote revocation **MUST** keep local access disabled and retain an encrypted retry record with backoff; successful revocation **MUST** delete that record. | Implemented behind lifecycle service; scheduler required | `tests/contracts/plaid-data-lifecycle.test.ts`; `tests/unit/app/plaid-data-lifecycle.test.ts` |
+| LIFE-005 | Token rotation **MUST** encrypt new writes with the active key, decrypt only configured versions, persist and verify each rotated envelope, and fail closed when a needed key is unavailable. A prior key **MUST NOT** be retired until every stored envelope verifies under the active key. | Implemented behind lifecycle service; operational rehearsal required | `tests/unit/app/plaid-api-client.test.ts`; `tests/unit/app/plaid-data-lifecycle.test.ts` |
+| LIFE-006 | A sync **MUST** recheck user-owned active Transactions consent before every provider page and **MUST NOT** persist a profile refresh after consent is revoked. | Enforced for current sync service | `tests/unit/app/financial-profile-sync.test.ts` |
+
 ## Traceability And Change Control
 
 The executable contract suite is `tests/contracts/mvp-safety-contract.test.ts`. Lower-level tests may also enforce the same rule. Test titles must include every rule ID they claim to cover.
 
 | Rule group                                      | Primary current test location                      | Completion gate                                                      |
 | ----------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------- |
-| `FIN`, `ARC`, `INT`, `APR`, `STA`, `ERR`, `AUD`, `MEM` | Agent contract and unit tests                      | Relevant agent slice cannot complete without applicable tests        |
+| `FIN`, `ARC`, `INT`, `APR`, `STA`, `ERR`, `AUD`, `MEM`, `LIFE` | Agent contract and unit tests | Relevant slice cannot complete without applicable tests |
 | `AMT`                                           | Domain money and parser tests                      | Amount-handling slice cannot complete while rules remain `Specified` |
 | `IDM`                                           | Agent replay test; future ledger integration tests | Persistent ledger slice requires durable idempotency coverage        |
 | `COR`                                           | Type contracts; future ledger integration tests    | Correction slice requires linked-record and effective-total tests    |

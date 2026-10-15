@@ -89,6 +89,11 @@ export class PlaidApiClient {
     });
   }
 
+  async revokeItem(accessToken: string): Promise<void> {
+    if (typeof accessToken !== "string" || !accessToken.trim()) throw new Error("A Plaid access token is required.");
+    await this.post("/item/remove", { access_token: accessToken });
+  }
+
   private async post(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const response = await this.fetcher(`${this.baseUrl}${path}`, {
       method: "POST",
