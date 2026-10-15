@@ -4,14 +4,17 @@ This file gives coding agents a prioritized list of small implementation slices.
 
 ## Conversational Memory Storage Slice
 
-Status: SQLite 20-message short-term context store, PostgreSQL outbox backup, durable evidence-backed conversational memory, and conservative extraction for explicit savings preferences, recurring habits, and stated goals are implemented. Production wiring, live database verification, broad language coverage, and habit/goal integration into the savings domain remain open.
+Status: SQLite 20-message short-term context store, PostgreSQL outbox backup, durable evidence-backed conversational memory, conservative extraction for explicit savings preferences, recurring habits, and stated goals, and conversational transaction-detail correction are implemented. Transactions-only profile aggregates map into the same append-only memory store. Migration `0004_semantic_user_memory.sql` adds Supabase RLS, versioned pgvector embeddings, and semantic retrieval; the repository calls retrieval when an embedding provider is injected. Quantified merchant-spend memory informs same-merchant estimates, including amounts supplied after a clarification. Recurring habits explicitly tied to named merchants are stored under merchant-specific keys, independently from generic category habits; Victoria can reference the matching routine when asking for a missing amount, then remember the user's answer as a separate spend fact. Merchant-spend extraction supports both “I usually spend $6 at Blue Bottle” and “My usual spend at Blue Bottle is around $6”. A signed-session chat route is mounted for local development with mock model, memory, and ledger adapters only. Trusted login/session issuance, durable runtime wiring, Supabase migration verification, and goal integration into the savings domain remain open. Users do not review or edit memory through a separate interface.
 
 - PostgreSQL stores append-only remembered decisions and backs up current context.
 - SQLite owns short-term context first; it expires after 30 minutes and retries PostgreSQL backup through an outbox.
 - Context retains up to 20 user and Victoria messages and is scoped by user and conversation; durable fact reads use the SQLite cache.
 - Explicit statements such as “I prefer saving $20 rather than $50 at a time,” “I usually make coffee at home on weekdays,” and “My goal is to save $1,000 for a trip to Japan” create evidence-backed facts; uncertain statements do not.
-- Structured facts are a durable source that a future PostgreSQL semantic/vector index can use; embeddings and vector search are not part of this slice.
-- Before production use, configure the SQLite database path/runtime lifecycle and verify migration `0003_conversational_memory.sql` against PostgreSQL.
+- Recurring actions explicitly tied to a merchant (for example, ordering lunch from DoorDash on Fridays) use a merchant-specific memory key; changing one merchant's pattern does not replace another merchant's or the generic category habit.
+- Structured facts and transactions-only profile aggregates share a durable PostgreSQL memory store with a pgvector embedding table and user-scoped semantic retrieval function. A concrete OpenAI embedding adapter and explicit Supabase-compatible runtime are implemented; the default runtime remains mock-backed and no project or credentials are configured.
+- A mock-only bridge maps built transaction profiles into the existing transaction-history estimate seam. Victoria can propose a fresh, sufficiently sampled merchant estimate, disclose its source, and wait for explicit approval; undersampled profiles ask the user for an amount. Durable runtime and live provider wiring remain deferred.
+- An optional structured memory extractor can learn stable ordinary context from a user turn. Victoria stores only high-confidence candidates with exact user-attributed, affirmed evidence from that turn, marked stable and non-sensitive. An optional episodic summarizer appends a compact evidence-linked summary when short-term context reaches its 20-message limit. Both adapters are wired behind `OPENAI_MEMORY_EXTRACTION_ENABLED=true` for local development and remain disabled by default.
+- Before production use, configure the SQLite database path/runtime lifecycle and verify migrations `0003_conversational_memory.sql` and `0004_semantic_user_memory.sql` against Supabase/PostgreSQL with pgvector enabled.
 
 Agents should work from the top unless the user explicitly chooses a different item. Each slice should be completed with tests and verified with `npm run check`.
 
@@ -22,7 +25,7 @@ Agents should work from the top unless the user explicitly chooses a different i
 - Prefer one slice per change.
 - Write or update tests before implementation when practical.
 - Keep mocked ledger behavior separate from real money movement.
-- Do not add external integrations unless a separately approved slice explicitly asks for them. Plaid financial-data access is outside the current MVP; real money movement remains prohibited.
+- Do not add external integrations unless a separately approved slice explicitly asks for them. Plaid access is limited to the approved Transactions-only profile; real money movement remains prohibited.
 - Update docs when behavior changes.
 
 ## Slice 1: Avoided Spend With Explicit Amount
@@ -412,11 +415,11 @@ Done when:
 
 ## Slice 17: Consent-Gated Plaid Link Bootstrap
 
-Status: Sandbox-only token creation and append-only PostgreSQL consent storage are implemented as isolated scaffolding. They are not wired to a live route or the default app composition, and do not fetch financial data.
+Status: Consent-gated Link creation, public-token exchange, encrypted Item-token persistence, cursor-based Transactions sync, and profile refresh are implemented behind injected server handlers and an explicit runtime factory. They are not mounted to a live route or the default app composition; no live provider/database verification was performed.
 
 Goal:
 
-Start the user-authorized Plaid connection flow without fetching financial data, building the profile, or adding memory/UI behavior.
+Start the user-authorized Plaid connection flow and refresh the transactions-only financial profile after link completion.
 
 Expected behavior:
 
@@ -424,8 +427,8 @@ Expected behavior:
 - Load consent for that authenticated user; do not accept identity or product scope from the request body.
 - Create a short-lived Link token only for the active consent record's supported read products.
 - Reject unsupported payment/transfer products and fail closed on consent/provider errors.
-- Keep the first provider adapter sandbox-only; never return credentials or access tokens to the client.
-- Do not store financial data or create any financial-profile or agent-memory records in this slice.
+- Select the Plaid API environment explicitly; never return credentials or access tokens to the client.
+- Persist cursor deltas atomically, then derive and store compact financial-profile facts after a complete sync.
 
 Implemented files:
 
@@ -433,28 +436,31 @@ Implemented files:
 - `src/app/plaid/plaid-link-token-client.ts`
 - `tests/unit/app/plaid-link-token.test.ts`
 
-Any future connection flow requires a separate product and safety approval. The following are not current MVP work:
+The transactions-only profile scope is approved. Remaining deployment work includes:
 
 - Apply migration `0002_plaid_consent_events.sql` and verify behavior against a live PostgreSQL database.
-- Wire the handler to the application's verified session and consent repository.
-- Add the Link client flow and exchange `public_token` only after a user completes Plaid Link.
-- Define initial profile read products/purposes and decide how to store provider credentials securely.
+- Mount the handlers behind the application's verified session.
+- Apply and verify migrations against the selected PostgreSQL/Supabase project.
+- Define transaction retention, disconnect/deletion, and encryption-key rotation before live enablement.
 
-## Proposed Post-MVP: Plaid Financial Profile And Specialist
+## Transactions-Only Financial Profile
 
-This is a proposal only, outside the current MVP, pending a separate product and safety decision. Production Plaid behavior and financial-data retrieval must remain disabled.
+The user confirmed a transactions-only profile on 2026-10-13. Domain aggregation, append-only profile-fact persistence mapping, pgvector schema, semantic retrieval, a concrete embedding adapter, and an explicit persistent runtime are implemented. Live provider/database verification, deployment route mounting, and retention/deletion/key-rotation policy remain follow-up work.
+
+Status: Deterministic context-source selection and an optional transaction-history provider seam exist for avoided-spend estimates. The Plaid adapter now uses the user's standing bank-link authorization, enforces user scoping and consent, and returns no profile facts after revoked consent. Victoria does not ask for per-lookup approval. Live route configuration remains outstanding.
 
 Goal:
 
-Build a user-authorized Plaid read integration, a user-scoped base financial profile, and a `financialprofilespecialist` that provides validated, relevant profile context to Victoria at inference time.
+Build a user-scoped profile from Plaid Transactions history only. Keep profile facts compact, evidence-backed, and available to semantic retrieval; do not add balances or other Plaid products.
 
 Required boundaries:
 
-- Define minimum Plaid products/scopes and purpose before requesting access.
+- Request Transactions only for the profile; transfer and payment capabilities stay unavailable.
 - Define consent, disconnect, refresh, retention, deletion, and profile correction behavior.
 - Preserve profile provenance, observed time, freshness, and uncertainty.
 - Keep provider data and specialist context user-scoped and minimize injected data.
 - Keep specialist outputs advisory; deterministic policy retains action and approval authority.
+- Do not retain raw transaction payloads in conversational memory.
 - No transfer/payment capabilities and no real money movement.
 - Implement and verify headlessly before beginning UI work.
 
@@ -464,6 +470,8 @@ Done when:
 - Profile-derived estimates remain estimates and savings ledger writes still require exact approval.
 - Plaid transfer/payment behavior is unavailable in all MVP environments.
 - `npm run check` passes.
+
+Current status: domain aggregation, `rememberFinancialProfile` persistence mapping, source provenance, HNSW embeddings, Supabase RLS, per-turn semantic retrieval, conversational correction of a clear recent financial fact, encrypted Item-token storage, cursor-based Plaid transaction persistence, consent-checked profile refresh, optional metadata coverage/enrichment, explicit runtime composition, and the `MemoryOrchestrator` lifecycle boundary are implemented. Next: connect the profile provider to estimate decisions, implement authenticated application route composition, configure secrets and the target Supabase project, verify migrations/RLS, and decide transaction retention, Item deletion, and encryption-key rotation before enabling live reads. Broader natural-memory extraction remains later personalization work; users do not review or edit memory through a separate interface. No live calls or credentials were used here.
 
 ## Slice 13: Correct A Recorded Savings Amount
 

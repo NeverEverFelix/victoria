@@ -30,7 +30,8 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
     );`);
   }
 
-  async getMemoryForUser(userId: string): Promise<AgentMemory> {
+  async getMemoryForUser(userId: string, query?: string): Promise<AgentMemory> {
+    if (query?.trim()) return this.durable.getMemoryForUser(userId, query);
     const row = this.db.prepare("SELECT value, cached_at FROM memory_cache WHERE user_id = ?").get(userId) as { value: string; cached_at: number } | undefined;
     if (row && Date.now() - row.cached_at < 30_000) return JSON.parse(row.value) as AgentMemory;
     const memory = await this.durable.getMemoryForUser(userId);
@@ -48,12 +49,20 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
     return (await this.getMemoryForUser(userId)).conversationalMemories ?? [];
   }
 
+  searchConversationalMemories(userId: string, query: string, limit = 20): Promise<readonly ConversationalMemory[]> {
+    return this.durable.searchConversationalMemories(userId, query, limit);
+  }
+
   async rememberConversationalMemory(
     userId: string, memory: Omit<ConversationalMemory, "id" | "createdAt">
   ): Promise<ConversationalMemory> {
     const saved = await this.durable.rememberConversationalMemory(userId, memory);
     this.db.prepare("DELETE FROM memory_cache WHERE user_id = ?").run(userId);
     return saved;
+  }
+
+  invalidateUserMemoryCache(userId: string): void {
+    this.db.prepare("DELETE FROM memory_cache WHERE user_id = ?").run(userId);
   }
 
   listHabits(userId: string): Promise<UserHabit[]> { return this.durable.listHabits(userId); }

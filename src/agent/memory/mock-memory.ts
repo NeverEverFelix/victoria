@@ -12,11 +12,14 @@ export class MockMemoryProvider implements MemoryProvider {
     private readonly goals: SavingsGoal[] = []
   ) {}
 
-  async getMemoryForUser(userId: string): Promise<AgentMemory> {
+  async getMemoryForUser(userId: string, query?: string): Promise<AgentMemory> {
     return {
       habits: await this.listHabits(userId),
       goals: await this.listGoals(userId),
-      recentDecisions: immutableSnapshot(this.decisionsByUser.get(userId) ?? [])
+      recentDecisions: immutableSnapshot(this.decisionsByUser.get(userId) ?? []),
+      conversationalMemories: query
+        ? await this.searchConversationalMemories(userId, query)
+        : await this.listConversationalMemories(userId)
     };
   }
 
@@ -56,12 +59,26 @@ export class MockMemoryProvider implements MemoryProvider {
     return immutableSnapshot(this.memoriesByUser.get(userId) ?? []);
   }
 
+  async searchConversationalMemories(userId: string, query: string, limit = 20): Promise<readonly ConversationalMemory[]> {
+    const tokens = new Set(query.toLocaleLowerCase("en-US").split(/\W+/u).filter(Boolean));
+    const memories = this.memoriesByUser.get(userId) ?? [];
+    const supersededIds = new Set(memories.flatMap((memory) => memory.supersedesId ? [memory.supersedesId] : []));
+    return immutableSnapshot(memories.filter((memory) => !supersededIds.has(memory.id))
+      .map((memory) => ({ memory, score: [...tokens].filter((token) =>
+        `${memory.key} ${memory.value}`.toLocaleLowerCase("en-US").includes(token)).length }))
+      .filter((item) => item.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, Math.max(1, Math.min(limit, 50)))
+      .map((item) => item.memory));
+  }
+
   async rememberConversationalMemory(
     userId: string, memory: Omit<ConversationalMemory, "id" | "createdAt">
   ): Promise<ConversationalMemory> {
     if (!userId.trim() || !memory.key.trim() || !memory.value.trim() || !memory.evidence.trim() ||
         !Number.isFinite(memory.confidence) || memory.confidence < 0 || memory.confidence > 1 ||
-        !["preference", "goal", "habit", "other"].includes(memory.category)) {
+        !["preference", "goal", "habit", "other", "financial_pattern"].includes(memory.category) ||
+        (memory.sourceRecordCount !== undefined && (!Number.isSafeInteger(memory.sourceRecordCount) || memory.sourceRecordCount <= 0))) {
       throw new Error("Conversational memory must have a user, key, value, evidence, and confidence from 0 to 1.");
     }
     const userMemories = this.memoriesByUser.get(userId) ?? [];

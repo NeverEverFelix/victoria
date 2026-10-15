@@ -50,6 +50,28 @@ describe("OpenAiFinancialMomentAdapter", () => {
     expect(result).toMatchObject({ type: "avoided_spend", amountIssue: "multiple_amounts", needsClarification: true });
   });
 
+  it("sends the full conversational context for intent classification instead of routing from phrase matches", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
+        type: "real_money_movement_request", confidence: 0.91, merchantName: null, goalName: null,
+        revisionReason: null, summary: "Asked to move the discussed amount", needsClarification: false
+      }) }] }]
+    }));
+    const adapter = new OpenAiFinancialMomentAdapter({ apiKey: "test-key", model: "gpt-test", fetcher });
+
+    const result = await adapter.classifyMessage({
+      userMessage: "Can we move the $37.46 we discussed into savings?",
+      memory: { habits: [], goals: [], recentDecisions: [] },
+      conversationContext: ["I almost bought lunch for $37.46, but skipped it."]
+    });
+
+    expect(result.type).toBe("real_money_movement_request");
+    const request = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
+    expect(request.instructions).toContain("do not classify from a keyword or phrase alone");
+    expect(request.input).toContain("I almost bought lunch for $37.46, but skipped it.");
+    expect(request.input).toContain("Can we move the $37.46 we discussed into savings?");
+  });
+
   it("drops model-supplied merchant names that are absent from the user context", async () => {
     const adapter = new OpenAiFinancialMomentAdapter({
       apiKey: "test-key", model: "gpt-test", fetcher: async () => jsonResponse({

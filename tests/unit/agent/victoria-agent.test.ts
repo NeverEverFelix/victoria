@@ -461,6 +461,17 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsEntries("user_123")).toEqual([]);
   });
 
+  it("does not decide that ambiguous move-over wording means a real transfer from the phrase alone", async () => {
+    const classification = await new MockLlmAdapter().classifyMessage({
+      userMessage: "Hey can we move over that's $37.46 that we talked about earlier?",
+      memory: { habits: [], goals: [], recentDecisions: [] },
+      conversationContext: ["I almost bought a $37.46 lunch but decided to wait."]
+    });
+
+    expect(classification.type).toBe("unclear");
+    expect(classification.amountCents).toBe(3746);
+  });
+
   it("[AMT-004] asks to clarify an avoided-spend amount with excess precision", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);

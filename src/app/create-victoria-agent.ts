@@ -1,5 +1,6 @@
 import {
   createMockAgentTeamSpecialists,
+  MemoryOrchestrator,
   MockLlmAdapter,
   MockMemoryProvider,
   MockVictoriaTools,
@@ -30,7 +31,8 @@ export function createVictoriaAgent(options: CreateVictoriaAgentOptions): Victor
   }
 
   const habits = options.seedHabits ?? [];
-  const memory = options.memory ?? new MockMemoryProvider(habits);
+  const suppliedMemory = options.memory ?? new MockMemoryProvider(habits);
+  const memory = suppliedMemory instanceof MemoryOrchestrator ? suppliedMemory : new MemoryOrchestrator(suppliedMemory);
   const tools = options.tools ?? new MockVictoriaTools(habits);
   const classifier = flags.useProviderFinancialMoment
     ? new OpenAiFinancialMomentAdapter({

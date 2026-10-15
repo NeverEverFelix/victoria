@@ -113,6 +113,16 @@ export class MockLlmAdapter implements LlmAdapter {
       };
     }
 
+    if (/^\s*(?:i(?:'m| am| have| work| usually| often| prefer| like| need| get| do not| don't)\b|my\b|we\b)/i.test(input.userMessage) &&
+        !/\b(?:spent|paid|bought|was charged|got charged|transferred|transfer money|moved money)\b/i.test(input.userMessage)) {
+      return {
+        type: "general_finance",
+        confidence: 0.9,
+        summary: input.userMessage,
+        needsClarification: false
+      };
+    }
+
     return {
       type: "unclear",
       confidence: 0.3,

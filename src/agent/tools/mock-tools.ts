@@ -60,18 +60,44 @@ export class MockVictoriaTools implements VictoriaTools {
       merchantName: input.merchantName
     });
 
-    if (typicalAmountCents === null) {
-      return null;
+    if (typicalAmountCents !== null) {
+      return {
+        id: `suggestion_${Date.now()}`,
+        amountCents: typicalAmountCents,
+        currency: "USD",
+        reason: `Estimated from typical spend at ${input.merchantName}.`,
+        source: "merchant_history",
+        movementMode: "mock_ledger"
+      };
     }
 
-    return {
-      id: `suggestion_${Date.now()}`,
-      amountCents: typicalAmountCents,
-      currency: "USD",
-      reason: `Estimated from typical spend at ${input.merchantName}.`,
-      source: "merchant_history",
-      movementMode: "mock_ledger"
-    };
+    if (input.rememberedTypicalAmountCents !== undefined &&
+        Number.isSafeInteger(input.rememberedTypicalAmountCents) && input.rememberedTypicalAmountCents > 0) {
+      return {
+        id: `suggestion_${Date.now()}`,
+        amountCents: input.rememberedTypicalAmountCents,
+        currency: "USD",
+        reason: `Estimated from your remembered typical spend at ${input.merchantName}.`,
+        source: "manual_estimate",
+        movementMode: "mock_ledger"
+      };
+    }
+
+    const transactionEstimate = input.transactionHistoryEstimate;
+    if (transactionEstimate && Number.isSafeInteger(transactionEstimate.amountCents) && transactionEstimate.amountCents > 0 &&
+        Number.isSafeInteger(transactionEstimate.transactionCount) && transactionEstimate.transactionCount > 0 &&
+        Number.isFinite(Date.parse(transactionEstimate.observedThrough))) {
+      return {
+        id: `suggestion_${Date.now()}`,
+        amountCents: transactionEstimate.amountCents,
+        currency: "USD",
+        reason: `Estimate based on ${transactionEstimate.transactionCount} recent transactions at ${input.merchantName}, observed through ${transactionEstimate.observedThrough}.`,
+        source: "merchant_history",
+        movementMode: "mock_ledger"
+      };
+    }
+
+    return null;
   }
 
   async createSavingsEntry(input: CreateSavingsEntryInput): Promise<SavingsEntry> {

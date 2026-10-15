@@ -53,7 +53,7 @@ Recommended starting stack:
 - Prisma for modeling and querying the database from TypeScript.
 - OpenAI for natural language understanding, reasoning, and agent behavior.
 - A mocked savings ledger before any real money movement.
-- A future, user-authorized financial profile integration may be considered after separate product and safety review. The current MVP does not fetch Plaid data or use production Plaid credentials.
+- The approved financial profile uses user-authorized Plaid Transactions history only. Live Plaid reads are not wired yet; production access and money movement remain disabled.
 
 The first version should prove the behavioral loop before it tries to become a bank. Victoria can begin by recording saved amounts in an internal ledger, showing progress, and building trust. Real transfers should come later and should always require explicit user approval.
 
@@ -83,6 +83,7 @@ Start with:
 - `docs/decisions.md` for product decisions and unresolved questions.
 - `docs/failure-modes.md` for Victoria-specific silent failures to guard against.
 - `docs/specification/mvp-safety-contract.md` for normative safety rules, decision tables, and test traceability.
+- `docs/specification/user-learning-schema.md` for persistent learning facts, the transactions-only profile, pgvector, and semantic retrieval.
 - `docs/mvp.md` and `docs/user-stories.md` for the MVP behavior contract.
 
 The default coding pattern is one orchestrator agent working on one slice at a time. Specialist reviewers should be used only for risky or cross-cutting changes, especially around tests, safety, architecture, and documentation drift.
@@ -194,7 +195,7 @@ Victoria should run with separate local, test, staging, and production environme
 
 See `docs/environments.md` for the environment matrix, required variables, and money movement safety rules. Start from `.env.example` for local development, `.env.test.example` for test runs, `.env.staging.example` for staging, and `.env.production.example` for production.
 
-The config parser lives in `src/config/env.ts`. It validates required variables, enforces compatible `APP_ENV` and `NODE_ENV` pairs, keeps environment database names separated, rejects unsafe production secrets, and prevents real money movement. Production Plaid behavior and data reads are outside the MVP. Feature flags derived from that config live in `src/config/feature-flags.ts`.
+The config parser lives in `src/config/env.ts`. It validates required variables, enforces compatible `APP_ENV` and `NODE_ENV` pairs, keeps environment database names separated, rejects unsafe production secrets, and prevents real money movement. The approved financial profile scope is limited to user-authorized Plaid Transactions reads; transfer and payment behavior remain outside the MVP. Feature flags derived from that config live in `src/config/feature-flags.ts`.
 
 The agent composition entry point lives in `src/app/create-victoria-agent.ts`. Mock AI, memory, and ledger tools remain the default. Provider calls occur only when `OPENAI_MODEL` is not `mock` and a provider flag is enabled. `OPENAI_AGENT_TEAM_ENABLED=true` opts into provider-backed Financial Moment, Savings Reasoning, and Companion Voice specialists and takes precedence over the single-adapter flag. Otherwise, `OPENAI_FINANCIAL_MOMENT_ENABLED=true` opts into the single provider Financial Moment adapter. Both flags default off, and `OPENAI_MODEL=mock` always keeps AI mocked. Provider outputs remain advisory; deterministic core validation and approval govern every mocked-ledger write, and real money movement remains unavailable.
 

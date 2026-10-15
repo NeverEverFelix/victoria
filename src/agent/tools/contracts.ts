@@ -17,6 +17,12 @@ export interface EstimateAvoidedSpendInput {
   userId: string;
   merchantName?: string;
   userProvidedAmountCents?: number;
+  rememberedTypicalAmountCents?: number;
+  transactionHistoryEstimate?: {
+    amountCents: number;
+    transactionCount: number;
+    observedThrough: string;
+  };
 }
 
 export interface CreateSavingsEntryInput {

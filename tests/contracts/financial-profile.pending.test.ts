@@ -1,12 +1,11 @@
 import { describe, it } from "vitest";
 
 /**
- * Post-MVP proposal scenarios. These are intentionally pending until a separate
- * product and safety review approves financial-data access.
- * Keep pending until the profile, authorization, and inference-context
- * interfaces are defined; do not encode a guessed Plaid product scope here.
+ * Remaining end-to-end profile scenarios. The transactions-only product scope
+ * is confirmed; keep these pending until live provider and inference interfaces
+ * are implemented.
  */
-describe("financial profile MVP contract scenarios not yet executable", () => {
+describe("financial profile integration scenarios not yet executable", () => {
   it.todo("does not fetch or inject Plaid data without active user authorization");
   it.todo("isolates profile data across users in storage, specialist inputs, and inference context");
   it.todo("preserves provenance, observation time, freshness, and uncertainty for profile facts");

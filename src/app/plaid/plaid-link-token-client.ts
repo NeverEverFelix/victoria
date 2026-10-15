@@ -1,8 +1,10 @@
 import { isPlaidReadProduct, type PlaidReadProduct } from "./create-link-token-handler.js";
+import type { PlaidEnv } from "../../config/env.js";
 
 export interface PlaidLinkTokenClientOptions {
   readonly clientId: string;
   readonly secret: string;
+  readonly environment?: PlaidEnv;
   readonly fetcher?: typeof fetch;
   readonly apiVersion?: string;
 }
@@ -24,7 +26,12 @@ export class PlaidLinkTokenClient {
       throw new Error("Invalid Plaid read products.");
     }
 
-    const response = await this.fetcher("https://sandbox.plaid.com/link/token/create", {
+    const baseUrl = {
+      sandbox: "https://sandbox.plaid.com",
+      development: "https://development.plaid.com",
+      production: "https://production.plaid.com"
+    }[this.options.environment ?? "sandbox"];
+    const response = await this.fetcher(`${baseUrl}/link/token/create`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
