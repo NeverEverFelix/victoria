@@ -55,6 +55,19 @@ describe("PlaidApiClient", () => {
       fetcher: vi.fn<typeof fetch>().mockResolvedValue(response({ error_message: "sensitive provider details" }, false)) });
     await expect(failed.exchangePublicToken("public-test")).rejects.toThrow("Plaid API request failed.");
   });
+
+  it("classifies provider response failures for bounded retry handling", async () => {
+    const permanent = new PlaidApiClient({ clientId: "client-test", secret: "secret-test", environment: "sandbox",
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(new Response("{}", { status: 401 })) });
+    const transient = new PlaidApiClient({ clientId: "client-test", secret: "secret-test", environment: "sandbox",
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(new Response("{}", { status: 503 })) });
+
+    await expect(permanent.revokeItem("access"))
+      .rejects.toMatchObject({ name: "PlaidApiError", status: 401, retryable: false });
+    await expect(transient.revokeItem("access"))
+      .rejects.toMatchObject({ name: "PlaidApiError", status: 503, retryable: true });
+    await expect(permanent.revokeItem("x".repeat(2049))).rejects.toThrow("A valid Plaid access token is required.");
+  });
 });
 
 describe("PlaidAccessTokenCipher", () => {

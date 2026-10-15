@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PlaidAccessTokenCipher } from "./access-token-cipher.js";
-import type { PlaidApiClient } from "./plaid-api-client.js";
+import { PlaidApiError, type PlaidApiClient } from "./plaid-api-client.js";
 import type { PlaidConsentRepository } from "./consent-repository.js";
 import type { PlaidDataRepository, PlaidRevocationItem } from "./plaid-data-repository.js";
 
@@ -23,7 +23,7 @@ export class PlaidDataLifecycleService {
     // Local credentials, transactions, and derived memories are removed before remote calls.
     const queued = await this.deps.data.beginDisconnect(userId, itemId);
     this.deps.invalidateMemoryCache?.(userId);
-    const due = await this.deps.data.listDueRevocations(100);
+    const due = await this.deps.data.listDueRevocations(100, userId, itemId);
     const work = new Map([...queued, ...due]
       .filter((item) => item.userId === userId && (!itemId || item.itemId === itemId))
       .map((item) => [item.itemId, item]));
@@ -63,9 +63,15 @@ export class PlaidDataLifecycleService {
         await this.deps.plaid.revokeItem(this.deps.cipher.decrypt(item.token));
         await this.deps.data.completeRevocation(item.userId, item.itemId);
         revoked++;
-      } catch {
+      } catch (error) {
+        if (error instanceof PlaidApiError && !error.retryable) {
+          await this.deps.data.failRevocation(item.userId, item.itemId, null, true, `provider_http_${error.status}`);
+          pending++;
+          continue;
+        }
         const delayMs = Math.min(24 * 60 * 60_000, 60_000 * (2 ** Math.min(item.attempts, 10)));
-        await this.deps.data.failRevocation(item.userId, item.itemId, new Date((this.deps.now?.() ?? new Date()).getTime() + delayMs).toISOString());
+        await this.deps.data.failRevocation(item.userId, item.itemId,
+          new Date((this.deps.now?.() ?? new Date()).getTime() + delayMs).toISOString());
         pending++;
       }
     }

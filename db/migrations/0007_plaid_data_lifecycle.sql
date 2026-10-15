@@ -30,6 +30,13 @@ CREATE TABLE IF NOT EXISTS victoria_plaid_revocation_queue (
 CREATE INDEX IF NOT EXISTS victoria_plaid_revocation_due_idx
   ON victoria_plaid_revocation_queue(next_attempt_at);
 ALTER TABLE victoria_plaid_revocation_queue ENABLE ROW LEVEL SECURITY;
+ALTER TABLE victoria_plaid_revocation_queue
+  ADD COLUMN IF NOT EXISTS claimed_until timestamptz,
+  ADD COLUMN IF NOT EXISTS last_error_code text,
+  ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'manual_review'));
+CREATE INDEX IF NOT EXISTS victoria_plaid_revocation_claim_idx
+  ON victoria_plaid_revocation_queue(status, next_attempt_at, claimed_until);
 CREATE POLICY victoria_plaid_revocation_queue_service_role
   ON victoria_plaid_revocation_queue FOR ALL TO service_role
   USING (true) WITH CHECK (true);

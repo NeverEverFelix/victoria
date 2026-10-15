@@ -442,9 +442,10 @@ The transactions-only read-only profile scope is approved. Production Plaid acce
 - Mount the handlers behind the application's verified session.
 - Apply and verify migrations against the selected PostgreSQL/Supabase project.
 - Mount the authenticated disconnect handler and schedule expiry, revocation retry, and key-rotation maintenance operations.
+- Provide an authenticated operator workflow to resolve and resume encrypted `manual_review` revocation records before live reads are enabled.
 - Verify migration `0007_plaid_data_lifecycle.sql` and lifecycle operations against a disposable PostgreSQL/Supabase database.
 - Run a controlled key rotation and verify all active and queued Item tokens before retiring prior keys.
-- Lifecycle unit and contract tests cover 90-day expiry/filter boundaries, user-scoped deletion, revoked consent during pagination, provider retry success/failure, and key-rotation verification failures.
+- Lifecycle unit and contract tests cover 90-day expiry/filter boundaries, user-scoped deletion, revoked consent during pagination, concurrent-safe provider retry claims, permanent-rejection manual review, and key-rotation verification failures.
 
 ## Transactions-Only Financial Profile
 

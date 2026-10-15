@@ -19,10 +19,10 @@ export interface PlaidDataRepository {
   applySyncPage(userId: string, itemId: string, page: PlaidTransactionSyncPage): Promise<void>;
   listTransactions(userId: string, sinceDate: string): Promise<readonly PlaidFinancialTransaction[]>;
   beginDisconnect(userId: string, itemId?: string): Promise<readonly PlaidRevocationItem[]>;
-  listDueRevocations(limit?: number): Promise<readonly PlaidRevocationItem[]>;
+  listDueRevocations(limit?: number, userId?: string, itemId?: string): Promise<readonly PlaidRevocationItem[]>;
   countPendingRevocations(userId: string, itemId?: string): Promise<number>;
   completeRevocation(userId: string, itemId: string): Promise<void>;
-  failRevocation(userId: string, itemId: string, nextAttemptAt: string): Promise<void>;
+  failRevocation(userId: string, itemId: string, nextAttemptAt: string | null, manualReview?: boolean, errorCode?: string): Promise<void>;
   expireOldTransactions(now?: Date): Promise<number>;
   replaceToken(userId: string, itemId: string, token: EncryptedPlaidAccessToken): Promise<EncryptedPlaidAccessToken>;
   listAllEncryptedTokensForMaintenance(): Promise<readonly PlaidRevocationItem[]>;
@@ -129,11 +129,12 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
       for (const row of rows.rows) {
         const token = { ciphertext: row.access_token_ciphertext, iv: row.access_token_iv,
           authTag: row.access_token_auth_tag, keyVersion: row.encryption_key_version };
-        await client.query(`INSERT INTO victoria_plaid_revocation_queue
-          (user_id,item_id,access_token_ciphertext,access_token_iv,access_token_auth_tag,encryption_key_version)
-          VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (item_id) DO NOTHING`,
+        const inserted = await client.query<{ attempts: number }>(`INSERT INTO victoria_plaid_revocation_queue
+          (user_id,item_id,access_token_ciphertext,access_token_iv,access_token_auth_tag,encryption_key_version,claimed_until)
+          VALUES ($1,$2,$3,$4,$5,$6,now() + interval '30 minutes')
+          ON CONFLICT (item_id) DO NOTHING RETURNING attempts`,
           [userId, row.item_id, token.ciphertext, token.iv, token.authTag, token.keyVersion]);
-        queued.push(Object.freeze({ userId, itemId: row.item_id, token, attempts: 0 }));
+        if (inserted.rows.length === 1) queued.push(Object.freeze({ userId, itemId: row.item_id, token, attempts: inserted.rows[0]!.attempts }));
       }
       await client.query(`DELETE FROM victoria_plaid_transactions WHERE user_id=$1
         AND ($2::text IS NULL OR item_id=$2)`, [userId, itemId ?? null]);
@@ -148,12 +149,25 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
     } finally { client.release(); }
   }
 
-  async listDueRevocations(limit = 50): Promise<readonly PlaidRevocationItem[]> {
+  async listDueRevocations(limit = 50, userId?: string, itemId?: string): Promise<readonly PlaidRevocationItem[]> {
+    if ((userId !== undefined && !userId.trim()) || (itemId !== undefined && !itemId.trim()) || (itemId !== undefined && userId === undefined)) {
+      throw new Error("Optional revocation filters must not be empty.");
+    }
     const bounded = Math.max(1, Math.min(Number.isSafeInteger(limit) ? limit : 50, 100));
     const result = await this.pool.query<{ user_id: string; item_id: string; access_token_ciphertext: string;
       access_token_iv: string; access_token_auth_tag: string; encryption_key_version: string; attempts: number }>(
-      `SELECT user_id,item_id,access_token_ciphertext,access_token_iv,access_token_auth_tag,encryption_key_version,attempts
-       FROM victoria_plaid_revocation_queue WHERE next_attempt_at <= now() ORDER BY next_attempt_at LIMIT $1`, [bounded]);
+      `WITH due AS (
+         SELECT item_id FROM victoria_plaid_revocation_queue
+         WHERE status = 'pending' AND next_attempt_at <= now()
+           AND (claimed_until IS NULL OR claimed_until <= now())
+           AND ($2::text IS NULL OR user_id=$2) AND ($3::text IS NULL OR item_id=$3)
+         ORDER BY next_attempt_at FOR UPDATE SKIP LOCKED LIMIT $1
+       )
+       UPDATE victoria_plaid_revocation_queue q
+       SET claimed_until = now() + interval '30 minutes'
+       FROM due WHERE q.item_id = due.item_id
+       RETURNING q.user_id,q.item_id,q.access_token_ciphertext,q.access_token_iv,
+         q.access_token_auth_tag,q.encryption_key_version,q.attempts`, [bounded, userId ?? null, itemId ?? null]);
     return Object.freeze(result.rows.map((row) => Object.freeze({ userId: row.user_id, itemId: row.item_id,
       token: Object.freeze({ ciphertext: row.access_token_ciphertext, iv: row.access_token_iv,
         authTag: row.access_token_auth_tag, keyVersion: row.encryption_key_version }), attempts: row.attempts })));
@@ -174,10 +188,13 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
     await this.pool.query("DELETE FROM victoria_plaid_revocation_queue WHERE user_id=$1 AND item_id=$2", [userId, itemId]);
   }
 
-  async failRevocation(userId: string, itemId: string, nextAttemptAt: string): Promise<void> {
+  async failRevocation(userId: string, itemId: string, nextAttemptAt: string | null, manualReview = false, errorCode?: string): Promise<void> {
     assertIdentity(userId, itemId);
     await this.pool.query(`UPDATE victoria_plaid_revocation_queue SET attempts=attempts+1,
-      next_attempt_at=$3, last_error_at=now() WHERE user_id=$1 AND item_id=$2`, [userId, itemId, nextAttemptAt]);
+      next_attempt_at=coalesce($3::timestamptz,next_attempt_at), status=$4,
+      claimed_until=NULL, last_error_at=now(), last_error_code=coalesce($5,last_error_code)
+      WHERE user_id=$1 AND item_id=$2`,
+      [userId, itemId, nextAttemptAt, manualReview ? "manual_review" : "pending", errorCode ?? null]);
   }
 
   async expireOldTransactions(now = new Date()): Promise<number> {
@@ -188,24 +205,33 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
 
   async replaceToken(userId: string, itemId: string, token: EncryptedPlaidAccessToken): Promise<EncryptedPlaidAccessToken> {
     assertIdentity(userId, itemId);
-    const item = await this.pool.query(`UPDATE victoria_plaid_items SET access_token_ciphertext=$3,access_token_iv=$4,
-      access_token_auth_tag=$5,encryption_key_version=$6,updated_at=now() WHERE user_id=$1 AND item_id=$2`,
-      [userId, itemId, token.ciphertext, token.iv, token.authTag, token.keyVersion]);
-    const queue = await this.pool.query(`UPDATE victoria_plaid_revocation_queue SET access_token_ciphertext=$3,access_token_iv=$4,
-      access_token_auth_tag=$5,encryption_key_version=$6 WHERE user_id=$1 AND item_id=$2`,
-      [userId, itemId, token.ciphertext, token.iv, token.authTag, token.keyVersion]);
-    if ((item.rowCount ?? 0) + (queue.rowCount ?? 0) !== 1) throw new Error("Plaid token rotation target was not found or was ambiguous.");
-    const persisted = await this.pool.query<{ access_token_ciphertext: string; access_token_iv: string;
-      access_token_auth_tag: string; encryption_key_version: string }>(
-      `SELECT access_token_ciphertext,access_token_iv,access_token_auth_tag,encryption_key_version
-       FROM victoria_plaid_items WHERE user_id=$1 AND item_id=$2
-       UNION ALL
-       SELECT access_token_ciphertext,access_token_iv,access_token_auth_tag,encryption_key_version
-       FROM victoria_plaid_revocation_queue WHERE user_id=$1 AND item_id=$2`, [userId, itemId]);
-    if (persisted.rows.length !== 1) throw new Error("Plaid token rotation verification failed.");
-    const row = persisted.rows[0]!;
-    return Object.freeze({ ciphertext: row.access_token_ciphertext, iv: row.access_token_iv,
-      authTag: row.access_token_auth_tag, keyVersion: row.encryption_key_version });
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const item = await client.query(`UPDATE victoria_plaid_items SET access_token_ciphertext=$3,access_token_iv=$4,
+        access_token_auth_tag=$5,encryption_key_version=$6,updated_at=now() WHERE user_id=$1 AND item_id=$2`,
+        [userId, itemId, token.ciphertext, token.iv, token.authTag, token.keyVersion]);
+      const queue = await client.query(`UPDATE victoria_plaid_revocation_queue SET access_token_ciphertext=$3,access_token_iv=$4,
+        access_token_auth_tag=$5,encryption_key_version=$6 WHERE user_id=$1 AND item_id=$2`,
+        [userId, itemId, token.ciphertext, token.iv, token.authTag, token.keyVersion]);
+      if ((item.rowCount ?? 0) + (queue.rowCount ?? 0) !== 1) throw new Error("Plaid token rotation target was not found or was ambiguous.");
+      const persisted = await client.query<{ access_token_ciphertext: string; access_token_iv: string;
+        access_token_auth_tag: string; encryption_key_version: string }>(
+        `SELECT access_token_ciphertext,access_token_iv,access_token_auth_tag,encryption_key_version
+         FROM victoria_plaid_items WHERE user_id=$1 AND item_id=$2
+         UNION ALL
+         SELECT access_token_ciphertext,access_token_iv,access_token_auth_tag,encryption_key_version
+         FROM victoria_plaid_revocation_queue WHERE user_id=$1 AND item_id=$2`, [userId, itemId]);
+      if (persisted.rows.length !== 1) throw new Error("Plaid token rotation verification failed.");
+      const row = persisted.rows[0]!;
+      const result = Object.freeze({ ciphertext: row.access_token_ciphertext, iv: row.access_token_iv,
+        authTag: row.access_token_auth_tag, keyVersion: row.encryption_key_version });
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch { /* retain original error */ }
+      throw error;
+    } finally { client.release(); }
   }
 
   async listAllEncryptedTokensForMaintenance(): Promise<readonly PlaidRevocationItem[]> {

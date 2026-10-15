@@ -19,11 +19,11 @@ export function createPlaidDisconnectHandler(deps: {
     const action = (body as Record<string, unknown>).action;
     const itemId = (body as Record<string, unknown>).itemId;
     if ((action !== "disconnect_item" && action !== "delete_all") ||
-        (action === "disconnect_item" && (typeof itemId !== "string" || !itemId.trim())) ||
+        (action === "disconnect_item" && (typeof itemId !== "string" || !itemId.trim() || itemId.length > 128)) ||
         (action === "delete_all" && itemId !== undefined)) return respond(400, { error: "invalid_request" });
     try {
       const result = await deps.lifecycle.disconnect(user.userId, action === "disconnect_item" ? itemId as string : undefined);
-      return respond(result.pending > 0 ? 202 : 200, { disconnected: true, revoked: result.revoked, revocationPending: result.pending });
+      return respond(result.pending > 0 ? 202 : 200, { disconnected: true, revoked: result.revoked, pendingRevocations: result.pending });
     } catch {
       return respond(503, { error: "plaid_disconnect_unavailable" });
     }

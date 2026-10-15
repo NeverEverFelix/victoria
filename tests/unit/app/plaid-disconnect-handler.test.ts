@@ -36,6 +36,16 @@ describe("createPlaidDisconnectHandler", () => {
       method: "POST", body: JSON.stringify({ action: "delete_all" })
     }));
     expect(response.status).toBe(202);
-    await expect(response.json()).resolves.toMatchObject({ disconnected: true, revocationPending: 1 });
+    await expect(response.json()).resolves.toMatchObject({ disconnected: true, pendingRevocations: 1 });
+  });
+
+  it("rejects oversized Item IDs", async () => {
+    const disconnect = vi.fn();
+    const handler = createPlaidDisconnectHandler({ authenticate: async () => ({ userId: "owner" }), lifecycle: { disconnect } });
+    const response = await handler(new Request("https://local.test/plaid/disconnect", {
+      method: "POST", body: JSON.stringify({ action: "disconnect_item", itemId: "x".repeat(129) })
+    }));
+    expect(response.status).toBe(400);
+    expect(disconnect).not.toHaveBeenCalled();
   });
 });

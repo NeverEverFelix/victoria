@@ -245,7 +245,7 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Test OpenAI embedding request/response behavior with a mocked fetcher. Do not make live Plaid, OpenAI, or Supabase calls in unit tests.
 - Raw transaction rows expire exactly 90 days after the transaction date and cannot enter profile reads after expiry (`LIFE-001`).
 - Authenticated Item disconnect and delete-all purge local tokens, cursors, transactions, and derived profile facts/embeddings before remote revocation; delete-all also appends consent revocation (`LIFE-002`, `LIFE-003`).
-- Failed remote revocation leaves only an encrypted retry record with backoff; success clears it (`LIFE-004`).
+- Retryable remote revocation failures keep only an encrypted retry record with backoff; permanent provider rejections move the record to manual review; concurrent workers cannot claim the same due Item; success clears it (`LIFE-004`).
 - Rotation decrypts configured prior key versions, writes under the active key, verifies persisted ciphertext, and fails closed when a key is missing (`LIFE-005`).
 - A foreign Item ID cannot enqueue credentials or trigger deletion of another user's data; local item reads remain user-scoped and ignore disconnected Items (`LIFE-002`).
 - Revocation between cursor pages prevents the next Plaid call and prevents profile-memory refresh (`LIFE-006`).

@@ -30,6 +30,13 @@ export interface PlaidApiClientOptions {
   readonly timeoutMs?: number;
 }
 
+export class PlaidApiError extends Error {
+  constructor(readonly status: number, readonly retryable: boolean) {
+    super("Plaid API request failed.");
+    this.name = "PlaidApiError";
+  }
+}
+
 interface PlaidTransactionPayload {
   transaction_id?: unknown;
   amount?: unknown;
@@ -108,7 +115,7 @@ export class PlaidApiClient {
       body: JSON.stringify(body),
       cache: "no-store"
     });
-    if (!response.ok) throw new Error("Plaid API request failed.");
+    if (!response.ok) throw new PlaidApiError(response.status, response.status === 429 || response.status >= 500);
     let result: unknown;
     try { result = await response.json(); } catch { throw new Error("Invalid Plaid API response."); }
     if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("Invalid Plaid API response.");

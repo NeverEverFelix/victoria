@@ -180,7 +180,7 @@ The profile input, aggregation, persistence mapping, semantic memory schema, sec
 
 - Keep raw synced transaction details for 90 days from the transaction date, matching the profile lookback, then purge them.
 - Profile facts and embeddings are derived and refreshable. On Item disconnect, immediately disable local access, request remote Item revocation, remove that Item's local token/cursor/transactions, and clear all of the user's Plaid-derived profile facts, embeddings, and linked successor facts; the next authorized sync rebuilds the profile from any remaining Items. On delete-all, revoke the user's Transactions consent and apply that cleanup to every linked Item.
-- Preserve a minimal consent revocation audit event. If remote revocation fails, retain only the encrypted token in a retry queue, keep local access disabled, and retry with backoff until Plaid confirms revocation.
+- Preserve a minimal consent revocation audit event. If remote revocation fails, retain only the encrypted token in a retry queue and keep local access disabled. Retry transient failures with backoff; move permanent provider rejections to manual review without discarding the encrypted token. Resume revocation only after the operator has addressed the provider rejection.
 - Encrypt Item tokens with versioned AES-256-GCM keys. New writes use the active key; configured prior versions are decrypt-only. Rotate and verify every persisted active or queued token before retiring an old key. Missing keys fail closed.
 
 The maintenance operations are implemented, but scheduling, authenticated route mounting, and live database/provider verification remain deployment tasks. Production Plaid access remains disabled until those gates are completed.

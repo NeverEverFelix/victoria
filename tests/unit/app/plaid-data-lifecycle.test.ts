@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { PlaidAccessTokenCipher } from "../../../src/app/plaid/access-token-cipher.js";
 import { PlaidDataLifecycleService } from "../../../src/app/plaid/plaid-data-lifecycle.js";
+import { PlaidApiError } from "../../../src/app/plaid/plaid-api-client.js";
 
 const now = () => new Date("2026-10-15T12:00:00.000Z");
 
@@ -27,6 +28,7 @@ describe("PlaidDataLifecycleService", () => {
     await expect(state.service.disconnect("user-1")).resolves.toEqual({ revoked: 1, pending: 0 });
     expect(state.consent.revoke).toHaveBeenCalledWith(expect.objectContaining({ grantEventId: "grant-1" }));
     expect(state.data.beginDisconnect).toHaveBeenCalledWith("user-1", undefined);
+    expect(state.data.listDueRevocations).toHaveBeenCalledWith(100, "user-1", undefined);
     expect(state.invalidateMemoryCache).toHaveBeenCalledWith("user-1");
     expect(state.revokeItem).toHaveBeenCalledWith("access");
     expect(state.data.completeRevocation).toHaveBeenCalledWith("user-1", "item-1");
@@ -44,6 +46,16 @@ describe("PlaidDataLifecycleService", () => {
     await expect(state.service.retryDueRevocations()).resolves.toEqual({ revoked: 1, pending: 0 });
     expect(revokeItem).toHaveBeenCalledTimes(2);
     expect(state.data.completeRevocation).toHaveBeenCalledWith("user-1", "item-1");
+  });
+
+  it("LIFE-004 sends permanent Plaid rejection to manual review without repeated provider retries", async () => {
+    const revokeItem = vi.fn().mockRejectedValue(new PlaidApiError(401, false));
+    const state = setup(revokeItem);
+    state.data.countPendingRevocations.mockResolvedValue(1);
+
+    await expect(state.service.disconnect("user-1", "item-1")).resolves.toEqual({ revoked: 0, pending: 1 });
+    expect(state.data.failRevocation).toHaveBeenCalledWith("user-1", "item-1", null, true, "provider_http_401");
+    expect(revokeItem).toHaveBeenCalledTimes(1);
   });
 
   it("LIFE-001 expires raw transaction rows through the bounded retention operation", async () => {

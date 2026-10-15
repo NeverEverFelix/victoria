@@ -37,5 +37,9 @@ describe("Plaid lifecycle contract", () => {
     expect(table).toContain("access_token_auth_tag text NOT NULL");
     expect(table).toContain("encryption_key_version text NOT NULL");
     expect(table).not.toContain("access_token text");
+    expect(lifecycleMigration).toMatch(/ADD COLUMN IF NOT EXISTS claimed_until timestamptz/i);
+    expect(lifecycleMigration).toMatch(/ADD COLUMN IF NOT EXISTS last_error_code text/i);
+    expect(lifecycleMigration).toMatch(/status IN \('pending', 'manual_review'\)/i);
+    expect(dataRepository).toMatch(/FOR UPDATE SKIP LOCKED/i);
   });
 });
