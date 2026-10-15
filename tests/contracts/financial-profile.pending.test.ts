@@ -1,9 +1,10 @@
 import { describe, it } from "vitest";
 
 /**
- * Remaining end-to-end profile scenarios. The transactions-only product scope
- * is confirmed; keep these pending until live provider and inference interfaces
- * are implemented.
+ * Live integration and deployment scenarios. The mocked profile-to-estimate
+ * path is covered in tests/integration/profile-estimate-acceptance.test.ts;
+ * these remain pending until the live provider, database, and lifecycle
+ * boundaries can be exercised safely.
  */
 describe("financial profile integration scenarios not yet executable", () => {
   it.todo("does not fetch or inject Plaid data without active user authorization");
