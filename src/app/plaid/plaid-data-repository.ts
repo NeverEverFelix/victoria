@@ -21,11 +21,11 @@ export interface PlaidDataRepository {
   beginDisconnect(userId: string, itemId?: string): Promise<readonly PlaidRevocationItem[]>;
   listDueRevocations(limit?: number): Promise<readonly PlaidRevocationItem[]>;
   countPendingRevocations(userId: string, itemId?: string): Promise<number>;
-  completeRevocation(itemId: string): Promise<void>;
-  failRevocation(itemId: string, nextAttemptAt: string): Promise<void>;
+  completeRevocation(userId: string, itemId: string): Promise<void>;
+  failRevocation(userId: string, itemId: string, nextAttemptAt: string): Promise<void>;
   expireOldTransactions(now?: Date): Promise<number>;
-  replaceToken(itemId: string, token: EncryptedPlaidAccessToken): Promise<EncryptedPlaidAccessToken>;
-  listAllEncryptedTokens(): Promise<readonly PlaidRevocationItem[]>;
+  replaceToken(userId: string, itemId: string, token: EncryptedPlaidAccessToken): Promise<EncryptedPlaidAccessToken>;
+  listAllEncryptedTokensForMaintenance(): Promise<readonly PlaidRevocationItem[]>;
 }
 
 export interface PlaidRevocationItem { readonly userId: string; readonly itemId: string; readonly token: EncryptedPlaidAccessToken; readonly attempts: number; }
@@ -160,19 +160,24 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
   }
 
   async countPendingRevocations(userId: string, itemId?: string): Promise<number> {
+    if (typeof userId !== "string" || !userId.trim() || (itemId !== undefined && (typeof itemId !== "string" || !itemId.trim()))) {
+      throw new Error("A user and optional Item ID are required.");
+    }
     const result = await this.pool.query<{ count: string | number }>(
       `SELECT count(*) AS count FROM victoria_plaid_revocation_queue
        WHERE user_id=$1 AND ($2::text IS NULL OR item_id=$2)`, [userId, itemId ?? null]);
     return Number(result.rows[0]?.count ?? 0);
   }
 
-  async completeRevocation(itemId: string): Promise<void> {
-    await this.pool.query("DELETE FROM victoria_plaid_revocation_queue WHERE item_id=$1", [itemId]);
+  async completeRevocation(userId: string, itemId: string): Promise<void> {
+    assertIdentity(userId, itemId);
+    await this.pool.query("DELETE FROM victoria_plaid_revocation_queue WHERE user_id=$1 AND item_id=$2", [userId, itemId]);
   }
 
-  async failRevocation(itemId: string, nextAttemptAt: string): Promise<void> {
+  async failRevocation(userId: string, itemId: string, nextAttemptAt: string): Promise<void> {
+    assertIdentity(userId, itemId);
     await this.pool.query(`UPDATE victoria_plaid_revocation_queue SET attempts=attempts+1,
-      next_attempt_at=$2, last_error_at=now() WHERE item_id=$1`, [itemId, nextAttemptAt]);
+      next_attempt_at=$3, last_error_at=now() WHERE user_id=$1 AND item_id=$2`, [userId, itemId, nextAttemptAt]);
   }
 
   async expireOldTransactions(now = new Date()): Promise<number> {
@@ -181,28 +186,29 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
     return Number(result.rows[0]?.removed ?? 0);
   }
 
-  async replaceToken(itemId: string, token: EncryptedPlaidAccessToken): Promise<EncryptedPlaidAccessToken> {
-    const item = await this.pool.query(`UPDATE victoria_plaid_items SET access_token_ciphertext=$2,access_token_iv=$3,
-      access_token_auth_tag=$4,encryption_key_version=$5,updated_at=now() WHERE item_id=$1`,
-      [itemId, token.ciphertext, token.iv, token.authTag, token.keyVersion]);
-    const queue = await this.pool.query(`UPDATE victoria_plaid_revocation_queue SET access_token_ciphertext=$2,access_token_iv=$3,
-      access_token_auth_tag=$4,encryption_key_version=$5 WHERE item_id=$1`,
-      [itemId, token.ciphertext, token.iv, token.authTag, token.keyVersion]);
+  async replaceToken(userId: string, itemId: string, token: EncryptedPlaidAccessToken): Promise<EncryptedPlaidAccessToken> {
+    assertIdentity(userId, itemId);
+    const item = await this.pool.query(`UPDATE victoria_plaid_items SET access_token_ciphertext=$3,access_token_iv=$4,
+      access_token_auth_tag=$5,encryption_key_version=$6,updated_at=now() WHERE user_id=$1 AND item_id=$2`,
+      [userId, itemId, token.ciphertext, token.iv, token.authTag, token.keyVersion]);
+    const queue = await this.pool.query(`UPDATE victoria_plaid_revocation_queue SET access_token_ciphertext=$3,access_token_iv=$4,
+      access_token_auth_tag=$5,encryption_key_version=$6 WHERE user_id=$1 AND item_id=$2`,
+      [userId, itemId, token.ciphertext, token.iv, token.authTag, token.keyVersion]);
     if ((item.rowCount ?? 0) + (queue.rowCount ?? 0) !== 1) throw new Error("Plaid token rotation target was not found or was ambiguous.");
     const persisted = await this.pool.query<{ access_token_ciphertext: string; access_token_iv: string;
       access_token_auth_tag: string; encryption_key_version: string }>(
       `SELECT access_token_ciphertext,access_token_iv,access_token_auth_tag,encryption_key_version
-       FROM victoria_plaid_items WHERE item_id=$1
+       FROM victoria_plaid_items WHERE user_id=$1 AND item_id=$2
        UNION ALL
        SELECT access_token_ciphertext,access_token_iv,access_token_auth_tag,encryption_key_version
-       FROM victoria_plaid_revocation_queue WHERE item_id=$1`, [itemId]);
+       FROM victoria_plaid_revocation_queue WHERE user_id=$1 AND item_id=$2`, [userId, itemId]);
     if (persisted.rows.length !== 1) throw new Error("Plaid token rotation verification failed.");
     const row = persisted.rows[0]!;
     return Object.freeze({ ciphertext: row.access_token_ciphertext, iv: row.access_token_iv,
       authTag: row.access_token_auth_tag, keyVersion: row.encryption_key_version });
   }
 
-  async listAllEncryptedTokens(): Promise<readonly PlaidRevocationItem[]> {
+  async listAllEncryptedTokensForMaintenance(): Promise<readonly PlaidRevocationItem[]> {
     const result = await this.pool.query<{ user_id: string; item_id: string; access_token_ciphertext: string;
       access_token_iv: string; access_token_auth_tag: string; encryption_key_version: string; attempts: number }>(
       `SELECT user_id,item_id,access_token_ciphertext,access_token_iv,access_token_auth_tag,encryption_key_version,0 AS attempts

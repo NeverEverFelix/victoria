@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import { createPlaidDisconnectHandler } from "../../../src/app/plaid/disconnect-handler.js";
 
 describe("createPlaidDisconnectHandler", () => {
+  it("advertises POST on method rejection", async () => {
+    const handler = createPlaidDisconnectHandler({ authenticate: async () => null, lifecycle: { disconnect: vi.fn() } });
+    const response = await handler(new Request("https://local.test/plaid/disconnect", { method: "GET" }));
+    expect(response.status).toBe(405);
+    expect(response.headers.get("Allow")).toBe("POST");
+  });
+
   it("requires authenticated identity and never accepts an owner from the body", async () => {
     const disconnect = vi.fn();
     const handler = createPlaidDisconnectHandler({ authenticate: async () => null, lifecycle: { disconnect } });

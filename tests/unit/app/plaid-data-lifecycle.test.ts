@@ -11,8 +11,8 @@ function setup(revokeItem = vi.fn().mockResolvedValue(undefined)) {
     beginDisconnect: vi.fn().mockResolvedValue([item]), listDueRevocations: vi.fn().mockResolvedValue([]),
     countPendingRevocations: vi.fn().mockResolvedValue(0),
     completeRevocation: vi.fn().mockResolvedValue(undefined), failRevocation: vi.fn().mockResolvedValue(undefined),
-    expireOldTransactions: vi.fn().mockResolvedValue(4), replaceToken: vi.fn(async (_id: string, token: import("../../../src/app/plaid/access-token-cipher.js").EncryptedPlaidAccessToken) => token),
-    listAllEncryptedTokens: vi.fn().mockResolvedValue([item])
+    expireOldTransactions: vi.fn().mockResolvedValue(4), replaceToken: vi.fn(async (_userId: string, _id: string, token: import("../../../src/app/plaid/access-token-cipher.js").EncryptedPlaidAccessToken) => token),
+    listAllEncryptedTokensForMaintenance: vi.fn().mockResolvedValue([item])
   };
   const consent = { getConsent: vi.fn().mockResolvedValue({ status: "active", consentId: "grant-1" }),
     revoke: vi.fn().mockResolvedValue(undefined) };
@@ -29,7 +29,7 @@ describe("PlaidDataLifecycleService", () => {
     expect(state.data.beginDisconnect).toHaveBeenCalledWith("user-1", undefined);
     expect(state.invalidateMemoryCache).toHaveBeenCalledWith("user-1");
     expect(state.revokeItem).toHaveBeenCalledWith("access");
-    expect(state.data.completeRevocation).toHaveBeenCalledWith("item-1");
+    expect(state.data.completeRevocation).toHaveBeenCalledWith("user-1", "item-1");
   });
 
   it("LIFE-004 keeps a remote revocation retryable after provider failure", async () => {
@@ -38,12 +38,12 @@ describe("PlaidDataLifecycleService", () => {
     state.data.countPendingRevocations.mockResolvedValue(1);
     await expect(state.service.disconnect("user-1", "item-1")).resolves.toEqual({ revoked: 0, pending: 1 });
     expect(state.consent.revoke).not.toHaveBeenCalled();
-    expect(state.data.failRevocation).toHaveBeenCalledWith("item-1", "2026-10-15T12:01:00.000Z");
+    expect(state.data.failRevocation).toHaveBeenCalledWith("user-1", "item-1", "2026-10-15T12:01:00.000Z");
 
     state.data.listDueRevocations.mockResolvedValue([{ ...state.item, attempts: 1 }]);
     await expect(state.service.retryDueRevocations()).resolves.toEqual({ revoked: 1, pending: 0 });
     expect(revokeItem).toHaveBeenCalledTimes(2);
-    expect(state.data.completeRevocation).toHaveBeenCalledWith("item-1");
+    expect(state.data.completeRevocation).toHaveBeenCalledWith("user-1", "item-1");
   });
 
   it("LIFE-001 expires raw transaction rows through the bounded retention operation", async () => {
@@ -55,7 +55,8 @@ describe("PlaidDataLifecycleService", () => {
   it("LIFE-005 rotates every stored Item envelope and verifies the replacement", async () => {
     const state = setup();
     await expect(state.service.rotateKeys()).resolves.toBe(1);
-    const replacement = state.data.replaceToken.mock.calls[0]?.[1];
+    const replacement = state.data.replaceToken.mock.calls[0]?.[2];
+    expect(state.data.replaceToken).toHaveBeenCalledWith("user-1", "item-1", expect.any(Object));
     expect(replacement?.keyVersion).toBe("v2");
     expect(state.cipher.decrypt(replacement!)).toBe("access");
   });

@@ -7,7 +7,7 @@ import type { PlaidDataRepository, PlaidRevocationItem } from "./plaid-data-repo
 export class PlaidDataLifecycleService {
   constructor(private readonly deps: {
     consent: Pick<PlaidConsentRepository, "getConsent" | "revoke">;
-    data: Pick<PlaidDataRepository, "beginDisconnect" | "listDueRevocations" | "countPendingRevocations" | "completeRevocation" | "failRevocation" | "expireOldTransactions" | "replaceToken" | "listAllEncryptedTokens">;
+    data: Pick<PlaidDataRepository, "beginDisconnect" | "listDueRevocations" | "countPendingRevocations" | "completeRevocation" | "failRevocation" | "expireOldTransactions" | "replaceToken" | "listAllEncryptedTokensForMaintenance">;
     plaid: Pick<PlaidApiClient, "revokeItem">;
     cipher: PlaidAccessTokenCipher;
     invalidateMemoryCache?: (userId: string) => void;
@@ -41,12 +41,12 @@ export class PlaidDataLifecycleService {
 
   /** Re-encrypts active and queued tokens, then verifies every persisted envelope before returning. */
   async rotateKeys(): Promise<number> {
-    const tokens = await this.deps.data.listAllEncryptedTokens();
+    const tokens = await this.deps.data.listAllEncryptedTokensForMaintenance();
     let rotated = 0;
     for (const item of tokens) {
       const plaintext = this.deps.cipher.decrypt(item.token);
       const token = this.deps.cipher.rotate(item.token);
-      const persisted = await this.deps.data.replaceToken(item.itemId, token);
+      const persisted = await this.deps.data.replaceToken(item.userId, item.itemId, token);
       if (persisted.keyVersion !== token.keyVersion || this.deps.cipher.decrypt(persisted) !== plaintext) {
         throw new Error("Plaid token rotation verification failed.");
       }
@@ -61,11 +61,11 @@ export class PlaidDataLifecycleService {
     for (const item of items) {
       try {
         await this.deps.plaid.revokeItem(this.deps.cipher.decrypt(item.token));
-        await this.deps.data.completeRevocation(item.itemId);
+        await this.deps.data.completeRevocation(item.userId, item.itemId);
         revoked++;
       } catch {
         const delayMs = Math.min(24 * 60 * 60_000, 60_000 * (2 ** Math.min(item.attempts, 10)));
-        await this.deps.data.failRevocation(item.itemId, new Date((this.deps.now?.() ?? new Date()).getTime() + delayMs).toISOString());
+        await this.deps.data.failRevocation(item.userId, item.itemId, new Date((this.deps.now?.() ?? new Date()).getTime() + delayMs).toISOString());
         pending++;
       }
     }

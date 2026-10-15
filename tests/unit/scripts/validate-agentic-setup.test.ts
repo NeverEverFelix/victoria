@@ -82,6 +82,22 @@ describe("agentic setup validation", () => {
     expect(result.stderr).toContain("unsafe or out-of-scope text");
   });
 
+  it("fails when the secret-bearing push review is enabled on every branch", () => {
+    const fixture = createRepositoryFixture();
+    const workflowPath = join(fixture, ".github/workflows/ai-code-review.yml");
+    const workflow = readFileSync(workflowPath, "utf8");
+    writeFileSync(
+      workflowPath,
+      workflow.replace("  push:\n    branches:\n      - main", "  push:\n    branches:\n      - '**'"),
+      "utf8"
+    );
+
+    const result = runValidator(fixture);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("- main");
+  });
+
   it("fails when trusted review documents are no longer read from a commit", () => {
     const fixture = createRepositoryFixture();
     const scriptPath = join(fixture, "scripts/ai-code-review.mjs");

@@ -5,7 +5,6 @@ UPDATE victoria_plaid_transactions
   SET expires_at = ((transaction_date + 90)::timestamp AT TIME ZONE 'UTC')
   WHERE expires_at IS NULL;
 ALTER TABLE victoria_plaid_transactions
-  ALTER COLUMN expires_at SET DEFAULT (now() + interval '90 days'),
   ALTER COLUMN expires_at SET NOT NULL;
 CREATE INDEX IF NOT EXISTS victoria_plaid_transactions_expiry_idx
   ON victoria_plaid_transactions(expires_at);
@@ -31,6 +30,9 @@ CREATE TABLE IF NOT EXISTS victoria_plaid_revocation_queue (
 CREATE INDEX IF NOT EXISTS victoria_plaid_revocation_due_idx
   ON victoria_plaid_revocation_queue(next_attempt_at);
 ALTER TABLE victoria_plaid_revocation_queue ENABLE ROW LEVEL SECURITY;
+CREATE POLICY victoria_plaid_revocation_queue_service_role
+  ON victoria_plaid_revocation_queue FOR ALL TO service_role
+  USING (true) WITH CHECK (true);
 REVOKE ALL ON victoria_plaid_revocation_queue FROM PUBLIC, anon, authenticated;
 GRANT ALL ON victoria_plaid_revocation_queue TO service_role;
 

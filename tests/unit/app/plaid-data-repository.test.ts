@@ -73,6 +73,36 @@ describe("PostgresPlaidDataRepository lifecycle", () => {
     expect(db.statements[0]?.values).toEqual(["user-a"]);
     expect(db.statements[1]?.values).toEqual(["user-b"]);
   });
+
+  it("LIFE-004 scopes revocation completion and retry updates to the user and Item", async () => {
+    const db = new ScriptedPool(() => ({ rows: [], rowCount: 1 }));
+    const repository = new PostgresPlaidDataRepository(db);
+
+    await repository.completeRevocation("user-a", "item-a");
+    await repository.failRevocation("user-a", "item-a", "2026-10-15T12:01:00.000Z");
+
+    expect(db.statements[0]?.sql).toContain("WHERE user_id=$1 AND item_id=$2");
+    expect(db.statements[0]?.values).toEqual(["user-a", "item-a"]);
+    expect(db.statements[1]?.sql).toContain("WHERE user_id=$1 AND item_id=$2");
+    expect(db.statements[1]?.values).toEqual(["user-a", "item-a", "2026-10-15T12:01:00.000Z"]);
+    await expect(repository.countPendingRevocations(" ")).rejects.toThrow("A user and optional Item ID are required.");
+  });
+
+  it("LIFE-005 scopes token rotation and read-back verification to the user and Item", async () => {
+    const envelope = { ciphertext: "next-cipher", iv: "next-iv", authTag: "next-tag", keyVersion: "v2" };
+    const db = new ScriptedPool((sql) => sql.includes("SELECT access_token_ciphertext")
+      ? { rows: [{ access_token_ciphertext: envelope.ciphertext, access_token_iv: envelope.iv,
+        access_token_auth_tag: envelope.authTag, encryption_key_version: envelope.keyVersion }], rowCount: 1 }
+      : sql.startsWith("UPDATE victoria_plaid_revocation_queue") ? { rows: [], rowCount: 0 } : { rows: [], rowCount: 1 });
+    const repository = new PostgresPlaidDataRepository(db);
+
+    await expect(repository.replaceToken("user-a", "item-a", envelope)).resolves.toEqual(envelope);
+
+    expect(db.statements[0]?.sql).toContain("WHERE user_id=$1 AND item_id=$2");
+    expect(db.statements[0]?.values).toEqual(["user-a", "item-a", "next-cipher", "next-iv", "next-tag", "v2"]);
+    expect(db.statements[1]?.sql).toContain("WHERE user_id=$1 AND item_id=$2");
+    expect(db.statements[2]?.values).toEqual(["user-a", "item-a"]);
+  });
 });
 
 class ScriptedPool implements PostgresPool {
