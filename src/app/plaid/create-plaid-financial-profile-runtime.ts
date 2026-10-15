@@ -58,7 +58,7 @@ export function createPlaidFinancialProfileRuntime(options: {
   const { pool } = createPostgresTurnStore(options.env.databaseUrl);
   const consent = new PostgresPlaidConsentRepository(pool);
   const data = new PostgresPlaidDataRepository(pool);
-  const maintenance = new PostgresPlaidTokenMaintenanceRepository(pool);
+  const maintenance = new PostgresPlaidTokenMaintenanceRepository(pool, options.env.plaidTokenMaintenanceEnabled === true);
   const plaid = new PlaidApiClient({ clientId: options.env.plaidClientId, secret: options.env.plaidSecret,
     environment: options.env.plaidEnv, ...(options.fetcher ? { fetcher: options.fetcher } : {}) });
   const link = new PlaidLinkTokenClient({ clientId: options.env.plaidClientId, secret: options.env.plaidSecret,

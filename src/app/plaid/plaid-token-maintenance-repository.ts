@@ -9,9 +9,10 @@ export interface PlaidTokenMaintenanceRepository {
 }
 
 export class PostgresPlaidTokenMaintenanceRepository implements PlaidTokenMaintenanceRepository {
-  constructor(private readonly pool: PostgresPool) {}
+  constructor(private readonly pool: PostgresPool, private readonly enabled: boolean) {}
 
   async replaceToken(userId: string, itemId: string, token: EncryptedPlaidAccessToken): Promise<EncryptedPlaidAccessToken> {
+    this.assertEnabled();
     if (!userId.trim() || !itemId.trim()) throw new Error("A user and Plaid Item ID are required.");
     const client = await this.pool.connect();
     try {
@@ -43,6 +44,7 @@ export class PostgresPlaidTokenMaintenanceRepository implements PlaidTokenMainte
   }
 
   async listAllEncryptedTokens(): Promise<readonly PlaidRevocationItem[]> {
+    this.assertEnabled();
     const result = await this.pool.query<{ user_id: string; item_id: string; access_token_ciphertext: string;
       access_token_iv: string; access_token_auth_tag: string; encryption_key_version: string; attempts: number }>(
       `SELECT user_id,item_id,access_token_ciphertext,access_token_iv,access_token_auth_tag,encryption_key_version,0 AS attempts
@@ -53,5 +55,9 @@ export class PostgresPlaidTokenMaintenanceRepository implements PlaidTokenMainte
     return Object.freeze(result.rows.map((row) => Object.freeze({ userId: row.user_id, itemId: row.item_id,
       token: Object.freeze({ ciphertext: row.access_token_ciphertext, iv: row.access_token_iv,
         authTag: row.access_token_auth_tag, keyVersion: row.encryption_key_version }), attempts: row.attempts })));
+  }
+
+  private assertEnabled(): void {
+    if (!this.enabled) throw new Error("Plaid token maintenance requires PLAID_TOKEN_MAINTENANCE_ENABLED=true.");
   }
 }

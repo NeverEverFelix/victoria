@@ -178,6 +178,12 @@ requireIncludes(".github/workflows/ai-code-review.yml", [
   "timeout-minutes:",
   "AI_REVIEW_REQUIRED"
 ]);
+requireIncludes("tests/test-plan.md", [
+  "immutable base SHA",
+  "never checks out, installs, sources, or executes pull-request code",
+  "secrets are available only to trusted base-branch review code",
+  "contents: read"
+]);
 requireNotIncludes(".github/workflows/ai-code-review.yml", forbiddenAiReviewWorkflowPhrases);
 
 requireIncludes(".github/CODEOWNERS", [

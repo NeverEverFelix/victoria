@@ -128,19 +128,19 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
           authTag: row.access_token_auth_tag, keyVersion: row.encryption_key_version };
         await client.query(`INSERT INTO victoria_plaid_revocation_queue
           (user_id,item_id,access_token_ciphertext,access_token_iv,access_token_auth_tag,encryption_key_version)
-          VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (item_id) DO NOTHING`,
+          VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (user_id,item_id) DO NOTHING`,
           [userId, row.item_id, token.ciphertext, token.iv, token.authTag, token.keyVersion]);
       }
       const claimed = await client.query<{ user_id: string; item_id: string; access_token_ciphertext: string;
         access_token_iv: string; access_token_auth_tag: string; encryption_key_version: string; attempts: number }>(
         `WITH due AS (
-           SELECT item_id FROM victoria_plaid_revocation_queue
+           SELECT user_id,item_id FROM victoria_plaid_revocation_queue
            WHERE user_id=$1 AND ($2::text IS NULL OR item_id=$2) AND status='pending'
              AND next_attempt_at <= now() AND (claimed_until IS NULL OR claimed_until <= now())
            ORDER BY next_attempt_at LIMIT 100 FOR UPDATE SKIP LOCKED
          )
          UPDATE victoria_plaid_revocation_queue q SET claimed_until=now() + interval '30 minutes'
-         FROM due WHERE q.item_id=due.item_id
+         FROM due WHERE q.user_id=due.user_id AND q.item_id=due.item_id
          RETURNING q.user_id,q.item_id,q.access_token_ciphertext,q.access_token_iv,
            q.access_token_auth_tag,q.encryption_key_version,q.attempts`, [userId, itemId ?? null]);
       const queued = claimed.rows.map((row) => Object.freeze({ userId: row.user_id, itemId: row.item_id,
@@ -167,7 +167,7 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
     const result = await this.pool.query<{ user_id: string; item_id: string; access_token_ciphertext: string;
       access_token_iv: string; access_token_auth_tag: string; encryption_key_version: string; attempts: number }>(
       `WITH due AS (
-         SELECT item_id FROM victoria_plaid_revocation_queue
+         SELECT user_id,item_id FROM victoria_plaid_revocation_queue
          WHERE status = 'pending' AND next_attempt_at <= now()
            AND (claimed_until IS NULL OR claimed_until <= now())
            AND ($2::text IS NULL OR user_id=$2) AND ($3::text IS NULL OR item_id=$3)
@@ -175,7 +175,7 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
        )
        UPDATE victoria_plaid_revocation_queue q
        SET claimed_until = now() + interval '30 minutes'
-       FROM due WHERE q.item_id = due.item_id
+       FROM due WHERE q.user_id = due.user_id AND q.item_id = due.item_id
        RETURNING q.user_id,q.item_id,q.access_token_ciphertext,q.access_token_iv,
          q.access_token_auth_tag,q.encryption_key_version,q.attempts`, [bounded, userId ?? null, itemId ?? null]);
     return Object.freeze(result.rows.map((row) => Object.freeze({ userId: row.user_id, itemId: row.item_id,

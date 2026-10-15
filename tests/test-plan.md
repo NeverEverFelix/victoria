@@ -200,11 +200,12 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - `npm run agent:validate` fails when MVP-facing docs drift back toward real money movement language.
 - The AI review script skips cleanly when optional and `OPENAI_API_KEY` is missing.
 - The AI review script fails when `AI_REVIEW_REQUIRED=true` and `OPENAI_API_KEY` is missing.
-- Pull-request AI review runs trusted default-branch code and never executes pull-request code with secrets.
+- Pull-request AI review uses `pull_request_target` only to check out the immutable base SHA with persisted credentials disabled. It never checks out, installs, sources, or executes pull-request code, workflow files, artifacts, caches, or generated scripts. The PR diff is untrusted data for review only.
+- The PR review job's secrets are available only to trusted base-branch review code; they are never passed to code from the PR. Keep token permissions limited to `contents: read` plus the issue/pull-request write scopes required to post the review. Do not add a PR-controlled command, path, or environment value to a secret-bearing step.
 - AI review keeps trusted instructions separate from untrusted diff content.
 - Oversized diffs list every changed path, prioritize safety-sensitive excerpts, and cannot satisfy required AI review.
 - AI review uses a 2,000-token default per-pass output budget and rejects values outside the bounded range.
-- Pull request events trigger AI review through `pull_request_target` using trusted base-branch code; secret-bearing push reviews run only on `main`. Review passes are processed concurrently and adaptively split on output truncation.
+- Pull request events trigger AI review through `pull_request_target` using the trusted base SHA, while the untrusted diff is fetched as data; secret-bearing push reviews run only on `main`. Review passes are processed concurrently and adaptively split on output truncation.
 - Large AI review diffs retain complete coverage; every pass must complete before any review is posted, within the configured bounded call cap.
 - GPT-5 AI review requests use low reasoning effort so internal reasoning does not consume the response-token allowance needed for findings.
 
