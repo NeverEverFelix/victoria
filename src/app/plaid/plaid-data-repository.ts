@@ -65,9 +65,9 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
       for (const transaction of [...page.added, ...page.modified]) {
         await upsertTransaction(client, userId, itemId, transaction);
       }
-      for (const transactionId of page.removed) {
-        await client.query("DELETE FROM victoria_plaid_transactions WHERE user_id = $1 AND item_id = $2 AND transaction_id = $3",
-          [userId, itemId, transactionId]);
+      if (page.removed.length > 0) {
+        await client.query("DELETE FROM victoria_plaid_transactions WHERE user_id = $1 AND item_id = $2 AND transaction_id = ANY($3::text[])",
+          [userId, itemId, page.removed]);
       }
       await client.query("UPDATE victoria_plaid_items SET sync_cursor = $1, updated_at = now() WHERE user_id = $2 AND item_id = $3",
         [page.nextCursor, userId, itemId]);
@@ -87,14 +87,19 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
     }>(`SELECT item_id, transaction_id, amount_cents, currency_code, transaction_date::text AS transaction_date,
           merchant_name, category, detailed_category, merchant_entity_id, payment_channel, pending FROM victoria_plaid_transactions
        WHERE user_id = $1 AND transaction_date >= $2 ORDER BY transaction_date DESC`, [userId, sinceDate]);
-    return result.rows.map((row) => Object.freeze({ itemId: row.item_id, transactionId: row.transaction_id,
-      amountCents: Number(row.amount_cents), currencyCode: row.currency_code, date: row.transaction_date,
-      merchantName: row.merchant_name, category: row.category, detailedCategory: row.detailed_category,
-      merchantEntityId: row.merchant_entity_id, paymentChannel: row.payment_channel, pending: row.pending }));
+    return result.rows.map((row) => {
+      const amountCents = Number(row.amount_cents);
+      if (!Number.isSafeInteger(amountCents)) throw new Error("Stored Plaid transaction amount is not safe integer cents.");
+      return Object.freeze({ itemId: row.item_id, transactionId: row.transaction_id,
+        amountCents, currencyCode: row.currency_code, date: row.transaction_date,
+        merchantName: row.merchant_name, category: row.category, detailedCategory: row.detailed_category,
+        merchantEntityId: row.merchant_entity_id, paymentChannel: row.payment_channel, pending: row.pending });
+    });
   }
 }
 
 async function upsertTransaction(db: PostgresQueryable, userId: string, itemId: string, value: PlaidSyncedTransaction): Promise<void> {
+  if (!Number.isSafeInteger(value.amountCents)) throw new Error("Plaid transaction amount must be safe integer cents.");
   await db.query(`INSERT INTO victoria_plaid_transactions
       (user_id, item_id, transaction_id, amount_cents, currency_code, transaction_date, merchant_name, category,
        detailed_category, merchant_entity_id, payment_channel, pending, updated_at)

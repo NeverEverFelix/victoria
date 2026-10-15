@@ -78,7 +78,10 @@ export class OpenAiConversationalMemoryExtractor implements ConversationalMemory
     const parsed: unknown = JSON.parse(text);
     const validated = outputSchema.safeParse(parsed);
     if (!validated.success) throw new Error("OpenAI memory extraction output did not match the expected schema.");
-    return Object.freeze(validated.data.candidates.map((candidate) => Object.freeze(candidate)));
+    return Object.freeze(validated.data.candidates
+      .filter((candidate) => candidate.subject === "user" && candidate.assertion === "affirmed" &&
+        candidate.sensitivity === "ordinary" && candidate.stability === "stable")
+      .map((candidate) => Object.freeze(candidate)));
   }
 }
 

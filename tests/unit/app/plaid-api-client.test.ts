@@ -7,6 +7,10 @@ function response(body: unknown, ok = true): Response {
 }
 
 describe("PlaidApiClient", () => {
+  it("rejects all non-sandbox environments", () => {
+    expect(() => new PlaidApiClient({ clientId: "client-test", secret: "secret-test", environment: "production" }))
+      .toThrow("Only the Plaid sandbox environment is enabled.");
+  });
   it("exchanges Link public tokens without exposing API credentials in the body", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response({ access_token: "access-test", item_id: "item-1" }));
     const client = new PlaidApiClient({ clientId: "client-test", secret: "secret-test", environment: "sandbox", fetcher });
@@ -62,6 +66,8 @@ describe("PlaidAccessTokenCipher", () => {
     expect(first.iv).not.toBe(second.iv);
     expect(cipher.decrypt(first)).toBe("access-sample");
     expect(() => new PlaidAccessTokenCipher(new Uint8Array(32).fill(18)).decrypt(first)).toThrow();
+    expect(() => new PlaidAccessTokenCipher(new Uint8Array(32).fill(17), "v2").decrypt(first))
+      .toThrow("key version does not match");
   });
 
   it("rejects keys that are not exactly 32 bytes", () => {

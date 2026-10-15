@@ -10,6 +10,7 @@ import type { SavingsEntry, SavingsEntryCorrection, SavingsGoalAllocation } from
 import type { SavingsSuggestion, UserHabit } from "../types.js";
 import { sumCompletedSavingsForWeek } from "../../domain/savings/totals.js";
 import { immutableSnapshot } from "../../domain/immutable.js";
+import { isUsableTransactionHistoryEstimate } from "../transaction-history-provider.js";
 
 export class MockVictoriaTools implements VictoriaTools {
   private readonly savingsEntries: SavingsEntry[] = [];
@@ -84,15 +85,13 @@ export class MockVictoriaTools implements VictoriaTools {
     }
 
     const transactionEstimate = input.transactionHistoryEstimate;
-    if (transactionEstimate && Number.isSafeInteger(transactionEstimate.amountCents) && transactionEstimate.amountCents > 0 &&
-        Number.isSafeInteger(transactionEstimate.transactionCount) && transactionEstimate.transactionCount > 0 &&
-        Number.isFinite(Date.parse(transactionEstimate.observedThrough))) {
+    if (isUsableTransactionHistoryEstimate(transactionEstimate)) {
       return {
         id: `suggestion_${Date.now()}`,
         amountCents: transactionEstimate.amountCents,
         currency: "USD",
         reason: `Estimate based on ${transactionEstimate.transactionCount} recent transactions at ${input.merchantName}, observed through ${transactionEstimate.observedThrough}.`,
-        source: "merchant_history",
+        source: "transaction_history",
         movementMode: "mock_ledger"
       };
     }

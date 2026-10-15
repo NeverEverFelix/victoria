@@ -114,7 +114,7 @@ export class VictoriaAgent {
   private async summarizeOverflowingConversation(userId: string, context: readonly string[]): Promise<void> {
     const summarizer = this.dependencies.episodicMemorySummarizer;
     if (!summarizer || context.length < DEFAULT_CONVERSATION_CONTEXT_LIMIT) return;
-    const userMessages = context.slice(0, 8)
+    const userMessages = context.slice(-8)
       .filter((message) => !/^Victoria:/i.test(message))
       .filter(isEpisodicSummaryEligible)
       .slice(0, 8);
@@ -279,6 +279,32 @@ export class VictoriaAgent {
       return this.correctRememberedSpendFromConversation(request, conversationContext, spendCorrection);
     }
 
+    const speculativeSpendClaim = extractMerchantSpendClaim(request.message);
+    if (speculativeSpendClaim?.isSpeculative) {
+      let verified: Awaited<ReturnType<TransactionHistoryProvider["findTypicalMerchantSpend"]>> = null;
+      if (this.dependencies.transactionHistory) {
+        try {
+          verified = await this.dependencies.transactionHistory.findTypicalMerchantSpend({
+            userId: request.userId,
+            merchantName: speculativeSpendClaim.merchantName
+          });
+        } catch {
+          verified = null;
+        }
+      }
+      const message = isUsableTransactionHistoryEstimate(verified)
+        ? `You estimated ${formatUsd(speculativeSpendClaim.amountCents)} at ${speculativeSpendClaim.merchantName}. Recent linked transactions suggest about ${formatUsd(verified.amountCents)} across ${verified.transactionCount} purchases. I haven't saved the estimate as a lasting habit because you described it as uncertain.`
+        : `I hear ${formatUsd(speculativeSpendClaim.amountCents)} at ${speculativeSpendClaim.merchantName} as an unverified estimate. I won't save it as a lasting habit while you're unsure.`;
+      return {
+        message,
+        decision: {
+          action: "reflect",
+          classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false },
+          userFacingMessage: message
+        }
+      };
+    }
+
     const extractedMemory = extractConversationalMemory(request.message);
     if (extractedMemory) {
       let memoryToRemember = extractedMemory;
@@ -310,7 +336,15 @@ export class VictoriaAgent {
           // A missing or failed transaction source leaves the user's own claim intact.
         }
       }
-      await this.dependencies.memory.rememberConversationalMemory(request.userId, memoryToRemember);
+      const existingMemories = await this.dependencies.memory.listConversationalMemories(request.userId);
+      const prior = [...existingMemories].reverse().find((item) =>
+        item.category === memoryToRemember.category && item.key === memoryToRemember.key);
+      if (!prior || prior.value !== memoryToRemember.value || prior.evidence !== memoryToRemember.evidence) {
+        await this.dependencies.memory.rememberConversationalMemory(request.userId, {
+          ...memoryToRemember,
+          ...(prior ? { supersedesId: prior.id } : {})
+        });
+      }
       const message = acknowledgement ?? (merchantSpendClaim?.isSpeculative
         ? `I'll keep ${formatUsd(merchantSpendClaim.amountCents)} at ${merchantSpendClaim.merchantName} as an unverified estimate for now.`
         : `Got it. I'll remember: “${memoryToRemember.value}”`);
@@ -860,7 +894,7 @@ export class VictoriaAgent {
           ? `${suggestion
             ? "I couldn't verify a reliable estimate."
             : rememberedMerchantHabit
-              ? `I remember you mentioned “${rememberedMerchantHabit}” I don't have a typical cost yet.`
+              ? `I remember you mentioned “${sanitizeMemoryEvidence(rememberedMerchantHabit)}” I don't have a typical cost yet.`
               : "Nice choice."} About how much do you usually spend at ${classification.merchantName}? I'll remember your estimate for future suggestions.`
           : suggestion
             ? "I couldn't verify a valid positive USD estimate. About how much would you have spent if you had gone through with it?"
@@ -1171,7 +1205,7 @@ export class VictoriaAgent {
     const evidence =
       suggestion.source === "user_provided"
         ? `Using the ${dollars} amount you provided, would you like me to record it`
-        : suggestion.source === "merchant_history" && classification.merchantName
+        : (suggestion.source === "merchant_history" || suggestion.source === "transaction_history") && classification.merchantName
         ? `Based on your usual spend at ${classification.merchantName}, I estimate you avoided spending ${dollars}. Would you like me to record that`
         : `Great job. I estimate you avoided spending ${dollars}. Would you like me to record that`;
 
@@ -1615,13 +1649,17 @@ function isRelevantRecurringRoutine(
   if (memory.key.startsWith("merchant_habit:")) {
     const merchantWords = memory.key.slice("merchant_habit:".length).replace(/_/g, " ").trim();
     if (merchantWords && message.includes(merchantWords)) return true;
-    const evidenceTerms = new Set(memory.evidence.toLocaleLowerCase("en-US")
+    const evidenceTerms = new Set((memory.evidence ?? "").toLocaleLowerCase("en-US")
       .match(/[a-z]{4,}/g)?.map(normalizeRoutineTerm).filter((term) => !ROUTINE_STOP_WORDS.has(term)) ?? []);
     const messageTerms = new Set(message.match(/[a-z]{4,}/g)?.map(normalizeRoutineTerm) ?? []);
     const matchingTerms = [...evidenceTerms].filter((term) => messageTerms.has(term));
     return matchingTerms.length >= 2;
   }
   return false;
+}
+
+function sanitizeMemoryEvidence(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
 function describeRecurringRoutine(key: string): string | undefined {

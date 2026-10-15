@@ -8,6 +8,7 @@ import { MockProfileTransactionHistoryProvider } from "../financial-profile/mock
 import type { TransactionFinancialProfile } from "../../domain/financial-profile.js";
 import { createVictoriaSessionAuthenticator } from "./signed-session-auth.js";
 import { createVictoriaChatHandler } from "./victoria-chat-handler.js";
+import { createHash } from "node:crypto";
 
 export interface LocalMockVictoriaRuntime {
   readonly handler: ReturnType<typeof createVictoriaChatHandler>;
@@ -28,7 +29,9 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
   const memoryExtractorEnabled = env.OPENAI_MEMORY_EXTRACTION_ENABLED === "true" &&
     Boolean(openAiKey) && !/(?:local-openai|replace|example|placeholder|changeme)/i.test(openAiKey ?? "") &&
     Boolean(env.OPENAI_MODEL?.trim()) && env.OPENAI_MODEL !== "mock";
-  const cacheKey = [secret, memoryExtractorEnabled ? openAiKey : "mock", env.OPENAI_MODEL ?? "mock"].join("\u0000");
+  const cacheKey = createHash("sha256")
+    .update(secret).update("\0").update(memoryExtractorEnabled ? openAiKey! : "mock")
+    .update("\0").update(env.OPENAI_MODEL ?? "mock").digest("hex");
   if (cachedRuntime?.cacheKey === cacheKey) return cachedRuntime.runtime;
   const transactionHistory = new MockProfileTransactionHistoryProvider();
   const agent = new VictoriaAgent({

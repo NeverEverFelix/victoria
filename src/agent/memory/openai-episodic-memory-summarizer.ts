@@ -53,6 +53,9 @@ export class OpenAiEpisodicMemorySummarizer implements EpisodicMemorySummarizer 
     const parsed: unknown = JSON.parse(getOutputText(payload));
     const validated = resultSchema.safeParse(parsed);
     if (!validated.success) throw new Error("OpenAI episodic summary output did not match the expected schema.");
+    if (validated.data.sensitivity === "sensitive") {
+      return Object.freeze({ summary: "", evidenceQuotes: Object.freeze([]), confidence: 0, sensitivity: "sensitive" });
+    }
     return Object.freeze({ ...validated.data, evidenceQuotes: Object.freeze([...validated.data.evidenceQuotes]) });
   }
 }

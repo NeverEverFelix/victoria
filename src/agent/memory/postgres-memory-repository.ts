@@ -17,7 +17,7 @@ export class PostgresMemoryRepository implements MemoryProvider {
   async getMemoryForUser(userId: string, query?: string): Promise<AgentMemory> {
     const [habits, goals, decisions, conversationalMemories] = await Promise.all([
       this.listHabits(userId), this.listGoals(userId), this.listDecisions(userId),
-      query?.trim() ? this.searchConversationalMemories(userId, query) : this.listConversationalMemories(userId)
+      query?.trim() ? this.searchConversationalMemories(userId, query) : this.listCurrentMemories(userId)
     ]);
     return { habits, goals, recentDecisions: decisions, conversationalMemories };
   }

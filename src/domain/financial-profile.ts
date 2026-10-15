@@ -125,7 +125,11 @@ function toFacts(
   groups: Map<string, { label: string; amounts: number[]; dates: string[] }>
 ): FinancialProfileFact[] {
   return [...groups.entries()].map(([key, group]) => {
-    const totalCents = group.amounts.reduce((sum, amount) => sum + amount, 0);
+    const totalCents = group.amounts.reduce((sum, amount) => {
+      const total = sum + amount;
+      if (!Number.isSafeInteger(total)) throw new Error("Financial profile total exceeds safe integer cents.");
+      return total;
+    }, 0);
     const count = group.amounts.length;
     return Object.freeze({
       dimension,

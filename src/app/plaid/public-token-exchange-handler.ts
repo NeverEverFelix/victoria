@@ -16,8 +16,9 @@ export function createPlaidPublicTokenExchangeHandler(deps: {
 }) {
   return async (request: Request): Promise<Response> => {
     const headers = { "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8" };
-    const respond = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers });
-    if (request.method !== "POST") return respond(405, { error: "method_not_allowed" });
+    const respond = (status: number, body: unknown, extraHeaders: Record<string, string> = {}) =>
+      new Response(JSON.stringify(body), { status, headers: { ...headers, ...extraHeaders } });
+    if (request.method !== "POST") return respond(405, { error: "method_not_allowed" }, { Allow: "POST" });
     let user: { readonly userId: string } | null;
     try { user = await deps.authenticate(request); } catch { return respond(503, { error: "authentication_unavailable" }); }
     if (!user?.userId?.trim()) return respond(401, { error: "unauthorized" });
@@ -33,8 +34,14 @@ export function createPlaidPublicTokenExchangeHandler(deps: {
     try {
       const result = await deps.plaid.exchangePublicToken((body as { public_token: string }).public_token);
       await deps.data.storeItem(user.userId, result.itemId, deps.cipher.encrypt(result.accessToken));
-      if (deps.sync) await deps.sync.syncUser(user.userId);
-      return respond(201, { connected: true });
+      if (deps.sync) {
+        try {
+          await deps.sync.syncUser(user.userId);
+        } catch {
+          return respond(201, { connected: true, profileSync: "deferred" });
+        }
+      }
+      return respond(201, { connected: true, profileSync: deps.sync ? "complete" : "pending" });
     } catch {
       return respond(503, { error: "plaid_unavailable" });
     }

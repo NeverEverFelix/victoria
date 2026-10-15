@@ -8,7 +8,7 @@ const financialEventTypes = new Set<FinancialEventType>([
   "real_money_movement_request", "unclear"
 ]);
 const amountIssues = new Set(["invalid_value", "multiple_amounts", "invalid_precision", "unsupported_currency"]);
-const suggestionSources = new Set(["merchant_history", "user_provided", "manual_estimate"]);
+const suggestionSources = new Set(["merchant_history", "transaction_history", "user_provided", "manual_estimate"]);
 
 export function validateClassifiedMessage(candidate: unknown): ClassifiedMessage | null {
   if (!isRecord(candidate) || !financialEventTypes.has(candidate.type as FinancialEventType)) return null;

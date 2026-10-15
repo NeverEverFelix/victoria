@@ -29,6 +29,7 @@ export class PlaidAccessTokenCipher {
 
   decrypt(envelope: EncryptedPlaidAccessToken): string {
     if (!isEncryptedPlaidAccessToken(envelope)) throw new Error("Invalid encrypted Plaid token envelope.");
+    if (envelope.keyVersion !== this.keyVersion) throw new Error("Plaid access token encryption key version does not match.");
     const decipher = createDecipheriv("aes-256-gcm", this.key, Buffer.from(envelope.iv, "base64"));
     decipher.setAuthTag(Buffer.from(envelope.authTag, "base64"));
     return Buffer.concat([

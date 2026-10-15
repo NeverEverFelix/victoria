@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { medianTypicalSpendCents } from "../../../src/domain/financial-events/typical-spend.js";
 
 describe("medianTypicalSpendCents", () => {
-  it("returns the middle observed amount for an odd-sized sample without mutating it", () => {
+  it("averages the two middle amounts for an even-sized sample without mutating it", () => {
     const amounts = [1200, 600, 7400, 800];
 
     expect(medianTypicalSpendCents(amounts)).toBe(1000);

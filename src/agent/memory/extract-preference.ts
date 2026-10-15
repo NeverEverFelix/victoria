@@ -44,7 +44,7 @@ export function extractSavingsAmountPreference(message: string): SavingsAmountPr
 /** Extract a narrow set of direct preferences, recurring habits, and stated goals. */
 export function extractConversationalMemory(message: string): ExtractedConversationalMemory | null {
   const merchantSpend = extractMerchantSpendClaim(message);
-  if (merchantSpend) {
+  if (merchantSpend && !merchantSpend.isSpeculative && merchantSpend.confidence >= 0.85) {
     return {
       category: "habit",
       key: merchantSpendMemoryKey(merchantSpend.merchantName),
@@ -140,7 +140,7 @@ export function extractMerchantSpendClaim(message: string): MerchantSpendClaim |
   const merchantName = merchantText.trim().replace(/[.!?]+$/, "");
   if (parsed.status !== "valid" || !merchantName || merchantName.length > 60) return null;
   const isSpeculative = !routineMatch && !usualSpendMatch;
-  if (!isSpeculative && isUncertain(message)) return null;
+  if (isUncertain(message)) return null;
   return {
     amountCents: parsed.amountCents,
     merchantName,

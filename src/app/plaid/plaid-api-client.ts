@@ -27,6 +27,7 @@ export interface PlaidApiClientOptions {
   readonly environment: PlaidEnv;
   readonly apiVersion?: string;
   readonly fetcher?: typeof fetch;
+  readonly timeoutMs?: number;
 }
 
 interface PlaidTransactionPayload {
@@ -48,12 +49,10 @@ export class PlaidApiClient {
   private readonly baseUrl: string;
 
   constructor(private readonly options: PlaidApiClientOptions) {
+    if (!options.clientId.trim() || !options.secret.trim()) throw new Error("Plaid client credentials are required.");
+    if (options.environment !== "sandbox") throw new Error("Only the Plaid sandbox environment is enabled.");
     this.fetcher = options.fetcher ?? fetch;
-    this.baseUrl = {
-      sandbox: "https://sandbox.plaid.com",
-      development: "https://development.plaid.com",
-      production: "https://production.plaid.com"
-    }[options.environment];
+    this.baseUrl = "https://sandbox.plaid.com";
   }
 
   async exchangePublicToken(publicToken: string): Promise<{ accessToken: string; itemId: string }> {
@@ -93,6 +92,7 @@ export class PlaidApiClient {
   private async post(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const response = await this.fetcher(`${this.baseUrl}${path}`, {
       method: "POST",
+      signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
       headers: {
         "Content-Type": "application/json",
         "PLAID-CLIENT-ID": this.options.clientId,
@@ -125,7 +125,9 @@ function parseTransaction(value: unknown): PlaidSyncedTransaction {
     ? transaction.merchant_name.trim()
     : typeof transaction.name === "string" ? transaction.name.trim() : "";
   const primaryCategory = transaction.personal_finance_category?.primary;
-  const paymentChannel = transaction.payment_channel;
+  const paymentChannel = typeof transaction.payment_channel === "string"
+    ? transaction.payment_channel.toLocaleLowerCase("en-US").replace(/[_-]+/g, " ").trim()
+    : null;
   return Object.freeze({
     transactionId: transaction.transaction_id,
     amountCents,

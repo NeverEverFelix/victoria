@@ -29,7 +29,7 @@ export class MockTransactionHistoryProvider implements TransactionHistoryProvide
 
 function normalizeMerchantName(value: string): string {
   return value.normalize("NFKD")
-    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\p{M}+/gu, "")
     .toLocaleLowerCase("en-US")
     .replace(/[^\p{Letter}\p{Number}]+/gu, " ")
     .trim()

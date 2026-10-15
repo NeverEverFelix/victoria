@@ -2,6 +2,8 @@
 
 This schema gives Victoria a persistent, user-scoped record of facts it learns and a vector retrieval path to find relevant facts during a conversation. The `MemoryOrchestrator` coordinates those durable memories with SQLite short-term context and facts derived from the transactions-only financial profile.
 
+The transactions-only profile is an approved read-only product boundary. The default application uses mock memory and does not initialize persistent memory, embeddings, or Plaid reads. Provider-backed runtimes require explicit server-side opt-in, and the Plaid runtime currently rejects every environment except sandbox; live production reads remain disabled. This document describes the schema and adapter behavior, not a claim that production services are configured.
+
 ## Records
 
 ### `victoria_conversational_memories`

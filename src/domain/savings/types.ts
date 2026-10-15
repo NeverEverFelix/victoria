@@ -31,7 +31,7 @@ export interface SavingsSuggestion {
   readonly amountCents: number;
   readonly currency: "USD";
   readonly reason: string;
-  readonly source: "merchant_history" | "user_provided" | "manual_estimate";
+  readonly source: "merchant_history" | "transaction_history" | "user_provided" | "manual_estimate";
   readonly movementMode: MoneyMovementMode;
 }
 

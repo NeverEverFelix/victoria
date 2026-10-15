@@ -123,10 +123,11 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - If an avoided-spend turn matches a merchant-specific routine but has no remembered spend amount, Victoria checks available transaction history first. Missing, stale, malformed, or failed provider results lead to an amount question; routine frequency alone never becomes an estimate. A valid answer becomes a distinct merchant-spend memory for later estimates while the routine record remains unchanged.
 - A built transactions-only profile can supply a user-scoped typical merchant amount to an avoided-spend proposal when relevant user memory is absent; insufficient profile samples, stale observations, missing merchants, or another user's profile produce a follow-up instead. The estimate is disclosed and no mocked ledger entry is created until explicit approval.
 - The local mock runtime's financial-profile writer updates the same transaction-history provider used by its authenticated chat handler; refreshed facts inform the matching user only, and no profile fact approves a ledger write.
-- When a direct or speculative merchant-spend claim is checked against sufficient recent transaction history, Victoria confirms a match or appends a linked transaction-supported amount, preserves the user's wording and prior facts, and excludes low-confidence unverified amounts from estimates.
+- A certain direct merchant-spend claim checked against sufficient recent transaction history confirms a match or appends a linked transaction-supported amount, preserves the user's wording and prior facts, and discloses the data basis.
+- A speculative merchant-spend claim may receive a transient comparison against sufficient recent history, but Victoria does not persist it, link it, or use it as a later estimate.
 - Transaction summaries are accepted only with at least three purchases, a valid non-future observation time, and an observation time no older than 90 days; stale results cannot correct memory or support a savings estimate.
 - Typical-spend summaries use the median of at least three positive safe-integer cent amounts; even-sized samples average the middle pair and round half cents up without mutating the input.
-- A speculative spend memory without transaction corroboration remains below the estimate-confidence floor and cannot produce a savings suggestion.
+- A speculative spend claim without transaction corroboration is not persisted and cannot produce a savings suggestion.
 - The context-source policy prefers relevant memory, selects an available connected transaction source only for a missing estimate, and otherwise asks; unavailable/error/invalid provider results never produce an estimate, and no per-lookup approval is requested.
 - The transaction-history provider contract fixture matches case, punctuation, and whitespace variants of the same merchant only within the requested user's scope; unknown merchants and other users' records return no data.
 
@@ -238,6 +239,8 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Exchange a Link public token only for the authenticated user with active Transactions consent; never return or persist an unencrypted access token.
 - Apply added/modified/removed cursor pages atomically with the cursor and enforce Item ownership.
 - Recheck consent between pages; revoked consent blocks provider access and profile refresh.
+- Authenticated database clients cannot select encrypted Plaid Item token envelopes; the transaction read model remains user-scoped by RLS.
+- The injected Plaid runtime requires explicit opt-in and refuses production and non-sandbox environments.
 - Refresh compact 90-day posted USD merchant/category facts only after a complete sync, then persist them as append-only semantic memories.
 - Test OpenAI embedding request/response behavior with a mocked fetcher. Do not make live Plaid, OpenAI, or Supabase calls in unit tests.
 

@@ -4,6 +4,22 @@ import { buildTransactionFinancialProfile } from "../../../src/domain/financial-
 const now = new Date("2026-10-13T12:00:00.000Z");
 
 describe("buildTransactionFinancialProfile", () => {
+  it("rejects unsafe totals instead of overflowing cents", () => {
+    const now = new Date("2026-10-15T12:00:00.000Z");
+    expect(() => buildTransactionFinancialProfile({
+      userId: "overflow-user",
+      now,
+      transactions: [Number.MAX_SAFE_INTEGER, 1].map((amountCents, index) => ({
+        transactionId: `large-${index}`,
+        amountCents,
+        isoCurrencyCode: "USD",
+        date: "2026-10-14",
+        merchantName: "Cafe",
+        category: "Coffee",
+        pending: false
+      }))
+    })).toThrow("Financial profile total exceeds safe integer cents");
+  });
   it("derives bounded merchant and category facts from posted USD transactions", () => {
     const profile = buildTransactionFinancialProfile({
       userId: "user-a",

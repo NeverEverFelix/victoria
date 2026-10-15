@@ -6,8 +6,9 @@ export function createFinancialProfileSyncHandler(deps: {
 }) {
   return async (request: Request): Promise<Response> => {
     const headers = { "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8" };
-    const respond = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers });
-    if (request.method !== "POST") return respond(405, { error: "method_not_allowed" });
+    const respond = (status: number, body: unknown, extraHeaders: Record<string, string> = {}) =>
+      new Response(JSON.stringify(body), { status, headers: { ...headers, ...extraHeaders } });
+    if (request.method !== "POST") return respond(405, { error: "method_not_allowed" }, { Allow: "POST" });
     let user: { readonly userId: string } | null;
     try { user = await deps.authenticate(request); } catch { return respond(503, { error: "authentication_unavailable" }); }
     if (!user?.userId?.trim()) return respond(401, { error: "unauthorized" });

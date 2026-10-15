@@ -43,5 +43,7 @@ CREATE POLICY victoria_plaid_items_owner_policy ON victoria_plaid_items
 CREATE POLICY victoria_plaid_transactions_owner_policy ON victoria_plaid_transactions
   FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()::text))
   WITH CHECK (user_id = (SELECT auth.uid()::text));
-GRANT SELECT ON victoria_plaid_items, victoria_plaid_transactions TO authenticated;
+-- Token envelopes are server-only, including encrypted values and IV/auth tags.
+REVOKE ALL ON victoria_plaid_items FROM authenticated;
+GRANT SELECT ON victoria_plaid_transactions TO authenticated;
 GRANT ALL ON victoria_plaid_items, victoria_plaid_transactions TO service_role;

@@ -415,7 +415,7 @@ Done when:
 
 ## Slice 17: Consent-Gated Plaid Link Bootstrap
 
-Status: Consent-gated Link creation, public-token exchange, encrypted Item-token persistence, cursor-based Transactions sync, and profile refresh are implemented behind injected server handlers and an explicit runtime factory. They are not mounted to a live route or the default app composition; no live provider/database verification was performed.
+Status: Consent-gated Link creation, public-token exchange, encrypted Item-token persistence, cursor-based Transactions sync, and profile refresh are implemented behind injected server handlers and an explicit runtime factory. The factory requires explicit opt-in and currently rejects non-sandbox Plaid environments. The handlers are not mounted to a live route or default app composition; no live provider/database verification was performed.
 
 Goal:
 
@@ -436,7 +436,7 @@ Implemented files:
 - `src/app/plaid/plaid-link-token-client.ts`
 - `tests/unit/app/plaid-link-token.test.ts`
 
-The transactions-only profile scope is approved. Remaining deployment work includes:
+The transactions-only read-only profile scope is approved. Production Plaid access and money movement remain disabled. Remaining deployment work includes:
 
 - Apply migration `0002_plaid_consent_events.sql` and verify behavior against a live PostgreSQL database.
 - Mount the handlers behind the application's verified session.

@@ -1,4 +1,5 @@
 import { OpenAiEmbeddingProvider } from "../../agent/memory/openai-embedding-provider.js";
+import { SEMANTIC_MEMORY_EMBEDDING_DIMENSIONS } from "../../agent/memory/semantic-embedding.js";
 import { PostgresMemoryRepository } from "../../agent/memory/postgres-memory-repository.js";
 import { SqliteCachedMemoryProvider } from "../../agent/memory/sqlite-cached-memory-provider.js";
 import { MemoryOrchestrator } from "../../agent/memory/memory-orchestrator.js";
@@ -17,11 +18,23 @@ import { createPlaidPublicTokenExchangeHandler } from "./public-token-exchange-h
 
 /** Explicitly opted-in Supabase/Postgres + Plaid runtime. Never called by default composition. */
 export function createPlaidFinancialProfileRuntime(options: {
+  readonly enabled: boolean;
   env: VictoriaEnv;
   tokenEncryptionKeyBase64: string;
   authenticate(request: Request): Promise<{ readonly userId: string } | null>;
   fetcher?: typeof fetch;
 }) {
+  if (options.enabled !== true) throw new Error("The Plaid financial-profile runtime requires explicit opt-in.");
+  if (options.env.appEnv === "production") throw new Error("Plaid financial-profile runtime is disabled in production.");
+  if (!options.env.plaidClientId.trim() || !options.env.plaidSecret.trim()) {
+    throw new Error("Plaid client credentials are required for the financial profile runtime.");
+  }
+  if (options.env.plaidEnv !== "sandbox") {
+    throw new Error("Only the Plaid sandbox environment is enabled for the financial profile runtime.");
+  }
+  if (!options.env.openAiApiKey.trim()) {
+    throw new Error("OPENAI_API_KEY is required for semantic memory in the financial profile runtime.");
+  }
   const key = Buffer.from(options.tokenEncryptionKeyBase64, "base64");
   if (key.byteLength !== 32 || key.toString("base64") !== options.tokenEncryptionKeyBase64) {
     throw new Error("PLAID_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key.");
@@ -35,6 +48,7 @@ export function createPlaidFinancialProfileRuntime(options: {
     environment: options.env.plaidEnv, ...(options.fetcher ? { fetcher: options.fetcher } : {}) });
   const cipher = new PlaidAccessTokenCipher(key);
   const embeddings = new OpenAiEmbeddingProvider({ apiKey: options.env.openAiApiKey,
+    dimensions: SEMANTIC_MEMORY_EMBEDDING_DIMENSIONS,
     ...(options.fetcher ? { fetcher: options.fetcher } : {}) });
   const profiles = new PostgresMemoryRepository(pool, undefined, embeddings);
   const sqliteMemory = new SqliteCachedMemoryProvider(profiles);

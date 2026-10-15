@@ -17,6 +17,8 @@ export class FinancialProfileSyncService {
     profiles: FinancialProfileWriter;
     now?: () => Date;
     maxPagesPerItem?: number;
+    maxItems?: number;
+    maxTotalPages?: number;
   }) {}
 
   async syncUser(userId: string): Promise<{ readonly profile: TransactionFinancialProfile; readonly syncedPages: number }> {
@@ -25,6 +27,7 @@ export class FinancialProfileSyncService {
     if (!consent || consent.userId !== userId || consent.status !== "active" ||
         !consent.products.includes("transactions")) throw new Error("Active Transactions consent is required.");
     const items = await this.dependencies.data.listItems(userId);
+    if (items.length > (this.dependencies.maxItems ?? 10)) throw new Error("Plaid Item limit reached; profile refresh deferred.");
     let syncedPages = 0;
     for (const item of items) {
       if (item.userId !== userId) throw new Error("Plaid Item ownership mismatch.");
@@ -37,6 +40,7 @@ export class FinancialProfileSyncService {
         if (!currentConsent || currentConsent.userId !== userId || currentConsent.status !== "active" ||
             !currentConsent.products.includes("transactions")) throw new Error("Active Transactions consent is required.");
         if (++pages > (this.dependencies.maxPagesPerItem ?? 100)) throw new Error("Plaid sync page limit reached; profile refresh deferred.");
+        if (syncedPages >= (this.dependencies.maxTotalPages ?? 100)) throw new Error("Plaid total sync page limit reached; profile refresh deferred.");
         const page = await this.dependencies.plaid.syncTransactions({ accessToken, cursor });
         await this.dependencies.data.applySyncPage(userId, item.itemId, page);
         cursor = page.nextCursor;

@@ -167,7 +167,7 @@ describe("general conversational memory extraction", () => {
     expect(recalled.map((item) => item.value)).not.toContain("Typical spend at Blue Bottle is $12.00.");
   });
 
-  it("[MEM-006] checks a speculative spend claim and appends a transaction-supported correction", async () => {
+  it("[MEM-006] checks a speculative spend claim without changing remembered history", async () => {
     const memory = new MockMemoryProvider();
     const earlier = await memory.rememberConversationalMemory("user_spend_fact_check", {
       category: "habit", key: "merchant_spend:blue_bottle",
@@ -193,20 +193,12 @@ describe("general conversational memory extraction", () => {
     expect(response.message).toContain("You estimated $6.00");
     expect(response.message).toContain("suggest about $7.40 across 4 purchases");
     const facts = await memory.listConversationalMemories(userId);
-    expect(facts).toHaveLength(2);
-    expect(facts[0]).toEqual(earlier);
-    expect(facts[1]).toMatchObject({
-      key: "merchant_spend:blue_bottle",
-      value: "Usually spends $7.40 at Blue Bottle.",
-      evidence: expect.stringContaining("User stated: I theorize I spend around $6 at Blue Bottle."),
-      confidence: 0.9,
-      supersedesId: earlier.id
-    });
+    expect(facts).toEqual([earlier]);
 
     const later = await agent.respond({
       userId, conversationId: "later", message: "I made coffee at home instead of going to Blue Bottle."
     });
-    expect(later.decision.suggestion).toMatchObject({ amountCents: 740, source: "manual_estimate" });
+    expect(later.decision.suggestion).toMatchObject({ amountCents: 500, source: "manual_estimate" });
     expect(await tools.listSavingsEntries(userId)).toEqual([]);
   });
 
@@ -245,9 +237,7 @@ describe("general conversational memory extraction", () => {
 
     const claim = await agent.respond({ userId, message: "I theorize I spend around $6 at Blue Bottle." });
     expect(claim.message).toContain("unverified estimate");
-    expect(await memory.listConversationalMemories(userId)).toMatchObject([{
-      value: "Usually spends $6.00 at Blue Bottle.", confidence: 0.55
-    }]);
+    expect(await memory.listConversationalMemories(userId)).toEqual([]);
 
     const avoided = await agent.respond({
       userId, conversationId: "avoided", message: "I made coffee at home instead of going to Blue Bottle."
@@ -264,7 +254,7 @@ describe("general conversational memory extraction", () => {
 
     const theory = await agent.respond({ userId, message: "I theorize I spend around $6 at Blue Bottle." });
     expect(theory.message).toContain("unverified estimate");
-    expect(await memory.listConversationalMemories(userId)).toMatchObject([{ confidence: 0.55 }]);
+    expect(await memory.listConversationalMemories(userId)).toEqual([]);
 
     const avoided = await agent.respond({
       userId, conversationId: "later", message: "I made coffee at home instead of going to Blue Bottle."
@@ -361,7 +351,7 @@ describe("general conversational memory extraction", () => {
     expect(response.decision.action).toBe("suggest_savings");
     expect(response.decision.suggestion).toMatchObject({
       amountCents: 740,
-      source: "merchant_history",
+      source: "transaction_history",
       reason: expect.stringContaining("4 recent transactions")
     });
     expect(await tools.listSavingsEntries("user_transactions")).toEqual([]);
@@ -401,7 +391,7 @@ describe("general conversational memory extraction", () => {
     expect(profileProvider.lookupLog).toEqual([{ userId, merchantName: "Blue Bottle" }]);
     expect(proposal.decision.suggestion).toMatchObject({
       amountCents: 800,
-      source: "merchant_history",
+      source: "transaction_history",
       reason: expect.stringContaining("3 recent transactions")
     });
     expect(proposal.message).toContain("Based on your usual spend at Blue Bottle");
@@ -499,8 +489,8 @@ describe("general conversational memory extraction", () => {
       userId: "user_history_c", message: "I made coffee at home instead of going to Blue Bottle."
     });
 
-    expect(userA.decision.suggestion).toMatchObject({ amountCents: 740, source: "merchant_history" });
-    expect(userB.decision.suggestion).toMatchObject({ amountCents: 990, source: "merchant_history" });
+    expect(userA.decision.suggestion).toMatchObject({ amountCents: 740, source: "transaction_history" });
+    expect(userB.decision.suggestion).toMatchObject({ amountCents: 990, source: "transaction_history" });
     expect(unrelatedUser.decision.action).toBe("ask_follow_up");
     expect(unrelatedUser.decision.suggestion).toBeUndefined();
     expect(history.lookupLog.map(({ userId, merchantName }) => ({ userId, merchantName }))).toEqual([
@@ -777,7 +767,7 @@ describe("general conversational memory extraction", () => {
 
     expect(lookups).toEqual([{ userId, merchantName: "DoorDash" }]);
     expect(response.decision.action).toBe("suggest_savings");
-    expect(response.decision.suggestion).toMatchObject({ amountCents: 2435, source: "merchant_history" });
+    expect(response.decision.suggestion).toMatchObject({ amountCents: 2435, source: "transaction_history" });
     expect(response.message).not.toContain("how much do you usually spend");
     expect(await tools.listSavingsEntries(userId)).toEqual([]);
   });
