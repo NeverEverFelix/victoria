@@ -60,6 +60,7 @@ export class PostgresMemoryRepository implements MemoryProvider {
   }
 
   async listConversationalMemories(userId: string): Promise<readonly ConversationalMemory[]> {
+    // This API exposes append-only history; getMemoryForUser/search return only current, fresh facts.
     const result = await this.db.query<ConversationalMemory>(
       `SELECT id, category, memory_key AS "key", value, evidence, confidence,
         created_at AS "createdAt", supersedes_id AS "supersedesId", source_type AS "sourceType",
@@ -72,8 +73,8 @@ export class PostgresMemoryRepository implements MemoryProvider {
 
   async searchConversationalMemories(userId: string, query: string, limit = 20): Promise<readonly ConversationalMemory[]> {
     if (!userId.trim() || !query.trim()) return [];
-    if (!this.embeddings) return this.listCurrentMemories(userId);
     const boundedLimit = Math.max(1, Math.min(Number.isSafeInteger(limit) ? limit : 20, 50));
+    if (!this.embeddings) return (await this.listCurrentMemories(userId)).slice(0, boundedLimit);
     try {
       const vector = await this.embeddings.embed(query);
       if (!validateSemanticEmbedding(vector)) return this.listCurrentMemories(userId);
@@ -88,7 +89,7 @@ export class PostgresMemoryRepository implements MemoryProvider {
       return result.rows.map((row) => Object.freeze(row));
     } catch {
       // The durable recent-memory path remains available if embedding or vector search is unavailable.
-      return this.listCurrentMemories(userId);
+      return (await this.listCurrentMemories(userId)).slice(0, boundedLimit);
     }
   }
 

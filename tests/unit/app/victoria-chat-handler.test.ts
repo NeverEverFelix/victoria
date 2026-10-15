@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createVictoriaSessionAuthenticator, signVictoriaSession } from "../../../src/app/http/signed-session-auth.js";
 import { createVictoriaChatHandler } from "../../../src/app/http/victoria-chat-handler.js";
-import { getLocalMockVictoriaChatHandler } from "../../../src/app/http/create-local-mock-victoria-runtime.js";
-import { getLocalMockVictoriaRuntime } from "../../../src/app/http/create-local-mock-victoria-runtime.js";
+import { getLocalMockVictoriaChatHandler, getLocalMockVictoriaRuntime } from "../../../src/app/http/create-local-mock-victoria-runtime.js";
 import { buildTransactionFinancialProfile } from "../../../src/domain/financial-profile.js";
 
 const secret = "test-only-session-secret-with-more-than-32-bytes";

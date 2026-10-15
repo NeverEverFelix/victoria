@@ -65,8 +65,7 @@ export class MockMemoryProvider implements MemoryProvider {
     const supersededIds = new Set(memories.flatMap((memory) => memory.supersedesId ? [memory.supersedesId] : []));
     const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
     return immutableSnapshot(memories.filter((memory) => !supersededIds.has(memory.id) &&
-      (memory.sourceType !== "plaid_transaction_profile" || !memory.observedThrough ||
-        Date.parse(`${memory.observedThrough}T23:59:59.999Z`) >= cutoff)));
+      (memory.sourceType !== "plaid_transaction_profile" || isFreshProfileMemory(memory, cutoff, Date.now()))));
   }
 
   async searchConversationalMemories(userId: string, query: string, limit = 20): Promise<readonly ConversationalMemory[]> {
@@ -96,4 +95,10 @@ export class MockMemoryProvider implements MemoryProvider {
     this.memoriesByUser.set(userId, userMemories);
     return saved;
   }
+}
+
+function isFreshProfileMemory(memory: ConversationalMemory, cutoff: number, now: number): boolean {
+  if (!memory.observedThrough) return false;
+  const observedThrough = Date.parse(`${memory.observedThrough.slice(0, 10)}T00:00:00.000Z`);
+  return Number.isFinite(observedThrough) && observedThrough >= cutoff && observedThrough <= now;
 }

@@ -31,7 +31,7 @@ function normalizeMerchantName(value: string): string {
   return value.normalize("NFKD")
     .replace(/\p{M}+/gu, "")
     .toLocaleLowerCase("en-US")
-    .replace(/[^\p{Letter}\p{Number}]+/gu, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
     .replace(/\s+/g, " ");
 }

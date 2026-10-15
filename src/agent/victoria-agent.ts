@@ -43,6 +43,7 @@ import {
 } from "./memory/extract-preference.js";
 import { selectFinancialContextSource } from "./context-source-policy.js";
 import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } from "./transaction-history-provider.js";
+import { isRealMoneyMovementRequest } from "./money-movement-intent.js";
 import { validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
 import { isUsableEpisodicSummary, validateEpisodicSummary, type EpisodicMemorySummarizer } from "./memory/episodic-summary.js";
 
@@ -690,7 +691,8 @@ export class VictoriaAgent {
     const specialists = this.dependencies.specialists;
     if (!specialists) {
       const candidate = await this.dependencies.llm.classifyMessage({ userMessage: message, memory, conversationContext });
-      const classification = validateClassifiedMessage(candidate) ?? fallbackFinding(message).classification;
+      const classification = enforceMoneyMovementBoundary(message,
+        validateClassifiedMessage(candidate) ?? fallbackFinding(message).classification);
       return { classification: applyClassificationConfidencePolicy(classification) };
     }
 
@@ -704,7 +706,7 @@ export class VictoriaAgent {
     } catch {
       finding = fallbackFinding(message);
     }
-    const classification = applyClassificationConfidencePolicy(finding.classification);
+    const classification = enforceMoneyMovementBoundary(message, applyClassificationConfidencePolicy(finding.classification));
     finding = { classification };
     if (!financialMomentValid || !isTeamSupportedClassification(classification)) return { classification };
 
@@ -1733,4 +1735,14 @@ function isTeamSupportedClassification(classification: ClassifiedMessage): boole
   // A bare unclear message can benefit from specialist clarification. When an
   // amount is present, let the core clarification-resolution path handle it.
   return classification.type === "unclear" && classification.amountCents === undefined;
+}
+
+function enforceMoneyMovementBoundary(message: string, classification: ClassifiedMessage): ClassifiedMessage {
+  if (!isRealMoneyMovementRequest(message)) return classification;
+  return {
+    type: "real_money_movement_request",
+    confidence: 1,
+    summary: classification.summary || message,
+    needsClarification: false
+  };
 }

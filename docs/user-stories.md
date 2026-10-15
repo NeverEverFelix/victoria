@@ -327,7 +327,7 @@ Acceptance criteria:
 - Given transactions are pending, outside the 90-day window, malformed, non-USD, or not positive purchases, they do not contribute to the initial profile.
 - Given profile facts are created, they include provenance, observation dates, sample count, and confidence, and contain no raw transaction identifiers.
 
-## Story 12: Remember Explicit Preferences, Habits, And Goals
+## Story 13: Remember Explicit Preferences, Habits, And Goals
 
 As a user, I want Victoria to remember clear preferences, recurring habits, and stated goals so future conversations can reflect what matters to me.
 
@@ -357,7 +357,7 @@ Acceptance criteria:
 - Given a newer fact on the same topic, the earlier record remains unchanged and the new fact links to it.
 - Remembering a fact never counts as approval for a mocked ledger or goal-allocation action.
 
-## Story 13: Correct A Remembered Financial Detail In Conversation
+## Story 14: Correct A Remembered Financial Detail In Conversation
 
 As a user, I want to correct Victoria naturally when it gets a past spending detail wrong so it can use my correction in future conversations without making me manage a memory list.
 
@@ -390,7 +390,7 @@ Acceptance criteria:
 - Given no unique target, Victoria asks a follow-up and creates no memory record or financial action.
 - Given a correction message during a pending ledger approval/correction, the existing approval flow retains control.
 
-## Story 14: Learn Stable Context And Summarize Long Conversations
+## Story 15: Learn Stable Context And Summarize Long Conversations
 
 As a user, I want Victoria to retain a small amount of useful context from ordinary conversations so future conversations can feel continuous without me managing a memory list.
 

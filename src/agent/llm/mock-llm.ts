@@ -2,6 +2,7 @@ import type { ClassifiedMessage } from "../types.js";
 import { parseExplicitDollarAmount } from "../../domain/financial-events/parse-explicit-amount.js";
 import { parseExplicitCorrectionAmount } from "../../domain/financial-events/parse-correction-amount.js";
 import type { ClassifyMessageInput, DraftResponseInput, LlmAdapter } from "./types.js";
+import { isRealMoneyMovementRequest } from "../money-movement-intent.js";
 
 export class MockLlmAdapter implements LlmAdapter {
   async classifyMessage(input: ClassifyMessageInput): Promise<ClassifiedMessage> {
@@ -158,17 +159,6 @@ function inferGoalName(message: string): string | undefined {
 function parseRevisionReason(message: string): string | undefined {
   const match = message.match(/\breason\s+(?:to|is|was(?:\s+that)?)\s+(.+)$/i);
   return match?.[1]?.trim();
-}
-
-function isRealMoneyMovementRequest(message: string): boolean {
-  return (
-    /\b(move|transfer|send)\b.{0,40}\b(money|funds|cash)\b/.test(message) ||
-    /\b(money|funds|cash)\b.{0,40}\b(move|transfer|send)\b/.test(message) ||
-    /\b(bank|account)\s+transfer\b/.test(message) ||
-    /\b(move|transfer|send)\b.{0,35}\b(to|into)\b.{0,40}\b(savings|checking|bank|account|emergency fund)\b/.test(message) ||
-    /\b(move|transfer|send)\b.{0,40}\b(from|between)\b.{0,40}\b(to|into)\b/.test(message) ||
-    /\b(withdraw|take|pull|remove)\b.{0,50}\b(from|out of)\b.{0,35}\b(checking|savings|bank|account)\b/.test(message)
-  );
 }
 
 function inferMerchantName(message: string): string | undefined {

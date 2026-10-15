@@ -80,6 +80,9 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
 
   async listTransactions(userId: string, sinceDate: string): Promise<readonly PlaidFinancialTransaction[]> {
     if (!userId.trim()) throw new Error("A user ID is required.");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sinceDate) || !Number.isFinite(Date.parse(`${sinceDate}T00:00:00.000Z`))) {
+      throw new Error("A valid transaction start date is required in YYYY-MM-DD format.");
+    }
     const result = await this.pool.query<{
       item_id: string; transaction_id: string; amount_cents: string | number; currency_code: string | null;
       transaction_date: string; merchant_name: string | null; category: string | null; detailed_category: string | null;

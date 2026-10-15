@@ -3,7 +3,7 @@ import { MemoryOrchestrator } from "../../../src/agent/memory/memory-orchestrato
 import { MockMemoryProvider } from "../../../src/agent/memory/mock-memory.js";
 import type { ConversationalMemory } from "../../../src/agent/memory/types.js";
 
-const profileMemory = (overrides: Partial<Omit<ConversationalMemory, "id" | "createdAt">> = {}) => ({
+const profileMemory = (overrides: Partial<Omit<ConversationalMemory, "id" | "createdAt">> = {}): Omit<ConversationalMemory, "id" | "createdAt"> => ({
   category: "financial_pattern" as const,
   key: "financial_profile:merchant:cafe",
   value: "Typical spend at Cafe is $8.00.",
@@ -41,6 +41,18 @@ describe("MemoryOrchestrator", () => {
 
     const result = await orchestrator.getMemoryForUser("user-a", "move");
     expect(result.conversationalMemories?.map((memory) => memory.key)).toEqual(["move"]);
+  });
+
+  it("makes missing, stale, and future profile observations unavailable in mock retrieval", async () => {
+    const storage = new MockMemoryProvider();
+    const { observedThrough: _observedThrough, ...missingObservation } = profileMemory({ key: "profile:missing" });
+    await storage.rememberConversationalMemory("user-a", missingObservation);
+    await storage.rememberConversationalMemory("user-a", profileMemory({ key: "profile:stale", observedThrough: "2026-01-01" }));
+    await storage.rememberConversationalMemory("user-a", profileMemory({ key: "profile:future", observedThrough: "2027-01-01" }));
+    await storage.rememberConversationalMemory("user-a", profileMemory({ key: "profile:current", observedThrough: new Date().toISOString() }));
+
+    const result = await storage.getMemoryForUser("user-a");
+    expect(result.conversationalMemories?.map((memory) => memory.key)).toEqual(["profile:current"]);
   });
 
   it("sends profile refreshes through the configured profile writer", async () => {
