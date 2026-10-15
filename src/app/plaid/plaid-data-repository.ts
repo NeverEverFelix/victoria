@@ -54,7 +54,7 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
       user_id: string; item_id: string; access_token_ciphertext: string; access_token_iv: string;
       access_token_auth_tag: string; encryption_key_version: string; sync_cursor: string | null;
     }>(`SELECT user_id, item_id, access_token_ciphertext, access_token_iv, access_token_auth_tag,
-          encryption_key_version, sync_cursor FROM victoria_plaid_items WHERE user_id = $1 AND disconnect_pending = false`, [userId]);
+          encryption_key_version, sync_cursor FROM victoria_plaid_items WHERE user_id = $1 AND disconnect_pending IS NOT TRUE`, [userId]);
     return result.rows.map((row) => Object.freeze({ userId: row.user_id, itemId: row.item_id,
       token: Object.freeze({ ciphertext: row.access_token_ciphertext, iv: row.access_token_iv,
         authTag: row.access_token_auth_tag, keyVersion: row.encryption_key_version }), cursor: row.sync_cursor }));
@@ -89,7 +89,11 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
   }
 
   async pruneTransactionsBefore(userId: string, cutoffDate: string): Promise<void> {
-    if (!userId.trim() || !/^\\d{4}-\\d{2}-\\d{2}$/.test(cutoffDate)) throw new Error("A user and valid cutoff date are required.");
+    const parsedCutoff = new Date(`${cutoffDate}T00:00:00.000Z`);
+    if (!userId.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(cutoffDate) ||
+        !Number.isFinite(parsedCutoff.getTime()) || parsedCutoff.toISOString().slice(0, 10) !== cutoffDate) {
+      throw new Error("A user and valid cutoff date are required.");
+    }
     await this.pool.query("DELETE FROM victoria_plaid_transactions WHERE user_id = $1 AND transaction_date < $2", [userId, cutoffDate]);
   }
 

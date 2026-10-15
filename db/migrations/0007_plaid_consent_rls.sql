@@ -21,11 +21,12 @@ DROP POLICY IF EXISTS victoria_plaid_consent_owner_policy
 CREATE POLICY victoria_plaid_consent_owner_policy
   ON public.victoria_plaid_consent_events
   FOR SELECT TO authenticated
-  USING (user_id = (SELECT auth.uid()::text));
+  USING (user_id = auth.uid()::text);
 
 REVOKE ALL ON public.victoria_plaid_consent_events FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.victoria_plaid_consent_events FROM service_role;
 GRANT SELECT ON public.victoria_plaid_consent_events TO authenticated;
-GRANT ALL ON public.victoria_plaid_consent_events TO service_role;
+GRANT SELECT, INSERT ON public.victoria_plaid_consent_events TO service_role;
 
 -- RLS is intentionally not forced while the deployment pool role is unverified.
 -- Confirm its server-side access behavior and never expose its credentials to clients.

@@ -14,7 +14,7 @@ describe("Plaid consent event database boundary", () => {
     expect(migration).toMatch(/FOR SELECT TO authenticated[\s\S]*auth\.uid\(\)::text/i);
     expect(migration).toMatch(/REVOKE ALL ON public\.victoria_plaid_consent_events FROM PUBLIC, anon, authenticated/i);
     expect(migration).toMatch(/GRANT SELECT ON public\.victoria_plaid_consent_events TO authenticated/i);
-    expect(migration).toMatch(/GRANT ALL ON public\.victoria_plaid_consent_events TO service_role/i);
+    expect(migration).toMatch(/GRANT SELECT, INSERT ON public\.victoria_plaid_consent_events TO service_role/i);
     expect(migration).not.toMatch(/FOR INSERT|FOR UPDATE|FOR DELETE/i);
   });
 });
