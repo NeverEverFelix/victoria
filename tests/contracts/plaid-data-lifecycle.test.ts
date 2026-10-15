@@ -8,6 +8,8 @@ describe("Plaid lifecycle contract", () => {
   it("LIFE-001 expires raw transactions at the UTC 90-day date boundary and filters equality as expired", () => {
     expect(lifecycleMigration).toMatch(/transaction_date \+ 90\)::timestamp AT TIME ZONE 'UTC'/i);
     expect(lifecycleMigration).toMatch(/DELETE FROM public\.victoria_plaid_transactions WHERE expires_at <= p_now/i);
+    expect(lifecycleMigration).toMatch(/m\.created_at AT TIME ZONE 'UTC'/i);
+    expect(lifecycleMigration).toMatch(/p_now AT TIME ZONE 'UTC'/i);
     expect(lifecycleMigration).not.toMatch(/ALTER COLUMN expires_at SET DEFAULT \(now\(\)/i);
     expect(lifecycleMigration).toMatch(/CREATE POLICY victoria_plaid_revocation_queue_service_role[\s\S]+TO service_role[\s\S]+USING \(true\) WITH CHECK \(true\)/i);
     expect(dataRepository).toMatch(/expires_at > now\(\)/i);

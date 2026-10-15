@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PostgresPlaidDataRepository } from "../../../src/app/plaid/plaid-data-repository.js";
-import type { PostgresClient, PostgresPool, PostgresQueryResult } from "../../../src/app/turns/postgres-turn-repository.js";
+import { PostgresPlaidTokenMaintenanceRepository } from "../../../src/app/plaid/plaid-token-maintenance-repository.js";
+import type { PostgresClient, PostgresPool, PostgresQueryResult } from "../../../src/app/shared/postgres-types.js";
 
 type Statement = { sql: string; values: readonly unknown[] };
 
@@ -27,8 +28,9 @@ describe("PostgresPlaidDataRepository lifecycle", () => {
   });
 
   it("LIFE-002 and LIFE-003 queues only the authenticated user's encrypted tokens and purges all local profile data", async () => {
-    const db = new ScriptedPool((sql) => sql.includes("INSERT INTO victoria_plaid_revocation_queue")
-      ? { rows: [{ attempts: 0 }], rowCount: 1 }
+    const db = new ScriptedPool((sql) => sql.includes("UPDATE victoria_plaid_revocation_queue q")
+      ? { rows: [{ user_id: "user-a", item_id: "item-a", access_token_ciphertext: "cipher-a", access_token_iv: "iv-a",
+        access_token_auth_tag: "tag-a", encryption_key_version: "v1", attempts: 2 }], rowCount: 1 }
       : sql.includes("FROM victoria_plaid_items") && sql.includes("FOR UPDATE")
       ? { rows: [{ item_id: "item-a", access_token_ciphertext: "cipher-a", access_token_iv: "iv-a",
         access_token_auth_tag: "tag-a", encryption_key_version: "v1" }], rowCount: 1 }
@@ -37,11 +39,11 @@ describe("PostgresPlaidDataRepository lifecycle", () => {
 
     const queued = await repository.beginDisconnect("user-a", "item-a");
 
-    expect(queued).toMatchObject([{ userId: "user-a", itemId: "item-a", token: { ciphertext: "cipher-a", keyVersion: "v1" }, attempts: 0 }]);
+    expect(queued).toMatchObject([{ userId: "user-a", itemId: "item-a", token: { ciphertext: "cipher-a", keyVersion: "v1" }, attempts: 2 }]);
     expect(db.statements.find(({ sql }) => sql.includes("INSERT INTO victoria_plaid_revocation_queue"))?.sql)
-      .toContain("claimed_until)");
-    expect(db.statements.find(({ sql }) => sql.includes("INSERT INTO victoria_plaid_revocation_queue"))?.sql)
-      .toContain("RETURNING attempts");
+      .not.toContain("claimed_until");
+    expect(db.statements.find(({ sql }) => sql.includes("UPDATE victoria_plaid_revocation_queue q"))?.sql)
+      .toContain("q.access_token_auth_tag,q.encryption_key_version,q.attempts");
     expect(db.statements.find(({ sql }) => sql.includes("INSERT INTO victoria_plaid_revocation_queue"))?.values)
       .toEqual(["user-a", "item-a", "cipher-a", "iv-a", "tag-a", "v1"]);
     expect(db.statements.find(({ sql }) => sql.startsWith("DELETE FROM victoria_plaid_transactions"))?.values)
@@ -66,7 +68,7 @@ describe("PostgresPlaidDataRepository lifecycle", () => {
       .toEqual(["user-a", "item-owned-by-user-b"]);
   });
 
-  it("LIFE-002 lists Items only for the requested user and excludes disconnected Items", async () => {
+  it("LIFE-002 lists physically active Items only for the requested user", async () => {
     const db = new ScriptedPool((sql, values) => sql.includes("FROM victoria_plaid_items")
       ? { rows: values[0] === "user-a" ? [{ user_id: "user-a", item_id: "item-a", access_token_ciphertext: "cipher",
         access_token_iv: "iv", access_token_auth_tag: "tag", encryption_key_version: "v2", sync_cursor: null }] : [], rowCount: 0 }
@@ -75,7 +77,7 @@ describe("PostgresPlaidDataRepository lifecycle", () => {
 
     await expect(repository.listItems("user-a")).resolves.toHaveLength(1);
     await expect(repository.listItems("user-b")).resolves.toHaveLength(0);
-    expect(db.statements[0]?.sql).toContain("disconnect_requested_at IS NULL");
+    expect(db.statements[0]?.sql).not.toContain("disconnect_requested_at");
     expect(db.statements[0]?.values).toEqual(["user-a"]);
     expect(db.statements[1]?.values).toEqual(["user-b"]);
   });
@@ -91,7 +93,7 @@ describe("PostgresPlaidDataRepository lifecycle", () => {
     expect(db.statements[0]?.values).toEqual(["user-a", "item-a"]);
     expect(db.statements[1]?.sql).toContain("WHERE user_id=$1 AND item_id=$2");
     expect(db.statements[1]?.values).toEqual(["user-a", "item-a", "2026-10-15T12:01:00.000Z", "pending", null]);
-    await expect(repository.countPendingRevocations(" ")).rejects.toThrow("A user and optional Item ID are required.");
+    await expect(repository.countOutstandingRevocations(" ")).rejects.toThrow("A user and optional Item ID are required.");
   });
 
   it("LIFE-004 retains permanent revocation failures for manual review", async () => {
@@ -125,7 +127,7 @@ describe("PostgresPlaidDataRepository lifecycle", () => {
       ? { rows: [{ access_token_ciphertext: envelope.ciphertext, access_token_iv: envelope.iv,
         access_token_auth_tag: envelope.authTag, encryption_key_version: envelope.keyVersion }], rowCount: 1 }
       : sql.startsWith("UPDATE victoria_plaid_revocation_queue") ? { rows: [], rowCount: 0 } : { rows: [], rowCount: 1 });
-    const repository = new PostgresPlaidDataRepository(db);
+    const repository = new PostgresPlaidTokenMaintenanceRepository(db);
 
     await expect(repository.replaceToken("user-a", "item-a", envelope)).resolves.toEqual(envelope);
 
@@ -144,7 +146,7 @@ describe("PostgresPlaidDataRepository lifecycle", () => {
     const db = new ScriptedPool((sql) => sql.includes("SELECT access_token_ciphertext")
       ? { rows: [], rowCount: 0 }
       : sql.startsWith("UPDATE victoria_plaid_revocation_queue") ? { rows: [], rowCount: 0 } : { rows: [], rowCount: 1 });
-    const repository = new PostgresPlaidDataRepository(db);
+    const repository = new PostgresPlaidTokenMaintenanceRepository(db);
 
     await expect(repository.replaceToken("user-a", "item-a", {
       ciphertext: "cipher", iv: "iv", authTag: "tag", keyVersion: "v2"

@@ -9,8 +9,8 @@ ALTER TABLE victoria_plaid_transactions
 CREATE INDEX IF NOT EXISTS victoria_plaid_transactions_expiry_idx
   ON victoria_plaid_transactions(expires_at);
 
-ALTER TABLE victoria_plaid_items
-  ADD COLUMN IF NOT EXISTS disconnect_requested_at timestamptz;
+-- Items are physically removed after their encrypted revocation copy is queued.
+ALTER TABLE victoria_plaid_items DROP COLUMN IF EXISTS disconnect_requested_at;
 
 -- Retain only encrypted credentials needed to retry Plaid Item revocation after
 -- local access is disabled and transaction data has been removed.
@@ -120,13 +120,13 @@ BEGIN
     USING public.victoria_conversational_memories m
     WHERE e.user_id = m.user_id AND e.memory_id = m.id
       AND m.source_type = 'plaid_transaction_profile'
-      AND coalesce(m.observed_through, m.created_at::date) < (p_now::date - 90)
+      AND coalesce(m.observed_through, (m.created_at AT TIME ZONE 'UTC')::date) < ((p_now AT TIME ZONE 'UTC')::date - 90)
       AND NOT EXISTS (SELECT 1 FROM public.victoria_conversational_memories child
         WHERE child.user_id=m.user_id AND child.supersedes_id=m.id);
   GET DIAGNOSTICS removed_embeddings = ROW_COUNT;
   DELETE FROM public.victoria_conversational_memories m
     WHERE m.source_type = 'plaid_transaction_profile'
-      AND coalesce(m.observed_through, m.created_at::date) < (p_now::date - 90)
+      AND coalesce(m.observed_through, (m.created_at AT TIME ZONE 'UTC')::date) < ((p_now AT TIME ZONE 'UTC')::date - 90)
       AND NOT EXISTS (SELECT 1 FROM public.victoria_conversational_memories child
         WHERE child.user_id=m.user_id AND child.supersedes_id=m.id);
   GET DIAGNOSTICS removed_memories = ROW_COUNT;

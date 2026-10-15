@@ -52,8 +52,11 @@ describe("PlaidApiClient", () => {
     await expect(malformed.syncTransactions({ accessToken: "access", cursor: null })).rejects.toThrow("Invalid Plaid transaction amount.");
 
     const failed = new PlaidApiClient({ clientId: "client-test", secret: "secret-test", environment: "sandbox",
-      fetcher: vi.fn<typeof fetch>().mockResolvedValue(response({ error_message: "sensitive provider details" }, false)) });
-    await expect(failed.exchangePublicToken("public-test")).rejects.toThrow("Plaid API request failed.");
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ error_code: "INVALID_ACCESS_TOKEN",
+        error_message: "sensitive provider details" }), { status: 400 })) });
+    await expect(failed.exchangePublicToken("public-test")).rejects.toMatchObject({
+      message: "Plaid API request failed.", providerCode: "INVALID_ACCESS_TOKEN"
+    });
   });
 
   it("classifies provider response failures for bounded retry handling", async () => {
@@ -66,7 +69,7 @@ describe("PlaidApiClient", () => {
       .rejects.toMatchObject({ name: "PlaidApiError", status: 401, retryable: false });
     await expect(transient.revokeItem("access"))
       .rejects.toMatchObject({ name: "PlaidApiError", status: 503, retryable: true });
-    await expect(permanent.revokeItem("x".repeat(2049))).rejects.toThrow("A valid Plaid access token is required.");
+    await expect(permanent.revokeItem(" ")).rejects.toThrow("A valid Plaid access token is required.");
   });
 });
 

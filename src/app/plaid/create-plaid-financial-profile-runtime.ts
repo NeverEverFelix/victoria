@@ -13,6 +13,7 @@ import { FinancialProfileSyncService } from "./financial-profile-sync.js";
 import { createFinancialProfileSyncHandler } from "./financial-profile-sync-handler.js";
 import { PlaidApiClient } from "./plaid-api-client.js";
 import { PostgresPlaidDataRepository } from "./plaid-data-repository.js";
+import { PostgresPlaidTokenMaintenanceRepository } from "./plaid-token-maintenance-repository.js";
 import { PlaidLinkTokenClient } from "./plaid-link-token-client.js";
 import { createPlaidPublicTokenExchangeHandler } from "./public-token-exchange-handler.js";
 import { PlaidDataLifecycleService } from "./plaid-data-lifecycle.js";
@@ -57,6 +58,7 @@ export function createPlaidFinancialProfileRuntime(options: {
   const { pool } = createPostgresTurnStore(options.env.databaseUrl);
   const consent = new PostgresPlaidConsentRepository(pool);
   const data = new PostgresPlaidDataRepository(pool);
+  const maintenance = new PostgresPlaidTokenMaintenanceRepository(pool);
   const plaid = new PlaidApiClient({ clientId: options.env.plaidClientId, secret: options.env.plaidSecret,
     environment: options.env.plaidEnv, ...(options.fetcher ? { fetcher: options.fetcher } : {}) });
   const link = new PlaidLinkTokenClient({ clientId: options.env.plaidClientId, secret: options.env.plaidSecret,
@@ -69,7 +71,7 @@ export function createPlaidFinancialProfileRuntime(options: {
   const agentMemory = new MemoryOrchestrator(sqliteMemory, { financialProfiles: profiles });
   const agent = createVictoriaAgent({ env: options.env, memory: agentMemory, ...(options.fetcher ? { fetcher: options.fetcher } : {}) });
   const sync = new FinancialProfileSyncService({ consent, data, plaid, cipher, profiles: agentMemory });
-  const lifecycle = new PlaidDataLifecycleService({ consent, data, plaid, cipher,
+  const lifecycle = new PlaidDataLifecycleService({ consent, data, maintenance, plaid, cipher,
     invalidateMemoryCache: (userId) => sqliteMemory.invalidateUserMemoryCache(userId) });
   return Object.freeze({
     pool,
@@ -78,6 +80,7 @@ export function createPlaidFinancialProfileRuntime(options: {
     sqliteMemory,
     consent,
     data,
+    maintenance,
     profiles,
     sync,
     lifecycle,
