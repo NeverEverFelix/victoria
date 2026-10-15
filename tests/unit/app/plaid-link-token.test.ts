@@ -182,6 +182,7 @@ describe("PlaidLinkTokenClient", () => {
 
     expect(fetcher).toHaveBeenCalledWith("https://sandbox.plaid.com/link/token/create", expect.objectContaining({
       method: "POST",
+      redirect: "error",
       headers: expect.objectContaining({
         "PLAID-CLIENT-ID": "client", "PLAID-SECRET": "secret", "Plaid-Version": "2020-09-14"
       }),

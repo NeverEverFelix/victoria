@@ -92,6 +92,7 @@ export class PlaidApiClient {
   private async post(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const response = await this.fetcher(`${this.baseUrl}${path}`, {
       method: "POST",
+      redirect: "error",
       signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
       headers: {
         "Content-Type": "application/json",
@@ -126,7 +127,7 @@ function parseTransaction(value: unknown): PlaidSyncedTransaction {
     : typeof transaction.name === "string" ? transaction.name.trim() : "";
   const primaryCategory = transaction.personal_finance_category?.primary;
   const paymentChannel = typeof transaction.payment_channel === "string"
-    ? transaction.payment_channel.toLocaleLowerCase("en-US").replace(/[_-]+/g, " ").trim()
+    ? transaction.payment_channel.toLowerCase().replace(/[_-]+/g, " ").trim()
     : null;
   return Object.freeze({
     transactionId: transaction.transaction_id,
@@ -148,5 +149,5 @@ function parseTransaction(value: unknown): PlaidSyncedTransaction {
 function readString(value: Record<string, unknown>, key: string): string {
   const result = value[key];
   if (typeof result !== "string" || !result.trim()) throw new Error("Invalid Plaid API response.");
-  return result;
+  return result.trim();
 }

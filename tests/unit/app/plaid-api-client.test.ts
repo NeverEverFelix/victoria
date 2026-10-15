@@ -17,6 +17,7 @@ describe("PlaidApiClient", () => {
 
     await expect(client.exchangePublicToken("public-test")).resolves.toEqual({ accessToken: "access-test", itemId: "item-1" });
     expect(fetcher).toHaveBeenCalledWith("https://sandbox.plaid.com/item/public_token/exchange", expect.objectContaining({
+      redirect: "error",
       headers: expect.objectContaining({ "PLAID-CLIENT-ID": "client-test", "PLAID-SECRET": "secret-test" }),
       body: JSON.stringify({ public_token: "public-test" })
     }));

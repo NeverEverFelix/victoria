@@ -32,6 +32,7 @@ export class PlaidLinkTokenClient {
     const baseUrl = "https://sandbox.plaid.com";
     const response = await this.fetcher(`${baseUrl}/link/token/create`, {
       method: "POST",
+      redirect: "error",
       signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
       headers: {
         "Content-Type": "application/json",
