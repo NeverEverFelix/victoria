@@ -449,7 +449,8 @@ describe("VictoriaAgent", () => {
 
   it.each([
     "Can you send $100 to my emergency fund?",
-    "Take $30 out of checking and put it away for me."
+    "Take $30 out of checking and put it away for me.",
+    "Please deposit $20 into my savings account."
   ])("[FIN-001] refuses a transfer request phrased as a goal or withdrawal: %s", async (message) => {
     const tools = new MockVictoriaTools();
     const response = await createAgent([], tools).respond({ userId: "user_123", message });
@@ -459,6 +460,33 @@ describe("VictoriaAgent", () => {
     expect(response.decision.toolCall).toBeUndefined();
     expect(response.message).toContain("can't move real money");
     expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("[FIN-001] deterministically refuses real-money wording even when a classifier labels it ordinary conversation", async () => {
+    const llm = new MockLlmAdapter();
+    vi.spyOn(llm, "classifyMessage").mockResolvedValue({
+      type: "general_finance", confidence: 0.95, summary: "Deposit $20 into savings", needsClarification: false
+    });
+    const tools = new MockVictoriaTools();
+    const agent = new VictoriaAgent({ llm, memory: new MockMemoryProvider(), tools });
+
+    const response = await agent.respond({ userId: "user_123", message: "Please deposit $20 into my savings account." });
+
+    expect(response.decision.action).toBe("refuse");
+    expect(response.decision.classification.type).toBe("real_money_movement_request");
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("does not decide that ambiguous move-over wording means a real transfer from the phrase alone", async () => {
+    const classification = await new MockLlmAdapter().classifyMessage({
+      userMessage: "Hey can we move over that's $37.46 that we talked about earlier?",
+      memory: { habits: [], goals: [], recentDecisions: [] },
+      conversationContext: ["I almost bought a $37.46 lunch but decided to wait."]
+    });
+
+    expect(classification.type).toBe("unclear");
+    expect(classification.amountCents).toBe(3746);
   });
 
   it("[AMT-004] asks to clarify an avoided-spend amount with excess precision", async () => {

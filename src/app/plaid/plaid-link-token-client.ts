@@ -1,10 +1,13 @@
 import { isPlaidReadProduct, type PlaidReadProduct } from "./create-link-token-handler.js";
+import type { PlaidEnv } from "../../config/env.js";
 
 export interface PlaidLinkTokenClientOptions {
   readonly clientId: string;
   readonly secret: string;
+  readonly environment?: PlaidEnv;
   readonly fetcher?: typeof fetch;
   readonly apiVersion?: string;
+  readonly timeoutMs?: number;
 }
 
 interface PlaidLinkTokenResponse {
@@ -16,6 +19,8 @@ export class PlaidLinkTokenClient {
   private readonly fetcher: typeof fetch;
 
   constructor(private readonly options: PlaidLinkTokenClientOptions) {
+    if (!options.clientId.trim() || !options.secret.trim()) throw new Error("Plaid client credentials are required.");
+    if ((options.environment ?? "sandbox") !== "sandbox") throw new Error("Only the Plaid sandbox environment is enabled.");
     this.fetcher = options.fetcher ?? fetch;
   }
 
@@ -24,8 +29,11 @@ export class PlaidLinkTokenClient {
       throw new Error("Invalid Plaid read products.");
     }
 
-    const response = await this.fetcher("https://sandbox.plaid.com/link/token/create", {
+    const baseUrl = "https://sandbox.plaid.com";
+    const response = await this.fetcher(`${baseUrl}/link/token/create`, {
       method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
       headers: {
         "Content-Type": "application/json",
         "PLAID-CLIENT-ID": this.options.clientId,

@@ -10,6 +10,7 @@ import type { SavingsEntry, SavingsEntryCorrection, SavingsGoalAllocation } from
 import type { SavingsSuggestion, UserHabit } from "../types.js";
 import { sumCompletedSavingsForWeek } from "../../domain/savings/totals.js";
 import { immutableSnapshot } from "../../domain/immutable.js";
+import { isUsableTransactionHistoryEstimate } from "../transaction-history-provider.js";
 
 export class MockVictoriaTools implements VictoriaTools {
   private readonly savingsEntries: SavingsEntry[] = [];
@@ -60,18 +61,42 @@ export class MockVictoriaTools implements VictoriaTools {
       merchantName: input.merchantName
     });
 
-    if (typicalAmountCents === null) {
-      return null;
+    if (typicalAmountCents !== null) {
+      return {
+        id: `suggestion_${Date.now()}`,
+        amountCents: typicalAmountCents,
+        currency: "USD",
+        reason: `Estimated from typical spend at ${input.merchantName}.`,
+        source: "merchant_history",
+        movementMode: "mock_ledger"
+      };
     }
 
-    return {
-      id: `suggestion_${Date.now()}`,
-      amountCents: typicalAmountCents,
-      currency: "USD",
-      reason: `Estimated from typical spend at ${input.merchantName}.`,
-      source: "merchant_history",
-      movementMode: "mock_ledger"
-    };
+    if (input.rememberedTypicalAmountCents !== undefined &&
+        Number.isSafeInteger(input.rememberedTypicalAmountCents) && input.rememberedTypicalAmountCents > 0) {
+      return {
+        id: `suggestion_${Date.now()}`,
+        amountCents: input.rememberedTypicalAmountCents,
+        currency: "USD",
+        reason: `Estimated from your remembered typical spend at ${input.merchantName}.`,
+        source: "manual_estimate",
+        movementMode: "mock_ledger"
+      };
+    }
+
+    const transactionEstimate = input.transactionHistoryEstimate;
+    if (isUsableTransactionHistoryEstimate(transactionEstimate)) {
+      return {
+        id: `suggestion_${Date.now()}`,
+        amountCents: transactionEstimate.amountCents,
+        currency: "USD",
+        reason: `Estimate based on ${transactionEstimate.transactionCount} recent transactions at ${input.merchantName}, observed through ${transactionEstimate.observedThrough}.`,
+        source: "transaction_history",
+        movementMode: "mock_ledger"
+      };
+    }
+
+    return null;
   }
 
   async createSavingsEntry(input: CreateSavingsEntryInput): Promise<SavingsEntry> {

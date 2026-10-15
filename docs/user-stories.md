@@ -57,6 +57,10 @@ Acceptance criteria:
 - Given Victoria does not know the typical amount, Victoria asks what the user usually spends.
 - Given the user provides an amount, Victoria can propose a savings action.
 - Given the user confirms, Victoria creates a mocked ledger entry.
+- Given the user explicitly remembers a typical USD spend for that merchant, Victoria may use it for a later estimate for the same merchant and user; the estimate still requires confirmation.
+- Given no exact user-owned merchant memory or known habit matches, Victoria asks for the amount rather than guessing from unrelated memories.
+- Given a matching merchant-specific routine exists but no typical spend amount is remembered, Victoria checks available transaction history first and asks the user only if no usable cost can be verified; routine frequency alone is not a monetary estimate.
+- Given Victoria asks for typical spend at a known merchant and the user provides a valid amount, Victoria uses it for the pending estimate and appends it to that user's merchant memory for future estimates.
 
 ## Story 3: Coffee At Home
 
@@ -291,32 +295,39 @@ Acceptance criteria:
 - Effective weekly totals use the corrected amount while retaining the original entry's reporting week.
 - If the target entry is unclear, Victoria asks which entry and makes no change.
 
-## Post-MVP Proposal: Build And Use A Financial Profile
+## Story 12: Build And Use A Transactions-Only Financial Profile
 
 As a user, I want Victoria to use financial information I have authorized it to access so that its support can reflect my financial context.
 
-This is a post-MVP proposal, not an approved current behavior. The current repository does not fetch Plaid financial data or wire profile data into inference. Any future implementation requires separate product and safety review.
+The first profile is limited to transaction history. This story does not include balances, identity data, account metadata, or other Plaid products. The server-side sync, encrypted token storage, profile refresh, semantic persistence, and explicit runtime adapters exist; deployment route mounting and live provider/database configuration are still intentionally outstanding.
 
 Expected behavior:
 
 - Victoria explains the data purpose and asks the user to connect/authorize before accessing Plaid data.
-- The connection requests only the agreed data products and scopes needed for profile features.
-- The specialist records source, observation time, freshness, and uncertainty for derived facts, and distinguishes observed facts from estimates or inferences.
+- The connection requests Plaid Transactions only.
+- The profile records source, observation time, freshness, and uncertainty for derived facts, and distinguishes observed facts from estimates or inferences.
 - Victoria uses relevant profile context without exposing unnecessary raw transaction or account details.
+- For an avoided-spend estimate, relevant user memory is preferred; if it is absent, Victoria may choose an available connected transaction-history source without asking for each lookup. The provider must use the user's existing bank-link authorization and return no result if the connection is unavailable or revoked.
 - Missing, stale, conflicting, or unavailable data leads to cautious wording or a clarifying question; it is not silently treated as current fact.
+- In the optional provider seam, transaction summaries older than 90 days, future-dated summaries, malformed summaries, or summaries based on fewer than three purchases are treated as unavailable.
 - The user can disconnect access and invoke documented data deletion/retention behavior.
 - Profile data never approves an action. Savings suggestions still require explicit approval, and no profile flow may move real money.
 
 Acceptance criteria:
 
 - Given no active user authorization, no Plaid data is fetched or injected.
+- Given relevant user memory exists for an avoided-spend estimate, Victoria uses that memory before considering transaction history.
+- Given relevant memory is absent and a connected transaction-history source is available, Victoria may request only the matched merchant's bounded typical-spend summary without a per-lookup approval prompt.
 - Given data belongs to another user, it cannot appear in the profile or inference context.
 - Given a profile fact is stale or inferred, its status is available to the agent and uncertainty is reflected in the response.
+- Given a profile fact is stored, its source window, record count, and confidence are retained, and the fact is available to user-scoped semantic retrieval.
 - Given the specialist fails or returns invalid/conflicting data, Victoria falls back safely without a financial mutation.
 - Given a user disconnects, future refreshes and inference use stop and the agreed retention/deletion behavior is applied.
 - Given a profile-based estimate is suggested, exact user confirmation remains required before a mocked ledger entry is created.
+- Given transactions are pending, outside the 90-day window, malformed, non-USD, or not positive purchases, they do not contribute to the initial profile.
+- Given profile facts are created, they include provenance, observation dates, sample count, and confidence, and contain no raw transaction identifiers.
 
-## Story 12: Remember Explicit Preferences, Habits, And Goals
+## Story 13: Remember Explicit Preferences, Habits, And Goals
 
 As a user, I want Victoria to remember clear preferences, recurring habits, and stated goals so future conversations can reflect what matters to me.
 
@@ -330,6 +341,9 @@ Expected behavior:
 
 - Victoria records a user-scoped preference with the user's wording as evidence and a confidence value.
 - Victoria records a recurring habit only when the user states a recurring pattern, and a goal only when the user states a goal or saving target.
+- A speculative merchant-spend amount may be stored as low-confidence evidence, but it is not used for estimates unless verified by more reliable user memory or transaction history.
+- Direct recurring-spend statements such as “My usual spend at Blue Bottle is around $6” are stored as merchant-specific habits, while non-recurring or unclear amounts are not inferred as typical spend.
+- Recurring behavior tied to a named merchant, such as ordering lunch from DoorDash on Fridays, is stored separately from both another merchant's routine and a generic category habit.
 - Victoria acknowledges a remembered fact without suggesting a savings entry or creating a goal allocation.
 - A clearly stated newer fact is appended and linked to the prior fact it supersedes; identical facts are not duplicated.
 - Tentative, ambiguous, or conflicting statements are not stored as facts.
@@ -338,9 +352,69 @@ Acceptance criteria:
 
 - Given a direct savings-amount preference, the fact is available in that user's conversational memory.
 - Given a direct recurring habit or stated goal, its evidence-backed fact is available in that user's conversational memory.
+- Given the user says they theorize or think they spend a certain amount at a merchant, Victoria checks available transaction history, treats differences under $1 or 15% as broadly consistent, and appends a linked transaction-supported estimate for larger differences while identifying the evidence basis.
 - Given a tentative statement, no fact is stored.
 - Given a newer fact on the same topic, the earlier record remains unchanged and the new fact links to it.
 - Remembering a fact never counts as approval for a mocked ledger or goal-allocation action.
+
+## Story 14: Correct A Remembered Financial Detail In Conversation
+
+As a user, I want to correct Victoria naturally when it gets a past spending detail wrong so it can use my correction in future conversations without making me manage a memory list.
+
+Example:
+
+```text
+Victoria:
+Your linked transaction history shows about $27 at Blue Bottle that day.
+
+User:
+No, that's not right. I actually spent $40 that day.
+
+Victoria:
+Thanks for correcting me. I'll remember that you spent $40 on that day. I haven't changed or recorded any money.
+```
+
+Expected behavior:
+
+- Victoria uses the immediately relevant conversation to resolve the corrected financial fact.
+- A correction to one transaction stays distinct from a rolling merchant/category profile aggregate.
+- Victoria appends the user's correction as evidence and links it to the prior fact where available; prior history is not rewritten.
+- If multiple facts could be the target, Victoria asks which purchase or day the user means and stores nothing until clear.
+- The correction only changes conversational understanding. It does not update bank history, propose savings, or create a ledger entry.
+- Victoria does not expose a memory-review or memory-edit interface.
+
+Acceptance criteria:
+
+- Given a clear correction and one unambiguous recent financial fact, Victoria appends the corrected understanding and retrieves it for a relevant later turn.
+- Given an aggregate Plaid profile fact, correcting one day's amount creates a linked transaction-detail fact without replacing the aggregate.
+- Given no unique target, Victoria asks a follow-up and creates no memory record or financial action.
+- Given a correction message during a pending ledger approval/correction, the existing approval flow retains control.
+
+## Story 15: Learn Stable Context And Summarize Long Conversations
+
+As a user, I want Victoria to retain a small amount of useful context from ordinary conversations so future conversations can feel continuous without me managing a memory list.
+
+Expected behavior:
+
+- When the optional memory extraction provider is enabled, Victoria may retain up to three stable, useful facts explicitly stated by the user in the current turn.
+- Victoria retains only candidates with exact supporting evidence, high confidence, user attribution, affirmed statements, and ordinary sensitivity.
+- Quoted or third-party claims, negations, hypotheticals, temporary states, transaction details, and sensitive personal information are not retained through this path.
+- When short-term conversation context reaches its 20-message limit, an optional summarizer may append a compact episode summary from bounded user-authored context. It must include supporting excerpts and pass the same user-attribution and sensitivity checks.
+- Victoria may refer to a retrieved episode in an ordinary reflection only when it is no more than 90 days old and clearly matches the current topic; old, future-dated, malformed, or unrelated episodes are ignored.
+- Memory learning and summaries are internal. Victoria does not expose a memory-review or memory-edit interface; users correct relevant details naturally in conversation.
+- On an ordinary financial reflection, Victoria may use a relevant user-stated preference or goal from prior conversations to make its reply more personal, while keeping the language factual and brief.
+- When an ordinary reflection matches a remembered recurring coffee, takeout, or merchant routine, Victoria may refer to that routine and ask what would feel manageable, without inferring a spend amount or treating the routine as approval.
+- Both provider features are disabled by default and are currently opt-in only in local development. No provider calls are made by default.
+
+Acceptance criteria:
+
+- Given a stable, explicit preference in an ordinary message, an enabled extractor stores it with the user's evidence and it can be retrieved in a later conversation.
+- Given a relevant remembered preference or goal and an ordinary financial reflection in a later conversation, Victoria shapes its reply around that context; unrelated users do not receive it and it does not create a financial action.
+- Given weak, temporary, sensitive, unsupported, quoted, third-party, negated, or hypothetical extraction, no memory is stored.
+- Given extraction or summarization failure, the current chat turn still completes and no financial action is approved.
+- Given the short-term context reaches its limit, a supported episode summary is appended; unsupported or sensitive summaries are discarded.
+- Given a fresh, relevant episode summary is retrieved during a later ordinary reflection, Victoria may briefly reconnect to that prior topic and invite correction; unrelated or more-than-90-day-old episodes are not surfaced.
+- Given the user corrects a learned fact later, the correction is handled through the existing conversational correction flow and history remains append-only.
 
 ## Priority Order
 

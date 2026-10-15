@@ -30,7 +30,10 @@ class MemoryDatabase implements PostgresQueryable {
       this.memories.push(saved);
       return { rows: [{ id: saved.id, category: saved.category, key: saved.key, value: saved.value, evidence: saved.evidence, confidence: saved.confidence, createdAt: saved.createdAt }] as Row[] };
     }
-    if (sql.includes("FROM victoria_conversational_memories WHERE user_id")) {
+    if (sql.includes("FROM victoria_conversational_memories")) {
+      if (!/WHERE\s+(?:m\.)?user_id\s*=\s*\$1/i.test(sql)) {
+        throw new Error("Conversational-memory queries must scope reads by user ID.");
+      }
       return { rows: this.memories.filter((item) => item.userId === values[0]).map((item) => ({
         id: item.id, category: item.category, key: item.key, value: item.value,
         evidence: item.evidence, confidence: item.confidence, createdAt: item.createdAt,

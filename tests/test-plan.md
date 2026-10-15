@@ -17,6 +17,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria chooses `estimateAvoidedSpend()` before suggesting a savings action.
 - Victoria refuses to call `eventuallyMoveMoney()` during the MVP, even when approval is present.
 - A natural-language real-transfer request receives a clear limitation response and does not create a mocked entry or call a transfer tool, including when a savings suggestion is pending; cover sending money to a named goal and withdrawing money from checking.
+- Intent classification uses recent conversational context and does not treat colloquial wording such as "move over" as a transfer based on that phrase alone; ambiguous intent asks for clarification.
 
 ## Environment Safety
 
@@ -82,6 +83,16 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 
 ## Memory Behavior
 
+## Authenticated Chat Route
+
+- The local chat route accepts only a valid signed Victoria bearer session; caller-supplied `userId` fields are rejected and the signed subject scopes memory and tools.
+- Missing, expired, or tampered sessions fail authentication; oversized or malformed requests are rejected.
+- The route is unavailable outside local development and uses only mock model, memory, and ledger adapters.
+- Chat responses are not cached, and the route cannot call Plaid, Supabase, or real money movement providers.
+- An explicit user preference shared through one route conversation can shape a later ordinary reply in a different conversation for the same signed user; another user receives no private preference context.
+- A pending savings confirmation is bound to its conversation: a bare “yes” elsewhere does not record it, returning to the original conversation can approve it, and a later route visit can read the recorded weekly total.
+- A user can correct Victoria's remembered merchant-spend statement through the route; the correction is acknowledged as a separate transaction detail, does not record savings, and does not rewrite the rolling merchant estimate.
+
 - Victoria remembers recurring merchants.
 - Victoria updates a habit after repeated similar decisions.
 - Victoria retrieves relevant goals before suggesting where savings should go.
@@ -93,11 +104,32 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - PostgreSQL can restore unexpired clarification context after SQLite cache loss, and expired context is not returned.
 - Durable conversational memories retain user-stated preferences with evidence and confidence, isolate by user, and supersede earlier facts through linked append-only records.
 - Durable conversational decisions are append-only and cannot mutate financial event, approval, or ledger history.
+- An injected structured extractor can store at most three stable, ordinary, high-confidence contextual facts only when exact supporting evidence appears in the current user turn; temporary, sensitive, weak-confidence, unsupported, duplicate, or malformed candidates are discarded.
+- Extraction rejects quoted/third-party, negated, and hypothetical facts even if the words appear in the user's message; memory-extraction failure does not block the chat turn or bypass proposal/approval policy.
+- When the 20-message short-term context is about to roll over, an injected episodic summarizer receives only bounded user-authored messages. It stores a compact append-only summary only when confidence and sensitivity checks pass and each supporting excerpt occurs in the supplied user messages.
+- A relevant episode summary can shape an ordinary reflective reply only when it is well-formed, non-future, and at most 90 days old; unrelated and stale episodes are not surfaced.
+- Episodic summary failures or unsupported/sensitive summaries do not block the current turn, and the default local runtime does not make extraction-provider calls.
 - An explicit “I prefer saving $20 rather than $50 at a time” statement creates an evidence-backed user preference but no savings proposal or ledger entry.
 - Tentative, ambiguous, equal-amount, or malformed savings preference statements do not create a memory fact.
 - A changed explicit preference appends a fact linked to the prior preference; another user's preference is never returned.
 - A direct preference, recurring habit, or stated goal is stored as an evidence-backed structured fact; an identical repeat is deduplicated and an uncertain statement is ignored.
+- A relevant retrieved preference or goal shapes an ordinary reflective reply in a later conversation; the response remains user-scoped and cannot create a savings entry or goal allocation.
+- A matching remembered coffee, takeout, or merchant routine can shape an ordinary reflection across conversations; unrelated routines and other users' routines stay out, and routine frequency never becomes a money estimate.
 - Remembering a habit or goal does not create a savings proposal or goal allocation; structured facts remain available as source records for future PostgreSQL semantic/vector indexing.
+- A quantified, explicit merchant-spend habit can inform a later estimate only for the same merchant and user; it remains an estimate, needs approval, and does not create a ledger entry by itself.
+- When transaction history is unavailable, Victoria asks for the user's typical merchant spend; a valid answer informs the current proposal and appends a linked user-scoped memory fact for later estimates.
+- A direct “my usual/typical spend at [merchant] is about [amount]” statement is extracted as a merchant-specific recurring spend, used only for that merchant and user, and remains an estimate requiring normal approval before a ledger entry.
+- Direct recurring actions tied to named merchants are stored under merchant-specific habit keys; updating one merchant's habit appends a linked fact without replacing another merchant's habit or generic category habit, and tentative claims are ignored.
+- If an avoided-spend turn matches a merchant-specific routine but has no remembered spend amount, Victoria checks available transaction history first. Missing, stale, malformed, or failed provider results lead to an amount question; routine frequency alone never becomes an estimate. A valid answer becomes a distinct merchant-spend memory for later estimates while the routine record remains unchanged.
+- A built transactions-only profile can supply a user-scoped typical merchant amount to an avoided-spend proposal when relevant user memory is absent; insufficient profile samples, stale observations, missing merchants, or another user's profile produce a follow-up instead. The estimate is disclosed and no mocked ledger entry is created until explicit approval.
+- The local mock runtime's financial-profile writer updates the same transaction-history provider used by its authenticated chat handler; refreshed facts inform the matching user only, and no profile fact approves a ledger write.
+- A certain direct merchant-spend claim checked against sufficient recent transaction history confirms a match or appends a linked transaction-supported amount, preserves the user's wording and prior facts, and discloses the data basis.
+- A speculative merchant-spend claim may receive a transient comparison against sufficient recent history, but Victoria does not persist it, link it, or use it as a later estimate.
+- Transaction summaries are accepted only with at least three purchases, a valid non-future observation time, and an observation time no older than 90 days; stale results cannot correct memory or support a savings estimate.
+- Typical-spend summaries use the median of at least three positive safe-integer cent amounts; even-sized samples average the middle pair and round half cents up without mutating the input.
+- A speculative spend claim without transaction corroboration is not persisted and cannot produce a savings suggestion.
+- The context-source policy prefers relevant memory, selects an available connected transaction source only for a missing estimate, and otherwise asks; unavailable/error/invalid provider results never produce an estimate, and no per-lookup approval is requested.
+- The transaction-history provider contract fixture matches case, punctuation, and whitespace variants of the same merchant only within the requested user's scope; unknown merchants and other users' records return no data.
 
 ## Conversation Quality
 
@@ -178,6 +210,12 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 
 ## Future Integration Boundaries
 
+- The transactions-only profile builder derives user-scoped merchant/category facts from posted USD purchases within 90 days, with provenance, observed dates, sample count, and confidence; pending, stale, malformed, non-USD, and non-purchase transactions are excluded.
+- Profile facts contain compact aggregates rather than raw transaction payloads or provider transaction identifiers.
+- Persistent profile and conversational facts can be indexed as 1536-dimensional pgvector embeddings; semantic retrieval filters by authenticated user and embedding model, excludes superseded facts, and ignores stale transaction-profile facts.
+- If embedding generation or vector search is unavailable, the fact remains persisted and memory retrieval falls back to recent user-scoped facts.
+- Profile-derived context does not approve a savings entry or allocation; exact action approval remains required.
+
 The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-link-token.test.ts`](unit/app/plaid-link-token.test.ts). Broader financial-profile cases remain pending in [`contracts/financial-profile.pending.test.ts`](contracts/financial-profile.pending.test.ts); convert them to executable assertions as the corresponding bounded interfaces and behaviors are implemented.
 
 - Financial profile setup fetches no Plaid data before explicit user authorization.
@@ -196,3 +234,25 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Failed transfer attempts do not create completed savings entries.
 - Notification scheduling respects user preferences.
 - Agent tool calls are logged for auditability.
+# Plaid transaction profile sync
+
+- Exchange a Link public token only for the authenticated user with active Transactions consent; never return or persist an unencrypted access token.
+- Apply added/modified/removed cursor pages atomically with the cursor and enforce Item ownership.
+- Recheck consent between pages; revoked consent blocks provider access and profile refresh.
+- Authenticated database clients cannot select encrypted Plaid Item token envelopes; the transaction read model remains user-scoped by RLS.
+- The injected Plaid runtime requires explicit opt-in and refuses production and non-sandbox environments.
+- Refresh compact 90-day posted USD merchant/category facts only after a complete sync, then persist them as append-only semantic memories.
+- Test OpenAI embedding request/response behavior with a mocked fetcher. Do not make live Plaid, OpenAI, or Supabase calls in unit tests.
+
+## Memory Orchestration
+
+- Changed user memories append a linked current fact; exact repeated evidence is deduplicated.
+- Retrieval excludes superseded and stale transaction-profile memories, resolves duplicate keys by source authority, and stays within the configured per-turn bound.
+- Financial profile refreshes pass through the memory service, append replacements and absence markers, and invalidate SQLite's short-lived durable-memory cache.
+- User-scoped memory retrieval never includes another user's facts.
+- A clear conversational correction resolves only to one recent financial fact, appends a linked `user_correction`, and keeps the prior fact in append-only history.
+- Correcting one transaction from a rolling Plaid aggregate stores a separate linked transaction-detail fact; it does not rewrite or suppress the aggregate.
+- An ambiguous correction asks which purchase/day the user means and creates no memory or financial record.
+- A correction during pending savings or ledger-correction approval cannot bypass that approval lifecycle.
+- A correction never updates Plaid data, creates a savings proposal, or writes a ledger entry.
+- The product has no user-facing memory review/edit endpoint or screen.

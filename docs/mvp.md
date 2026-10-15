@@ -189,7 +189,7 @@ The MVP should eventually store:
 - Created timestamp.
 - Whether the entry is mocked or real.
 
-When explicitly injected, the SQLite context adapter keeps up to 20 user and Victoria messages for 30 minutes and queues a PostgreSQL backup. The default application composition still uses mock memory; no SQLite file path or live PostgreSQL database is configured. Durable conversational memories can store user-scoped preferences, recurring habits, and stated goals as structured facts with evidence and confidence. They are appended as linked facts when understanding changes and never count as action approval. No embedding or vector-search infrastructure is wired. Broader habits and goals beyond the explicitly supported phrase patterns remain future work.
+When explicitly injected, the SQLite context adapter keeps up to 20 user and Victoria messages for 30 minutes and queues a PostgreSQL backup. `MemoryOrchestrator` now sits above the SQLite/PostgreSQL adapters: it versions changed learned facts, filters stale or superseded profile memories, applies per-turn memory bounds, routes profile refreshes into durable semantic memory, and invalidates the short-lived SQLite cache after profile writes. The default application composition still uses mock memory; no Supabase project or provider credentials are configured. Durable conversational memories store user-scoped preferences, recurring habits, stated goals, and transaction-derived financial patterns as structured facts with evidence, confidence, source, and optional observation window. Migration `0004_semantic_user_memory.sql` adds versioned pgvector embeddings, HNSW cosine search, Supabase row-level security, and a bounded semantic search function. The optional persistent runtime composes PostgreSQL/Supabase memory and a concrete OpenAI embedding adapter; semantic retrieval falls back to recent persisted facts when embeddings are unavailable. An optional local-only provider path can extract stable ordinary context from an explicit user turn and summarize a bounded episode before short-term context rolls over. It is disabled by default and rejects sensitive, temporary, unsupported, quoted, negated, hypothetical, and third-party content. A validated episode may shape a later ordinary reply only when it is no more than 90 days old, not future-dated, and clearly matches the current topic; episodes do not affect financial decisions. On ordinary financial reflections, relevant retrieved user-stated preferences and goals can shape Victoria's response across conversations. A matching remembered coffee, takeout, or named-merchant routine can also provide supportive context without implying a spend amount; neither kind of personalization changes financial decisions or approval requirements. Recurring actions linked to a named merchant have merchant-specific memory keys, separate from category routines; when a matching routine exists but typical spend is unknown, Victoria first checks available transaction history and asks the user only if no usable cost can be verified. The routine can contextualize that fallback question, but frequency never supplies a dollar amount. Facts are appended as linked records when understanding changes and never count as action approval. Memory correction happens conversationally: when a clear user correction refers to one specific recent financial fact, Victoria appends the corrected understanding with provenance; when the target is ambiguous, Victoria asks which purchase the user means. Individual-transaction corrections stay distinct from rolling transaction-profile aggregates. Victoria does not expose a memory-review or memory-edit interface.
 
 Victoria's memory evolves, but historical events, suggestions, approvals, and ledger entries remain immutable. A later correction, revised estimate, or newly learned habit must create a new linked record instead of changing what Victoria previously observed, suggested, approved, or recorded.
 
@@ -199,7 +199,7 @@ The MVP should not include:
 
 - Real bank transfers.
 - Plaid transfer or payment capabilities.
-- Plaid data retrieval or a Plaid-backed financial profile.
+- Plaid products beyond user-authorized Transactions access for the transaction-history profile.
 - Unbounded or undisclosed Plaid data access.
 - Credit card payoff automation.
 - Investment recommendations.
@@ -209,21 +209,21 @@ The MVP should not include:
 - Multi-user household finances.
 - Tax advice.
 
-## Future Financial Profile Proposal (Outside The MVP)
+## Transactions-Only Financial Profile
 
-The repository contains a sandbox-only Link-token adapter and append-only consent storage as isolated server-boundary scaffolding. They are not wired into the default application composition, do not fetch account or transaction data, and do not use production Plaid credentials. A Plaid-backed financial profile remains a proposal outside the current MVP and requires separate product and safety review before implementation.
+The first financial profile uses user-authorized Plaid Transactions history only. The headless profile builder derives compact merchant and category spend facts from posted USD purchases in a 90-day window. It checks whether detailed category, merchant entity ID, and payment-channel metadata are present, reports per-field coverage, uses a detailed category when supplied, and adds channel aggregates when available. Missing metadata falls back to the broad category and is never inferred. It records source, observation dates, transaction count, and sample confidence; raw transaction identifiers remain only in the minimal transaction sync read model and are not copied into profile memories. Profile facts persist in the user memory store and use the same semantic retrieval path as explicit preferences and habits. Server-side adapters support cursor-based Plaid sync, AES-256-GCM-encrypted Item-token storage, and consent-checked profile refresh. The local mock chat runtime now accepts a completed profile through a writer adapter that updates the exact user-scoped provider queried by chat. Plaid sync and the persistent runtime are still opt-in: no Plaid refresh route, live credentials, or Supabase project is configured in the default application.
 
-If this proposal is separately approved, it must be designed around these constraints:
+The approved transactions-only profile is designed around these constraints:
 
-- Plaid data access must follow user authorization and clearly disclosed purpose. Request only the data products needed for agreed profile behavior; “as much data as possible” is not itself a product purpose or default permission.
+- Plaid data access must follow user authorization and clearly disclosed purpose. This profile requests Transactions only; balances, identity data, account metadata, transfer, and payment scopes are excluded.
 - A profile is derived, potentially incomplete context, not ground truth or financial advice. Preserve source, observation time, freshness, and uncertainty for profile facts; do not silently present stale or inferred facts as current.
 - Keep provider data and derived profile data scoped to the correct user, access-controlled, and subject to documented retention, refresh, disconnect, and deletion behavior before implementation.
-- The specialist may produce profile facts or insights but cannot approve actions, create ledger entries, initiate transfers, or override deterministic policies. Provider-derived data does not constitute user approval.
+- The profile and its retrieval layer may provide context but cannot approve actions, create ledger entries, initiate transfers, or override deterministic policies. Provider-derived data does not constitute user approval.
 - Inject only context relevant to the current turn, with explicit limits and provenance. Do not expose raw account identifiers or unnecessary transaction details to the conversation agent.
 - A profile may inform an estimate, but estimates remain estimates and any savings ledger write still requires the existing exact user confirmation.
 - Any future capability must not enable real money movement. Access must be limited to authorized read purposes; it must not enable transfer or payment capabilities.
 
-Product decisions still required before any future implementation include the data products and permitted purposes, profile schema, freshness rules, consent and disconnect lifecycle, retention/deletion requirements, and how profile facts are corrected when source data changes. This is not part of the current MVP sequence.
+Before live transaction reads are enabled, deploy and verify the migrations, configure authenticated routes and secret-managed keys, and define transaction retention plus Item disconnect/deletion and encryption-key rotation. No live provider or database testing has been performed as part of this implementation.
 
 These may become useful later, but they should not distract from proving the core behavior first.
 

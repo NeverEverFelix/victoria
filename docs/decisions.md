@@ -86,7 +86,7 @@ Real money movement requires stronger approvals, auditing, idempotency, error ha
 Implications:
 
 - `eventuallyMoveMoney` should remain blocked or unused in MVP flows.
-- Plaid production access and financial-profile data retrieval are outside the MVP. Any future Plaid/profile work requires a separately approved scope and safety review.
+- Plaid financial-data reads are limited to the user-authorized Transactions product for a transaction-history profile. Plaid transfer/payment access and real money movement remain outside the MVP.
 - Any future real transfer work needs explicit approval and new tests.
 
 ### Memory Evolves While Financial History Remains Immutable
@@ -120,7 +120,7 @@ Implications:
 - Durable remembered decisions are append-only. Financial events, approvals, and ledger entries remain owned by their separate immutable repositories.
 - Durable conversational facts record category, key, value, evidence, confidence, and optional link to a superseded fact. A changed preference appends a new linked fact rather than mutating the old one.
 - Victoria automatically records only direct, clear USD savings-amount preferences in this slice; tentative or ambiguous wording is not saved. Remembering a preference never approves a ledger action.
-- The extractor also supports direct general preferences, recurring habit statements, and explicit goal statements. These structured facts are source records for a future semantic/vector index; this does not generate embeddings or authorize a goal allocation.
+- The extractor also supports direct general preferences, recurring habit statements, and explicit goal statements. Migration `0004_semantic_user_memory.sql` adds Supabase RLS, versioned pgvector embeddings, and a user-scoped semantic search function for these facts and transaction-derived profile facts. Embedding generation is injected and is not configured in the default mock composition; a remembered goal does not authorize a goal allocation.
 - This does not yet persist learned habits or goals or select a SQLite file path for a deployed runtime.
 
 ### Recorded Amount Corrections Use Linked Adjustment Records
@@ -159,45 +159,46 @@ Implications:
 - UI implementation becomes the final product phase after the non-UI work queue is complete and `npm run check` passes.
 - End-to-end browser journeys and production deployment follow the UI phase.
 
-### Historical Proposal: Financial Profile And Plaid Specialist
+### Transactions-Only Financial Profile
 
-The 2026-10-07 scope decision is superseded by the current repository safety boundary: Plaid production behavior and Plaid data retrieval are outside the MVP. The existing sandbox Link-token adapter is isolated scaffolding and is not wired into the default application composition.
+Decision: Confirmed by the user on 2026-10-13. The first financial profile is built from transaction history only, using user-authorized Plaid Transactions access. Do not include balances, identity data, account metadata, or other Plaid products in this profile.
 
 Scope:
 
-Build a user-scoped financial profile from data the user has authorized Victoria to access through Plaid. A dedicated `financialprofilespecialist` builds or refreshes the base profile and provides relevant context to Victoria at inference time.
+Build a user-scoped financial profile from authorized transaction history. The profile stores compact derived facts such as merchant and category spending patterns with provenance, observation window, sample count, and confidence. Raw transaction payloads are not conversational memory. Profile facts use the same persistent memory and semantic retrieval path as explicit preferences and habits.
 
 Constraints for any future design:
 
-- Authorization, data purpose, and the specific Plaid products/scopes must be clear before access; do not equate “as much data as possible” with appropriate default access.
+- Request the Transactions product only for this profile; do not include balances, identity data, account metadata, transfer, or payment scopes.
 - Profile facts carry provenance, observed time, freshness, and uncertainty, and distinguish source observations from derived inferences.
 - Only relevant, bounded context should be injected; raw account identifiers and unnecessary transaction details should not be sent to the conversation agent.
 - Profile data is advisory context. The specialist cannot approve actions, create ledger entries, or move money. Existing user confirmation remains required for savings entries.
 - User separation, access controls, retention, refresh, disconnect, and deletion behavior must be defined before implementation.
 - This scope does not include Plaid transfer or payment capabilities, or real money movement.
 
-The exact Plaid data products, profile schema, consent flow, and retention schedule remain unresolved. Profile work belongs in the non-UI MVP sequence; UI remains deferred until non-UI work is complete.
+The profile input, aggregation, persistence mapping, and semantic memory schema are implemented. Secure Item-token storage, transaction sync/cursor persistence, refresh schedule, retention/deletion, and production enablement remain unresolved and must be decided before live reads are wired. Profile work belongs in the non-UI MVP sequence; UI remains deferred until non-UI work is complete.
+
+### Typical Merchant Spend Statistic For A Future Provider
+
+Status: Confirmed for transaction-derived merchant estimates and the transactions-only profile.
+
+Use the median of qualifying merchant purchase amounts in integer USD cents. For an even number of purchases, average the two middle values and round a half cent up. Require at least three positive safe-integer amounts. This gives a reproducible typical amount and limits the effect of unusually large purchases. The pure calculation is implemented in `src/domain/financial-events/typical-spend.ts` and covered by `tests/unit/domain/typical-spend.test.ts`.
+
+This decision does not define transaction eligibility, freshness, retention, or the transaction source. Those remain separate provider design gates.
 
 ## Open Questions
 
-### What Should Victoria's Financial Profile Contain?
+### Financial Profile Lifecycle And Additional Data
 
 Question:
 
-Which user-authorized Plaid data products and metadata are needed to build a useful base profile, and what purposes will each serve?
+How should Victoria refresh, retain, delete, and disconnect transaction-derived profile facts, and how should corrections to transaction history be represented?
 
-Open decisions include:
-
-- The minimum necessary Plaid products/scopes for the first profile version.
-- Which profile facts are directly observed, derived, or inferred, and how each is represented.
-- Freshness thresholds and how stale, missing, or conflicting records affect inference.
-- Consent language, connection/disconnection, retention, refresh, deletion, and correction behavior.
-- What profile context can be injected into inference and how it is minimized and isolated per user.
-- How the specialist is evaluated and how its outputs remain advisory.
+Open decisions include refresh and deletion lifecycle, reconciliation of changed/removed transactions, and production enablement. The approved profile scope remains transaction history only; adding another Plaid product requires a new product decision.
 
 Current default:
 
-Do not implement a Plaid/profile slice until a future product and safety review approves it and defines headless acceptance criteria. This capability is not current MVP scope.
+Build the transactions-only profile within the headless MVP sequence. Live Plaid reads remain blocked on secure credential storage, sync lifecycle, retention/deletion, and deployment review.
 
 ### What Makes Saved Money Feel Protected With One Account?
 
