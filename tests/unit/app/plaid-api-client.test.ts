@@ -45,6 +45,15 @@ describe("PlaidApiClient", () => {
     expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({ cursor: "cursor-1", count: 500 });
   });
 
+  it("removes an Item using the server-held access token", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response({ request_id: "request-1" }));
+    const client = new PlaidApiClient({ clientId: "client-test", secret: "secret-test", environment: "sandbox", fetcher });
+    await expect(client.removeItem("access-test")).resolves.toBeUndefined();
+    expect(fetcher).toHaveBeenCalledWith("https://sandbox.plaid.com/item/remove", expect.objectContaining({
+      method: "POST", body: JSON.stringify({ access_token: "access-test" }), cache: "no-store"
+    }));
+  });
+
   it("rejects malformed transaction amounts and never leaks provider errors", async () => {
     const malformed = new PlaidApiClient({ clientId: "client-test", secret: "secret-test", environment: "sandbox",
       fetcher: vi.fn<typeof fetch>().mockResolvedValue(response({ added: [{ transaction_id: "x", amount: 1.001,

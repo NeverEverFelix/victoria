@@ -323,6 +323,11 @@ Acceptance criteria:
 - Given a profile fact is stored, its source window, record count, and confidence are retained, and the fact is available to user-scoped semantic retrieval.
 - Given the specialist fails or returns invalid/conflicting data, Victoria falls back safely without a financial mutation.
 - Given a user disconnects, future refreshes and inference use stop and the agreed retention/deletion behavior is applied.
+- Given Plaid is disconnected, transaction rows and Plaid-derived memories/embeddings are removed while user-authored preferences, habits, goals, statements, and corrections remain retrievable.
+- Given a user correction supersedes a Plaid-derived fact, disconnect preserves the correction and removes only its link to the deleted source fact.
+- Given a complete sync and profile write succeeds, raw transaction rows older than 90 days are pruned; failed syncs do not trigger pruning.
+- Given Plaid Item removal fails, local transaction/profile data remains deleted and the encrypted token is retained only in a sync-disabled pending state for retry.
+- Given full account deletion completes provider cleanup, the minimal consent event history is erased through the controlled service procedure.
 - Given a profile-based estimate is suggested, exact user confirmation remains required before a mocked ledger entry is created.
 - Given transactions are pending, outside the 90-day window, malformed, non-USD, or not positive purchases, they do not contribute to the initial profile.
 - Given profile facts are created, they include provenance, observation dates, sample count, and confidence, and contain no raw transaction identifiers.

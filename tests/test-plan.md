@@ -226,6 +226,9 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - `financialprofilespecialist` failures or invalid outputs fall back safely and cannot approve actions, create ledger entries, or trigger transfers.
 - Inference receives only relevant bounded profile context and excludes unnecessary raw account identifiers and transaction details.
 - Disconnect prevents future fetches/injection and applies the documented retention/deletion behavior.
+- Profile disconnect revokes consent, removes raw transactions and only Plaid-derived memory/embeddings, preserves and re-roots user-authored corrections, invalidates the memory cache, and retains only an encrypted sync-disabled token for provider-removal retries.
+- Raw transaction rows older than 90 days are pruned only after full sync and profile persistence succeed; an incomplete sync or profile-write failure does not prune.
+- Minimal consent history remains append-only until account deletion; only the controlled service-role erasure procedure may remove it.
 - Plaid consent grants and revocations are append-only, user-scoped events; a revoke applies only to the exact current grant and repeated revoke is idempotent.
 - Re-grant after revocation creates a new event with the newly approved product scope; prior grant and revocation history remain unchanged.
 - The consent repository rejects empty/unsupported product scopes and does not reveal another user's current consent.
@@ -241,6 +244,7 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Apply added/modified/removed cursor pages atomically with the cursor and enforce Item ownership.
 - Recheck consent between pages; revoked consent blocks provider access and profile refresh.
 - Authenticated database clients cannot select encrypted Plaid Item token envelopes; the transaction read model remains user-scoped by RLS.
+- Authenticated database clients can read only their own append-only Plaid consent history; consent writes remain server-side.
 - The injected Plaid runtime requires explicit opt-in and refuses production and non-sandbox environments.
 - Refresh compact 90-day posted USD merchant/category facts only after a complete sync, then persist them as append-only semantic memories.
 - Test OpenAI embedding request/response behavior with a mocked fetcher. Do not make live Plaid, OpenAI, or Supabase calls in unit tests.

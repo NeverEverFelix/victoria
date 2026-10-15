@@ -69,4 +69,25 @@ describe("MemoryOrchestrator", () => {
     expect(writer.rememberFinancialProfile).toHaveBeenCalledWith(profile);
   });
 
+  it("erases only Plaid memories and preserves user corrections and preferences", async () => {
+    const storage = new MockMemoryProvider();
+    const profile = await storage.rememberConversationalMemory("user-a", profileMemory());
+    const correction = await storage.rememberConversationalMemory("user-a", {
+      category: "financial_pattern", key: "financial_profile:merchant:cafe", value: "User says the usual Cafe spend is $10.",
+      evidence: "User corrected the estimate.", confidence: 1, sourceType: "user_correction", supersedesId: profile.id
+    });
+    const preference = await storage.rememberConversationalMemory("user-a", {
+      category: "preference", key: "response_style", value: "Prefers concise answers.", evidence: "User said so.", confidence: 1
+    });
+    const writer = { rememberFinancialProfile: vi.fn(async () => []), erasePlaidFinancialProfile: (id: string) => storage.erasePlaidFinancialProfile(id) };
+    const orchestrator = new MemoryOrchestrator(storage, { financialProfiles: writer });
+
+    await orchestrator.erasePlaidFinancialProfile("user-a");
+
+    const retained = await orchestrator.listConversationalMemories("user-a");
+    expect(retained.map(({ id }) => id)).toEqual([correction.id, preference.id]);
+    expect(retained.find(({ id }) => id === correction.id)?.supersedesId).toBeUndefined();
+    expect(retained.find(({ id }) => id === preference.id)?.value).toBe("Prefers concise answers.");
+  });
+
 });

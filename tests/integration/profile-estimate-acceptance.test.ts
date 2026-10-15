@@ -48,7 +48,8 @@ describe("authenticated profile-to-estimate flow", () => {
         applySyncPage: vi.fn(async () => undefined),
         listTransactions: vi.fn(async (requestedUserId: string) => requestedUserId === userId
           ? transactions.map((transaction) => ({ ...transaction, itemId: "item-1" }))
-          : [])
+          : []),
+        pruneTransactionsBefore: vi.fn(async () => undefined)
       },
       plaid: {
         syncTransactions: vi.fn(async () => ({
@@ -121,7 +122,7 @@ describe("authenticated profile-to-estimate flow", () => {
       consent: { getConsent: vi.fn(async () => ({ userId, status: "revoked", products: ["transactions"] })) },
       data: {
         listItems: vi.fn(async () => [{ userId, itemId: "item-1", token: cipher.encrypt("test-access-token"), cursor: null }]),
-        applySyncPage: vi.fn(), listTransactions: vi.fn(async () => [])
+        applySyncPage: vi.fn(), listTransactions: vi.fn(async () => []), pruneTransactionsBefore: vi.fn()
       },
       plaid: { syncTransactions }, cipher, profiles: { rememberFinancialProfile }
     });

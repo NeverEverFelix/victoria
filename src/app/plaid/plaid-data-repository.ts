@@ -7,6 +7,7 @@ export interface PlaidStoredItem {
   readonly itemId: string;
   readonly token: EncryptedPlaidAccessToken;
   readonly cursor: string | null;
+  readonly disconnectPending?: boolean;
 }
 
 export interface PlaidFinancialTransaction extends PlaidSyncedTransaction {
@@ -16,6 +17,11 @@ export interface PlaidFinancialTransaction extends PlaidSyncedTransaction {
 export interface PlaidDataRepository {
   storeItem(userId: string, itemId: string, token: EncryptedPlaidAccessToken): Promise<void>;
   listItems(userId: string): Promise<readonly PlaidStoredItem[]>;
+  listItemsForRemoval(userId: string): Promise<readonly PlaidStoredItem[]>;
+  markDisconnectPending(userId: string): Promise<void>;
+  deleteTransactionsForUser(userId: string): Promise<void>;
+  deleteItem(userId: string, itemId: string): Promise<void>;
+  pruneTransactionsBefore(userId: string, cutoffDate: string): Promise<void>;
   applySyncPage(userId: string, itemId: string, page: PlaidTransactionSyncPage): Promise<void>;
   listTransactions(userId: string, sinceDate: string): Promise<readonly PlaidFinancialTransaction[]>;
 }
@@ -48,10 +54,47 @@ export class PostgresPlaidDataRepository implements PlaidDataRepository {
       user_id: string; item_id: string; access_token_ciphertext: string; access_token_iv: string;
       access_token_auth_tag: string; encryption_key_version: string; sync_cursor: string | null;
     }>(`SELECT user_id, item_id, access_token_ciphertext, access_token_iv, access_token_auth_tag,
-          encryption_key_version, sync_cursor FROM victoria_plaid_items WHERE user_id = $1`, [userId]);
+          encryption_key_version, sync_cursor FROM victoria_plaid_items WHERE user_id = $1 AND disconnect_pending IS NOT TRUE`, [userId]);
     return result.rows.map((row) => Object.freeze({ userId: row.user_id, itemId: row.item_id,
       token: Object.freeze({ ciphertext: row.access_token_ciphertext, iv: row.access_token_iv,
         authTag: row.access_token_auth_tag, keyVersion: row.encryption_key_version }), cursor: row.sync_cursor }));
+  }
+
+  async listItemsForRemoval(userId: string): Promise<readonly PlaidStoredItem[]> {
+    if (!userId.trim()) throw new Error("A user ID is required.");
+    const result = await this.pool.query<{
+      user_id: string; item_id: string; access_token_ciphertext: string; access_token_iv: string;
+      access_token_auth_tag: string; encryption_key_version: string; sync_cursor: string | null; disconnect_pending: boolean;
+    }>(`SELECT user_id, item_id, access_token_ciphertext, access_token_iv, access_token_auth_tag,
+          encryption_key_version, sync_cursor, disconnect_pending FROM victoria_plaid_items WHERE user_id = $1`, [userId]);
+    return result.rows.map((row) => Object.freeze({ userId: row.user_id, itemId: row.item_id,
+      token: Object.freeze({ ciphertext: row.access_token_ciphertext, iv: row.access_token_iv,
+        authTag: row.access_token_auth_tag, keyVersion: row.encryption_key_version }), cursor: row.sync_cursor,
+      disconnectPending: row.disconnect_pending }));
+  }
+
+  async markDisconnectPending(userId: string): Promise<void> {
+    if (!userId.trim()) throw new Error("A user ID is required.");
+    await this.pool.query("UPDATE victoria_plaid_items SET disconnect_pending = true, updated_at = now() WHERE user_id = $1", [userId]);
+  }
+
+  async deleteTransactionsForUser(userId: string): Promise<void> {
+    if (!userId.trim()) throw new Error("A user ID is required.");
+    await this.pool.query("DELETE FROM victoria_plaid_transactions WHERE user_id = $1", [userId]);
+  }
+
+  async deleteItem(userId: string, itemId: string): Promise<void> {
+    assertIdentity(userId, itemId);
+    await this.pool.query("DELETE FROM victoria_plaid_items WHERE user_id = $1 AND item_id = $2", [userId, itemId]);
+  }
+
+  async pruneTransactionsBefore(userId: string, cutoffDate: string): Promise<void> {
+    const parsedCutoff = new Date(`${cutoffDate}T00:00:00.000Z`);
+    if (!userId.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(cutoffDate) ||
+        !Number.isFinite(parsedCutoff.getTime()) || parsedCutoff.toISOString().slice(0, 10) !== cutoffDate) {
+      throw new Error("A user and valid cutoff date are required.");
+    }
+    await this.pool.query("DELETE FROM victoria_plaid_transactions WHERE user_id = $1 AND transaction_date < $2", [userId, cutoffDate]);
   }
 
   async applySyncPage(userId: string, itemId: string, page: PlaidTransactionSyncPage): Promise<void> {

@@ -4,6 +4,7 @@ import type { ConversationalMemory, MemoryProvider } from "./types.js";
 
 export interface FinancialProfileMemoryWriter {
   rememberFinancialProfile(profile: TransactionFinancialProfile): Promise<readonly ConversationalMemory[]>;
+  erasePlaidFinancialProfile?(userId: string): Promise<void>;
 }
 
 export interface MemoryOrchestratorOptions {
@@ -120,6 +121,13 @@ export class MemoryOrchestrator implements MemoryProvider {
     const saved = await this.options.financialProfiles.rememberFinancialProfile(profile);
     await this.invalidateCachedMemory(profile.userId);
     return saved;
+  }
+
+  async erasePlaidFinancialProfile(userId: string): Promise<void> {
+    if (!userId.trim()) throw new Error("A user ID is required.");
+    if (!this.options.financialProfiles?.erasePlaidFinancialProfile) throw new Error("A financial profile erasure writer is not configured.");
+    await this.options.financialProfiles.erasePlaidFinancialProfile(userId);
+    await this.invalidateCachedMemory(userId);
   }
 
   async listConversationalMemories(userId: string): Promise<readonly ConversationalMemory[]> {
