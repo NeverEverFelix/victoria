@@ -69,7 +69,8 @@ describe("authenticated profile-to-estimate flow", () => {
 
     expect(refreshResponse.status).toBe(200);
     expect(authenticate).toHaveBeenCalledOnce();
-    expect(listItems).toHaveBeenCalledExactlyOnceWith(userId);
+    expect(listItems).toHaveBeenCalledTimes(1);
+    expect(listItems).toHaveBeenCalledWith(userId);
     expect(profileWriter.rememberFinancialProfile).toHaveBeenCalledOnce();
     const profile = writtenProfile;
     expect(profile?.userId).toBe(userId);
