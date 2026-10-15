@@ -66,7 +66,7 @@ function isCandidate(value: unknown): value is ExtractedMemoryCandidate {
 }
 
 export function isExplicitUserEvidence(message: string, evidence: string): boolean {
-  const sensitive = /\b(?:diagnos(?:is|ed)|diabetes|cancer|medication|prescription|mental health|therapy|political|religious|religion|sexuality|race|ethnicity|immigration|visa status|social security|ssn|password|pin number|account number|card number)\b/i;
+  const sensitive = /\b(?:diagnos(?:is|ed)|diabetes|cancer|medication|prescription|mental health|therapy|political|religious|religion|sexuality|race|ethnicity|immigration|visa status|social security|ssn|password|pin number|account number|card number)\b|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|(?=(?:\D*\d){10})\+?\d[\d .()-]{8,}\d/i;
   if (sensitive.test(evidence)) return false;
   const normalizedMessage = message.toLocaleLowerCase("en-US");
   const normalizedEvidence = evidence.trim()
@@ -74,7 +74,6 @@ export function isExplicitUserEvidence(message: string, evidence: string): boole
     .trim().toLocaleLowerCase("en-US");
   const start = normalizedMessage.indexOf(normalizedEvidence);
   if (start < 0 || !/\b(?:i|me|my|we|us|our)\b/i.test(evidence)) return false;
-  if (/^\s*["'“‘].*["'”’]\s*$/.test(evidence)) return false;
   const before = normalizedMessage.slice(Math.max(0, start - 100), start);
   const after = normalizedMessage.slice(start + normalizedEvidence.length, start + normalizedEvidence.length + 40);
   const thirdPartyAttribution = /\b(?:my\s+(?:friend|partner|spouse|wife|husband|mother|father|mom|dad|coworker|colleague)|he|she|they)\s+(?:said|says|thinks|believes|mentioned|asked)\b/i;
