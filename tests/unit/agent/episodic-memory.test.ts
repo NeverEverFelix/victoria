@@ -66,6 +66,8 @@ describe("episodic memory summaries", () => {
     };
     expect(validateEpisodicSummary(valid, messages)).toMatchObject({ category: "other", sourceType: "system_inference" });
     expect(validateEpisodicSummary({ ...valid, evidenceQuotes: ["I have a different job now."] }, messages)).toBeNull();
+    const longMessage = "I prefer using a simple weekend savings routine. ".repeat(3).trim();
+    expect(validateEpisodicSummary({ ...valid, evidenceQuotes: [longMessage, longMessage] }, [longMessage])).toBeNull();
     expect(validateEpisodicSummary({ ...valid, sensitivity: "sensitive" }, messages)).toBeNull();
     expect(validateEpisodicSummary({ ...valid, confidence: 0.6 }, messages)).toBeNull();
   });

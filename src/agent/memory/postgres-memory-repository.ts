@@ -77,7 +77,7 @@ export class PostgresMemoryRepository implements MemoryProvider {
     if (!this.embeddings) return (await this.listCurrentMemories(userId)).slice(0, boundedLimit);
     try {
       const vector = await this.embeddings.embed(query);
-      if (!validateSemanticEmbedding(vector)) return this.listCurrentMemories(userId);
+      if (!validateSemanticEmbedding(vector)) return (await this.listCurrentMemories(userId)).slice(0, boundedLimit);
       const result = await this.db.query<ConversationalMemory>(
         `SELECT id, category, key, value, evidence, confidence, created_at AS "createdAt",
           supersedes_id AS "supersedesId", source_type AS "sourceType",
@@ -134,7 +134,7 @@ export class PostgresMemoryRepository implements MemoryProvider {
          source_record_count AS "sourceRecordCount", source_metadata AS "sourceMetadata"`,
       [id, userId, memory.category, memory.key, memory.value, memory.evidence, memory.confidence,
         memory.supersedesId ?? null, sourceType, memory.observedFrom ?? null, memory.observedThrough ?? null,
-        memory.sourceRecordCount ?? null, JSON.stringify(memory.sourceMetadata ?? {})]
+        memory.sourceRecordCount ?? null, memory.sourceMetadata === undefined ? null : JSON.stringify(memory.sourceMetadata)]
     );
     const saved = result.rows[0];
     if (!saved) throw new Error("PostgreSQL did not return the stored conversational memory.");

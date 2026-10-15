@@ -48,11 +48,13 @@ export function validateEpisodicSummary(
       !Array.isArray(candidate.evidenceQuotes) || candidate.evidenceQuotes.length < 1 || candidate.evidenceQuotes.length > 3 ||
       !candidate.evidenceQuotes.every((quote) => typeof quote === "string" && quote.trim().length > 0 && quote.length <= 200 &&
         userMessages.some((message) => isExplicitUserEvidence(message, quote)))) return null;
+  const evidence = candidate.evidenceQuotes.map((quote) => quote.trim()).join(" | ");
+  if (evidence.length > 240) return null;
   return Object.freeze({
     category: "other",
     key: "episodic_summary",
     value: candidate.summary.trim(),
-    evidence: candidate.evidenceQuotes.map((quote) => quote.trim()).join(" | "),
+    evidence,
     confidence: candidate.confidence as number,
     sourceType: "system_inference",
     sourceMetadata: { memoryKind: "episodic_summary", evidenceCount: candidate.evidenceQuotes.length }

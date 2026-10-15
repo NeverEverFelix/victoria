@@ -4,8 +4,14 @@ import { MemoryOrchestrator } from "../../../src/agent/memory/memory-orchestrato
 import { MockLlmAdapter } from "../../../src/agent/llm/mock-llm.js";
 import { MockVictoriaTools } from "../../../src/agent/tools/mock-tools.js";
 import { VictoriaAgent } from "../../../src/agent/victoria-agent.js";
+import { extractConversationalSpendCorrection } from "../../../src/agent/memory/extract-preference.js";
 
 describe("conversational financial corrections", () => {
+  it("requires an explicit correction marker rather than treating casual 'no' phrasing as a correction", () => {
+    expect(extractConversationalSpendCorrection("I was charged $10, no big deal.")).toBeNull();
+    expect(extractConversationalSpendCorrection("No, I actually spent $40 that day.")).toMatchObject({ amountCents: 4000 });
+  });
+
   it("appends a single-day correction linked to the relevant profile fact without rewriting the aggregate", async () => {
     const storage = new MockMemoryProvider();
     const profile = await storage.rememberConversationalMemory("user-a", {

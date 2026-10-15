@@ -109,7 +109,7 @@ export function extractConversationalMemory(message: string): ExtractedConversat
 
 /** Detects a direct conversational correction of a remembered past spend, not an estimate or new proposal. */
 export function extractConversationalSpendCorrection(message: string): ConversationalSpendCorrection | null {
-  if (!/\b(?:no\b|actually\b|that's not right\b|that isn't right\b|that's wrong\b|i was wrong\b)/i.test(message) ||
+  if (!/\b(?:actually\b|that's not right\b|that isn't right\b|that's wrong\b|i was wrong\b)/i.test(message) ||
       !/\b(?:i\s+)?(?:actually\s+)?(?:spent|paid|was charged|got charged)\b/i.test(message)) return null;
   const parsed = parseExplicitDollarAmount(message);
   if (parsed.status !== "valid") return null;
