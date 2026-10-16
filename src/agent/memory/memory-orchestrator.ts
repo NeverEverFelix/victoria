@@ -50,7 +50,7 @@ export class MemoryOrchestrator implements MemoryProvider {
     });
   }
 
-  createSavingsGoal(userId: string, goal: Omit<SavingsGoal, "userId" | "savedAmountCents">, approvedActionId: string): Promise<SavingsGoal> {
+  createSavingsGoal(userId: string, goal: Omit<SavingsGoal, "id" | "userId" | "savedAmountCents">, approvedActionId: string): Promise<SavingsGoal> {
     return this.storage.createSavingsGoal(userId, goal, approvedActionId);
   }
 

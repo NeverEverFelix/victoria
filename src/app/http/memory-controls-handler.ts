@@ -51,7 +51,7 @@ export function createMemorySettingsHandler(dependencies: MemoryControlsHandlerD
       const paused = (body as { paused: boolean }).paused;
       await dependencies.memory.setMemoryPaused(user.userId, paused);
       return respond(200, { paused, notice: paused
-        ? "Conversational memories are paused. Saved memories remain available in settings, and recent chat context still expires after 30 minutes."
+        ? "Conversational memories are paused. Saved memories remain reviewable in chat, and recent chat context still expires after 30 minutes."
         : "Conversational memory has resumed. Existing saved memories may be used again." });
     } catch { return respond(503, { error: "memory_controls_unavailable" }); }
   };

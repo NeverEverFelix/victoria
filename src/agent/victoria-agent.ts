@@ -82,7 +82,7 @@ export class VictoriaAgent {
   private readonly pendingGoalCreations = new Map<string, {
     userId: string;
     actionId: string;
-    goal: Omit<SavingsGoal, "userId" | "savedAmountCents">;
+    goal: Omit<SavingsGoal, "id" | "userId" | "savedAmountCents">;
     needsTargetClarification?: boolean;
   }>();
   private nextGoalCreationNumber = 1;
@@ -335,7 +335,6 @@ export class VictoriaAgent {
 
     const memoryControl = parseMemoryControlIntent(request.message);
     if (memoryControl && !pendingCorrection && !pendingGoalAction && !pendingAction) {
-      const memories = await this.dependencies.memory.listConversationalMemories(request.userId);
       if (memoryControl.type === "pause" || memoryControl.type === "resume") {
         const paused = memoryControl.type === "pause";
         await this.dependencies.memory.setMemoryPaused(request.userId, paused);
@@ -350,18 +349,20 @@ export class VictoriaAgent {
         return this.memoryControlResponse(request, message);
       }
       if (memoryControl.type === "review") {
+        const memories = await this.dependencies.memory.listConversationalMemories(request.userId);
         const current = memories.filter((item) => !item.supersedesId || !memories.some((newer) => newer.supersedesId === item.id));
         const message = current.length
-          ? `Here's what I currently remember:\n${current.map((item) => `• ${item.value}${item.sourceType === "plaid_transaction_profile" ? " (from your connected transaction profile)" : ""}`).join("\n")}\nYou can correct any of this or ask me to forget something.`
+          ? `Here's what I currently remember:\n${current.map((item) => `• ${item.value}${item.sourceType === "plaid_transaction_profile" ? " (from your connected transaction profile)" : ""}`).join("\n")}\nYou can correct conversational details or ask me to forget conversational memories. Connected transaction-profile facts are removed by disconnecting that profile.`
           : "I don't have any current conversational memories saved. You can tell me what to remember, or ask me to pause memory.";
         return this.memoryControlResponse(request, message);
       }
+      const memories = await this.dependencies.memory.listConversationalMemories(request.userId);
       const query = memoryControl.target.toLocaleLowerCase("en-US").split(/[^a-z0-9]+/).filter((word) => word.length > 2);
       const candidates = memories.filter((item) => item.sourceType !== "plaid_transaction_profile" &&
         query.some((word) => `${item.value} ${item.key}`.toLocaleLowerCase("en-US").includes(word)));
       if (candidates.length !== 1) {
         const message = candidates.length > 1
-          ? `I found more than one memory that could match. Which one should I forget? ${candidates.map((item) => `“${item.value}”`).join("; „")}`
+          ? `I found more than one memory that could match. Which one should I forget? ${candidates.map((item) => `“${item.value}”`).join("; ")}`
           : "I couldn't identify a specific conversational memory to forget. What detail would you like me to forget?";
         return this.memoryControlResponse(request, message, "ask_follow_up");
       }
@@ -468,7 +469,7 @@ export class VictoriaAgent {
         const needsTargetClarification = parsedAmount.status !== "valid" && parsedAmount.status !== "absent";
         const actionId = `savings_goal_create_${this.nextGoalCreationNumber++}`;
         this.pendingGoalCreations.set(conversationKey, { userId: request.userId, actionId,
-          goal: { id: `goal_pending_${this.nextGoalCreationNumber - 1}`, name, ...(targetAmountCents ? { targetAmountCents } : {}), currency: "USD" },
+          goal: { name, ...(targetAmountCents ? { targetAmountCents } : {}), currency: "USD" },
           ...(needsTargetClarification ? { needsTargetClarification: true } : {}) });
         const prompt = needsTargetClarification
           ? "I’ll remember that goal, but I couldn't safely read the target amount. Please give a valid USD amount with at most two decimal places, such as $1,000.00, or say ‘no target’."

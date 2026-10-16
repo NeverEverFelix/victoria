@@ -5,7 +5,7 @@ export interface MemoryProvider {
   rememberDecision(userId: string, decision: Omit<FinancialDecision, "id" | "createdAt">): Promise<FinancialDecision>;
   listHabits(userId: string): Promise<UserHabit[]>;
   listGoals(userId: string): Promise<SavingsGoal[]>;
-  createSavingsGoal(userId: string, goal: Omit<SavingsGoal, "userId" | "savedAmountCents">, approvedActionId: string): Promise<SavingsGoal>;
+  createSavingsGoal(userId: string, goal: Omit<SavingsGoal, "id" | "userId" | "savedAmountCents">, approvedActionId: string): Promise<SavingsGoal>;
   getConversationContext(userId: string, conversationId: string): Promise<readonly string[]>;
   setConversationContext(userId: string, conversationId: string, messages: readonly string[]): Promise<void>;
   listConversationalMemories(userId: string): Promise<readonly ConversationalMemory[]>;

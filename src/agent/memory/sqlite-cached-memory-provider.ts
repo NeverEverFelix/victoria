@@ -84,7 +84,7 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
 
   listHabits(userId: string): Promise<UserHabit[]> { return this.durable.listHabits(userId); }
   listGoals(userId: string): Promise<SavingsGoal[]> { return this.durable.listGoals(userId); }
-  createSavingsGoal(userId: string, goal: Omit<SavingsGoal, "userId" | "savedAmountCents">, approvedActionId: string): Promise<SavingsGoal> {
+  createSavingsGoal(userId: string, goal: Omit<SavingsGoal, "id" | "userId" | "savedAmountCents">, approvedActionId: string): Promise<SavingsGoal> {
     return this.durable.createSavingsGoal(userId, goal, approvedActionId);
   }
 

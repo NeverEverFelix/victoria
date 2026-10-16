@@ -69,8 +69,9 @@ describe("MemoryOrchestrator", () => {
   it("keeps separately managed Plaid profile facts available while conversational memory is paused", async () => {
     const storage = new MockMemoryProvider();
     const orchestrator = new MemoryOrchestrator(storage, { maxMemoriesPerTurn: 2 });
+    const today = new Date().toISOString().slice(0, 10);
     const profile = await storage.rememberConversationalMemory("user-a", profileMemory({
-      value: "Typical spend at Cafe is $8.00.", observedThrough: new Date().toISOString().slice(0, 10)
+      value: "Typical spend at Cafe is $8.00.", observedThrough: today
     }));
     await storage.rememberConversationalMemory("user-a", profileMemory({
       key: "financial_profile:merchant:bakery", value: "Typical spend at Bakery is $6.00.",
@@ -81,12 +82,12 @@ describe("MemoryOrchestrator", () => {
     await expect(orchestrator.searchConversationalMemories("user-a", "cafe")).resolves.toEqual([profile]);
     await expect(orchestrator.getMemoryForUser("user-a", "cafe")).resolves.toMatchObject({ conversationalMemories: [profile] });
     await Promise.all(["one", "two", "three"].map((merchant) => storage.rememberConversationalMemory("user-a", profileMemory({
-      key: `financial_profile:merchant:${merchant}`, observedThrough: new Date().toISOString().slice(0, 10)
+      key: `financial_profile:merchant:${merchant}`, observedThrough: today
     }))));
     const bounded = await orchestrator.getMemoryForUser("user-a");
     expect(bounded.conversationalMemories).toHaveLength(2);
     expect(bounded.conversationalMemories?.every((memory) => memory.sourceType === "plaid_transaction_profile" &&
-      memory.observedThrough === new Date().toISOString().slice(0, 10))).toBe(true);
+      memory.observedThrough === today)).toBe(true);
     expect(bounded.conversationalMemories?.some((memory) => memory.key.includes("bakery"))).toBe(false);
   });
 

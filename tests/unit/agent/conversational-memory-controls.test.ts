@@ -7,19 +7,33 @@ import { VictoriaAgent } from "../../../src/agent/victoria-agent.js";
 describe("conversational memory controls", () => {
   async function setup() {
     const memory = new MockMemoryProvider();
-    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
-    return { memory, agent };
+    const tools = new MockVictoriaTools();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools });
+    return { memory, tools, agent };
   }
 
   it("reviews current memories through chat without creating financial activity", async () => {
-    const { memory, agent } = await setup();
+    const { memory, tools, agent } = await setup();
     await memory.rememberConversationalMemory("user-a", {
       category: "preference", key: "reply_style", value: "Prefers concise replies.", evidence: "User said so.", confidence: 1
     });
     const response = await agent.respond({ userId: "user-a", message: "What do you remember about me?" });
     expect(response.message).toContain("Prefers concise replies.");
     expect(response.decision.action).toBe("reflect");
-    expect(await new MockVictoriaTools().listSavingsEntries("user-a")).toEqual([]);
+    expect(await tools.listSavingsEntries("user-a")).toEqual([]);
+    expect(await tools.listSavingsGoalAllocations("user-a")).toEqual([]);
+  });
+
+  it("explains connected profile controls when review includes profile-derived facts", async () => {
+    const { memory, agent } = await setup();
+    await memory.rememberConversationalMemory("user-a", {
+      category: "financial_pattern", key: "financial_profile:merchant:cafe", value: "Typical spend at Cafe is $8.",
+      evidence: "Derived from posted transactions.", confidence: 0.9, sourceType: "plaid_transaction_profile",
+      observedThrough: new Date().toISOString().slice(0, 10)
+    });
+    const response = await agent.respond({ userId: "user-a", message: "What do you remember about me?" });
+    expect(response.message).toContain("Typical spend at Cafe is $8.");
+    expect(response.message).toContain("disconnecting that profile");
   });
 
   it("forgets a uniquely identified conversational memory and asks when the match is unclear", async () => {

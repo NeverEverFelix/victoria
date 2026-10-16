@@ -126,7 +126,7 @@ CREATE TRIGGER victoria_memory_embeddings_immutable
 
 REVOKE ALL ON FUNCTION victoria_search_conversational_memories(text, extensions.vector, text, integer)
   FROM PUBLIC, anon, authenticated, service_role;
-REVOKE USAGE ON SCHEMA extensions FROM PUBLIC, anon;
+REVOKE USAGE ON SCHEMA extensions FROM anon;
 GRANT USAGE ON SCHEMA extensions TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION victoria_search_conversational_memories(text, extensions.vector, text, integer)
   TO authenticated, service_role;

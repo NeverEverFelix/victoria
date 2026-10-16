@@ -626,6 +626,7 @@ describe("general conversational memory extraction", () => {
     const created = await agent.respond({ userId, message: "Yes" });
     expect(created.decision.action).toBe("create_goal");
     expect(created.decision.savingsGoal).toMatchObject({ name: "Trip to Japan", targetAmountCents: 100000, savedAmountCents: 0 });
+    expect(created.decision.toolCall?.arguments).not.toHaveProperty("id");
     expect(await memory.listGoals(userId)).toHaveLength(1);
     expect(await tools.listSavingsGoalAllocations(userId)).toEqual([]);
   });
@@ -656,12 +657,14 @@ describe("general conversational memory extraction", () => {
 
   it("keeps structured goals isolated and makes confirmed creation idempotent", async () => {
     const memory = new MockMemoryProvider();
-    const first = await memory.createSavingsGoal("goal_owner", { id: "g1", name: "Emergency fund", targetAmountCents: 50000, currency: "USD" }, "approved_goal_action");
-    const retry = await memory.createSavingsGoal("goal_owner", { id: "g1", name: "Emergency fund", targetAmountCents: 50000, currency: "USD" }, "approved_goal_action");
+    const first = await memory.createSavingsGoal("goal_owner", { name: "Emergency fund", targetAmountCents: 50000, currency: "USD" }, "approved_goal_action");
+    const retry = await memory.createSavingsGoal("goal_owner", { name: "Emergency fund", targetAmountCents: 50000, currency: "USD" }, "approved_goal_action");
     expect(retry).toEqual(first);
     expect(await memory.listGoals("another_user")).toEqual([]);
-    await expect(memory.createSavingsGoal("goal_owner", { id: "g2", name: "Vacation", targetAmountCents: 50000, currency: "USD" }, "approved_goal_action"))
+    await expect(memory.createSavingsGoal("goal_owner", { name: "Vacation", targetAmountCents: 50000, currency: "USD" }, "approved_goal_action"))
       .rejects.toThrow("cannot be reused");
+    await expect(memory.createSavingsGoal("goal_owner", { name: "Emergency Fund", targetAmountCents: 60000, currency: "USD" }, "different_action"))
+      .rejects.toThrow("with this name already exists");
   });
 
   it("uses a relevant remembered goal to personalize an ordinary reply in a later conversation", async () => {
@@ -726,7 +729,7 @@ describe("general conversational memory extraction", () => {
     expect(otherUserReply.message).not.toContain("DoorDash");
   });
 
-  it("combines a relevant routine and goal while leaving unrelated preferences out", async () => {
+  it("[MEM-014] combines up to four relevant memories and leaves unrelated preferences out", async () => {
     const memory = new MockMemoryProvider();
     await memory.rememberConversationalMemory("user_synthesis", {
       category: "habit", key: "merchant_habit:doordash", value: "Orders lunch from DoorDash on Fridays.",

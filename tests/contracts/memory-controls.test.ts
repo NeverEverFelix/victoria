@@ -33,6 +33,8 @@ describe("server-only memory and goal table writes", () => {
     expect(savingsGoalsMigration).toMatch(/FOR SELECT TO authenticated/i);
     expect(savingsGoalsMigration).toMatch(/REVOKE ALL ON victoria_savings_goals FROM anon, authenticated/i);
     expect(savingsGoalsMigration).toMatch(/GRANT ALL ON victoria_savings_goals TO service_role/i);
+    expect(savingsGoalsMigration).toMatch(/target_amount_cents BETWEEN 1 AND 9007199254740991/i);
+    expect(savingsGoalsMigration).not.toMatch(/saved_amount_cents/i);
   });
 });
 
@@ -50,7 +52,8 @@ describe("memory retention contract", () => {
   });
 
   it("MEM-010 grants semantic retrieval only to authenticated and server roles", () => {
-    expect(semanticMigration).toMatch(/REVOKE USAGE ON SCHEMA extensions FROM PUBLIC, anon/i);
+    expect(semanticMigration).toMatch(/REVOKE USAGE ON SCHEMA extensions FROM anon/i);
+    expect(semanticMigration).not.toMatch(/REVOKE USAGE ON SCHEMA extensions FROM PUBLIC/i);
     expect(semanticMigration).toMatch(/GRANT USAGE ON SCHEMA extensions TO authenticated, service_role/i);
     expect(retrievalPermissionsMigration).toMatch(/REVOKE ALL ON FUNCTION public\.victoria_search_conversational_memories[\s\S]*FROM PUBLIC/i);
     expect(retrievalPermissionsMigration).toMatch(/pg_catalog\.pg_roles[\s\S]*rolname = 'anon'[\s\S]*REVOKE USAGE ON SCHEMA extensions FROM anon/i);

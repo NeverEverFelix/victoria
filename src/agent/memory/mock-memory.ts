@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { AgentMemory, FinancialDecision, SavingsGoal, UserHabit } from "../types.js";
 import { DEFAULT_CONVERSATION_CONTEXT_LIMIT, type ConversationalMemory, type MemoryProvider } from "./types.js";
 import { immutableSnapshot } from "../../domain/immutable.js";
@@ -51,7 +52,7 @@ export class MockMemoryProvider implements MemoryProvider {
     return immutableSnapshot(this.goals.filter((goal) => goal.userId === userId));
   }
 
-  async createSavingsGoal(userId: string, goal: Omit<SavingsGoal, "userId" | "savedAmountCents">, approvedActionId: string): Promise<SavingsGoal> {
+  async createSavingsGoal(userId: string, goal: Omit<SavingsGoal, "id" | "userId" | "savedAmountCents">, approvedActionId: string): Promise<SavingsGoal> {
     const key = `${userId}:${approvedActionId}`;
     const prior = this.goalsByAction.get(key);
     if (prior) {
@@ -61,8 +62,13 @@ export class MockMemoryProvider implements MemoryProvider {
     const normalizedName = goal.name.trim();
     if (!userId.trim() || !normalizedName || (goal.targetAmountCents !== undefined && (!Number.isSafeInteger(goal.targetAmountCents) || goal.targetAmountCents <= 0)) || goal.currency !== "USD") throw new Error("A savings goal requires a user, name, optional positive target, and USD currency.");
     const same = this.goals.find((item) => item.userId === userId && item.name.toLowerCase() === normalizedName.toLowerCase());
-    if (same) return immutableSnapshot(same);
-    const created = immutableSnapshot({ ...goal, userId, name: normalizedName, savedAmountCents: 0 });
+    if (same) {
+      if (same.targetAmountCents !== goal.targetAmountCents || same.currency !== goal.currency) {
+        throw new Error("A savings goal with this name already exists with different details.");
+      }
+      return immutableSnapshot(same);
+    }
+    const created = immutableSnapshot({ ...goal, id: `goal_${randomUUID()}`, userId, name: normalizedName, savedAmountCents: 0 });
     this.goals.push(created);
     this.goalsByAction.set(key, created);
     return created;

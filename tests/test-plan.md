@@ -124,7 +124,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Authenticated semantic retrieval is scoped by RLS even when a caller supplies another user's ID; anonymous roles cannot execute vector retrieval or access the vector schema.
 - Forget selected and Forget all delete user-owned conversational memory embeddings; Forget all preserves separately managed Plaid-profile memories, which disconnect/delete-all removes.
 - Pausing memory excludes conversational facts from personalization while retaining fresh, current, user-scoped transaction-profile facts for consented financial estimates; stale, superseded, and over-limit profile facts remain excluded.
-- Next.js memory-control API routes return unavailable outside local development, and local requests require a signed bearer session; they are not mounted on the persistent runtime.
+- Next.js memory-control API routes return unavailable unless `APP_ENV=local`, `NODE_ENV=development`, and `VICTORIA_LOCAL_MEMORY_CONTROLS_ENABLED=true`; local requests also require a signed bearer session. The routes are not mounted on the persistent runtime.
 - A quantified, explicit merchant-spend habit can inform a later estimate only for the same merchant and user; it remains an estimate, needs approval, and does not create a ledger entry by itself.
 - When transaction history is unavailable, Victoria asks for the user's typical merchant spend; a valid answer informs the current proposal and appends a linked user-scoped memory fact for later estimates.
 - A direct “my usual/typical spend at [merchant] is about [amount]” statement is extracted as a merchant-specific recurring spend, used only for that merchant and user, and remains an estimate requiring normal approval before a ledger entry.

@@ -7,7 +7,9 @@ describe("local memory-control route runtime", () => {
     const secret = "local-test-auth-secret-that-is-long-enough";
     expect(getLocalMemoryControlsRuntime({ APP_ENV: "production", NODE_ENV: "production", AUTH_SECRET: secret })).toBeNull();
     expect(getLocalMemoryControlsRuntime({ APP_ENV: "local", NODE_ENV: "test", AUTH_SECRET: secret })).toBeNull();
-    expect(getLocalMemoryControlsRuntime({ APP_ENV: "local", NODE_ENV: "development" })).toBeNull();
+    expect(getLocalMemoryControlsRuntime({
+      APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: secret, VICTORIA_LOCAL_MEMORY_CONTROLS_ENABLED: "false"
+    })).toBeNull();
   });
 
   it("exposes only signed-session mock memory handlers in local development", async () => {
@@ -15,7 +17,8 @@ describe("local memory-control route runtime", () => {
     const runtime = getLocalMemoryControlsRuntime({
       APP_ENV: "local",
       NODE_ENV: "development",
-      AUTH_SECRET: secret
+      AUTH_SECRET: secret,
+      VICTORIA_LOCAL_MEMORY_CONTROLS_ENABLED: "true"
     });
     expect(runtime).toMatchObject({
       memoryControlsCollectionHandler: expect.any(Function),

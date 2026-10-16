@@ -7,7 +7,7 @@ export type LocalMemoryControlsRuntime = Pick<LocalMockVictoriaRuntime,
 export function getLocalMemoryControlsRuntime(
   env: Record<string, string | undefined> = process.env
 ): LocalMemoryControlsRuntime | null {
-  if (env.APP_ENV !== "local" || env.NODE_ENV !== "development") return null;
+  if (env.APP_ENV !== "local" || env.NODE_ENV !== "development" || env.VICTORIA_LOCAL_MEMORY_CONTROLS_ENABLED !== "true") return null;
   const runtime = getLocalMockVictoriaRuntime(env);
   if (!runtime) return null;
   return {
