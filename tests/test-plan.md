@@ -274,10 +274,11 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Authenticated memory review returns only the user's current facts; edits append linked corrections; forgetting removes the selected conversational-memory lineage and embeddings without changing financial history (`MEM-011`).
 - Transaction-profile memories cannot be forgotten through conversational-memory controls; users must use the profile disconnect/deletion lifecycle (`MEM-011`).
 - Memory controls reject unauthenticated requests, caller-selected user IDs, malformed edits, and cross-user memory IDs (`MEM-011`).
-- Local demo sign-in issues a short-lived token only in local development for a fixed synthetic identity; production and placeholder-secret configurations cannot issue one.
+- Local memory-control API routes are hidden unless local development and the explicit feature flag are enabled, and every enabled request still requires a signed bearer session.
 - Explicit chat requests can review current memories, forget one uniquely identified conversational memory, Forget all, and pause/resume memory; ambiguous matches ask a follow-up without changing memory.
 - Conversation-driven memory controls create no savings entry, approval, or change to historical financial records. Transaction-profile memories are identified as separately managed.
 - Forget all removes only the authenticated user's conversational memories and linked facts while preserving Plaid-derived profile facts and financial history (`MEM-011`).
 - Pause memory prevents conversational learning and personalization, keeps existing memories reviewable, and leaves short-term context and financial behavior intact (`MEM-012`).
+- A memory-control command cancels a pending structured-goal confirmation and is handled without creating the goal (`MEM-012`).
 - Memory search is user-scoped; forgetting a fact immediately removes it from subsequent semantic retrieval and removes its embeddings (`MEM-011`).
 - Disconnecting Plaid purges profile facts, superseding versions, transaction-detail corrections linked by `correctionOfMemoryId`, and their embeddings while preserving unrelated conversational memory and other users' data (`LIFE-003`).

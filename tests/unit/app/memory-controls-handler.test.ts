@@ -8,7 +8,8 @@ describe("memory controls handler", () => {
     const storage = new MockMemoryProvider();
     const memory = new MemoryOrchestrator(storage);
     await memory.rememberConversationalMemory("user-a", {
-      category: "preference", key: "response_style", value: "Prefers concise replies.", evidence: "I prefer concise replies.", confidence: 0.95
+      category: "preference", key: "response_style", value: "Prefers concise replies.", evidence: "I prefer concise replies.", confidence: 0.95,
+      sourceType: "user_statement"
     });
     await memory.rememberConversationalMemory("user-b", {
       category: "goal", key: "trip", value: "Save for a trip.", evidence: "I want to save for a trip.", confidence: 0.95
@@ -18,6 +19,18 @@ describe("memory controls handler", () => {
     const response = await handler(request("GET", "user-a"));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ memories: [{ category: "preference", value: "Prefers concise replies.", sourceType: "user_statement" }] });
+  });
+
+  it("does not invent user-statement provenance for memories without a source type", async () => {
+    const memory = new MemoryOrchestrator(new MockMemoryProvider());
+    await memory.rememberConversationalMemory("user-a", {
+      category: "other", key: "context", value: "A context detail.", evidence: "A context detail.", confidence: 0.9
+    });
+    const handler = createMemoryControlsCollectionHandler({ authenticate, memory });
+    const response = await handler(request("GET", "user-a"));
+    const payload = await response.json();
+    expect(payload).toMatchObject({ memories: [{ value: "A context detail." }] });
+    expect(payload.memories[0]).not.toHaveProperty("sourceType");
   });
 
   it("requires a signed-in user and does not accept caller-selected user IDs", async () => {

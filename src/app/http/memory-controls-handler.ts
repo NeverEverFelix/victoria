@@ -22,7 +22,7 @@ export function createMemoryControlsCollectionHandler(dependencies: MemoryContro
       }
       const memories = await dependencies.memory.listConversationalMemories(user.userId);
       return respond(200, { paused: await dependencies.memory.isMemoryPaused(user.userId), memories: memories.map(({ id, category, key, value, evidence, createdAt, sourceType }) =>
-        ({ id, category, key, value, evidence, createdAt, sourceType: sourceType ?? "user_statement" })) });
+        ({ id, category, key, value, evidence, createdAt, sourceType })) });
     } catch {
       return respond(503, { error: "memory_controls_unavailable" });
     }

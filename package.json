@@ -8,7 +8,7 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "db:local:up": "docker compose up -d postgres",
+    "db:local:up": "node scripts/start-local-postgres.mjs",
     "db:local:down": "docker compose down",
     "db:migrate": "node scripts/migrate-database.mjs",
     "memory:smoke:local": "node scripts/live-memory-smoke.mjs",

@@ -1,8 +1,8 @@
--- Functions are executable by PUBLIC by default. Restrict semantic retrieval to
--- the authenticated API role and the server-side service role when pgvector
--- and the search function are present. Avoid changing unrelated extension
--- privileges for PUBLIC.
+-- Functions are executable by PUBLIC by default. Resolve the search routine
+-- through pg_proc instead of assuming pgvector lives in the extensions schema.
 DO $$
+DECLARE
+  search_function regprocedure;
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'extensions') THEN
     IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'anon') THEN
@@ -16,21 +16,30 @@ BEGIN
     END IF;
   END IF;
 
-  IF EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'extensions')
-     AND EXISTS (SELECT 1 FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
-                 WHERE n.nspname = 'extensions' AND t.typname = 'vector')
-     AND pg_catalog.to_regprocedure('public.victoria_search_conversational_memories(text, extensions.vector, text, integer)') IS NOT NULL THEN
-    EXECUTE 'REVOKE ALL ON FUNCTION public.victoria_search_conversational_memories(text, extensions.vector, text, integer) FROM PUBLIC';
+  SELECT p.oid::regprocedure INTO search_function
+  FROM pg_catalog.pg_proc p
+  JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+  JOIN pg_catalog.pg_type vector_type ON vector_type.oid = p.proargtypes[1]
+  WHERE n.nspname = 'public'
+    AND p.proname = 'victoria_search_conversational_memories'
+    AND p.pronargs = 4
+    AND p.proargtypes[0] = 'text'::regtype
+    AND vector_type.typname = 'vector'
+    AND p.proargtypes[2] = 'text'::regtype
+    AND p.proargtypes[3] = 'integer'::regtype;
+
+  IF search_function IS NOT NULL THEN
+    EXECUTE pg_catalog.format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', search_function);
     IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'anon') THEN
-      EXECUTE 'REVOKE ALL ON FUNCTION public.victoria_search_conversational_memories(text, extensions.vector, text, integer) FROM anon';
+      EXECUTE pg_catalog.format('REVOKE ALL ON FUNCTION %s FROM anon', search_function);
     END IF;
     IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'authenticated') THEN
-      EXECUTE 'REVOKE ALL ON FUNCTION public.victoria_search_conversational_memories(text, extensions.vector, text, integer) FROM authenticated';
-      EXECUTE 'GRANT EXECUTE ON FUNCTION public.victoria_search_conversational_memories(text, extensions.vector, text, integer) TO authenticated';
+      EXECUTE pg_catalog.format('REVOKE ALL ON FUNCTION %s FROM authenticated', search_function);
+      EXECUTE pg_catalog.format('GRANT EXECUTE ON FUNCTION %s TO authenticated', search_function);
     END IF;
     IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'service_role') THEN
-      EXECUTE 'REVOKE ALL ON FUNCTION public.victoria_search_conversational_memories(text, extensions.vector, text, integer) FROM service_role';
-      EXECUTE 'GRANT EXECUTE ON FUNCTION public.victoria_search_conversational_memories(text, extensions.vector, text, integer) TO service_role';
+      EXECUTE pg_catalog.format('REVOKE ALL ON FUNCTION %s FROM service_role', search_function);
+      EXECUTE pg_catalog.format('GRANT EXECUTE ON FUNCTION %s TO service_role', search_function);
     END IF;
   END IF;
 END;

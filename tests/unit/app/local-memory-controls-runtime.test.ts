@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { GET as getMemoryControlsRoute } from "../../../app/api/victoria/settings/memories/route.js";
 import { getLocalMemoryControlsRuntime } from "../../../src/app/http/local-memory-controls-runtime.js";
 import { signVictoriaSession } from "../../../src/app/http/signed-session-auth.js";
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("local memory-control route runtime", () => {
   it("fails closed outside local development and without a trusted-session secret", () => {
@@ -32,5 +35,18 @@ describe("local memory-control route runtime", () => {
       headers: { authorization: `Bearer ${token}` }
     }));
     expect(allowed.status).toBe(200);
+  });
+
+  it("keeps the Next memory route hidden unless locally enabled and still requires a signed session", async () => {
+    vi.stubEnv("APP_ENV", "production");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VICTORIA_LOCAL_MEMORY_CONTROLS_ENABLED", "false");
+    expect((await getMemoryControlsRoute(new Request("https://victoria.local/api/victoria/settings/memories"))).status).toBe(404);
+
+    vi.stubEnv("APP_ENV", "local");
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VICTORIA_LOCAL_MEMORY_CONTROLS_ENABLED", "true");
+    vi.stubEnv("AUTH_SECRET", "local-route-test-secret-that-is-long-enough");
+    expect((await getMemoryControlsRoute(new Request("https://victoria.local/api/victoria/settings/memories"))).status).toBe(401);
   });
 });

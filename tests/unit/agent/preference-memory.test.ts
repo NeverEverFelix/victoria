@@ -655,6 +655,20 @@ describe("general conversational memory extraction", () => {
     expect(await memory.listGoals("goal_decline")).toEqual([]);
   });
 
+  it("lets a memory-control command cancel a pending structured-goal confirmation", async () => {
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
+    const context = { userId: "goal_pause", conversationId: "goal-pause" };
+    await agent.respond({ ...context, message: "My goal is to save for a new laptop." });
+
+    const paused = await agent.respond({ ...context, message: "Pause memory." });
+    expect(paused.message).toContain("Memory is paused");
+    expect(await memory.isMemoryPaused(context.userId)).toBe(true);
+    const followUp = await agent.respond({ ...context, message: "Yes" });
+    expect(followUp.decision.action).not.toBe("create_goal");
+    expect(await memory.listGoals(context.userId)).toEqual([]);
+  });
+
   it("keeps structured goals isolated and makes confirmed creation idempotent", async () => {
     const memory = new MockMemoryProvider();
     const first = await memory.createSavingsGoal("goal_owner", { name: "Emergency fund", targetAmountCents: 50000, currency: "USD" }, "approved_goal_action");

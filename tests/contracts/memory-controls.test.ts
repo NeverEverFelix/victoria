@@ -55,10 +55,11 @@ describe("memory retention contract", () => {
     expect(semanticMigration).toMatch(/REVOKE USAGE ON SCHEMA extensions FROM anon/i);
     expect(semanticMigration).not.toMatch(/REVOKE USAGE ON SCHEMA extensions FROM PUBLIC/i);
     expect(semanticMigration).toMatch(/GRANT USAGE ON SCHEMA extensions TO authenticated, service_role/i);
-    expect(retrievalPermissionsMigration).toMatch(/REVOKE ALL ON FUNCTION public\.victoria_search_conversational_memories[\s\S]*FROM PUBLIC/i);
-    expect(retrievalPermissionsMigration).toMatch(/pg_catalog\.pg_roles[\s\S]*rolname = 'anon'[\s\S]*REVOKE USAGE ON SCHEMA extensions FROM anon/i);
+    expect(retrievalPermissionsMigration).toMatch(/JOIN pg_catalog\.pg_type vector_type ON vector_type\.oid = p\.proargtypes\[1\]/i);
+    expect(retrievalPermissionsMigration).toMatch(/format\('REVOKE ALL ON FUNCTION %s FROM PUBLIC', search_function\)/i);
+    expect(retrievalPermissionsMigration).toMatch(/pg_catalog\.pg_roles[\s\S]*rolname = 'anon'[\s\S]*REVOKE ALL ON FUNCTION %s FROM anon/i);
     expect(retrievalPermissionsMigration).toMatch(/GRANT USAGE ON SCHEMA extensions TO authenticated/i);
-    expect(retrievalPermissionsMigration).toMatch(/GRANT EXECUTE ON FUNCTION public\.victoria_search_conversational_memories[\s\S]*TO authenticated/i);
-    expect(retrievalPermissionsMigration).toMatch(/GRANT EXECUTE ON FUNCTION public\.victoria_search_conversational_memories[\s\S]*TO service_role/i);
+    expect(retrievalPermissionsMigration).toMatch(/format\('GRANT EXECUTE ON FUNCTION %s TO authenticated', search_function\)/i);
+    expect(retrievalPermissionsMigration).toMatch(/format\('GRANT EXECUTE ON FUNCTION %s TO service_role', search_function\)/i);
   });
 });

@@ -149,6 +149,9 @@ export class VictoriaAgent {
     const conversationKey = this.conversationKey(request);
     const pendingGoalCreation = this.pendingGoalCreations.get(conversationKey);
     if (pendingGoalCreation?.userId === request.userId) {
+      if (parseMemoryControlIntent(request.message)) {
+        this.pendingGoalCreations.delete(conversationKey);
+      } else {
       if (pendingGoalCreation.needsTargetClarification) {
         const parsedAmount = parseExplicitDollarAmount(request.message);
         const explicitlyNoTarget = /^(?:no target|without a target|without target)$/i.test(request.message.trim().replace(/[.!?]+$/, ""));
@@ -190,6 +193,7 @@ export class VictoriaAgent {
       }
       const message = "Would you like me to add that as a structured savings goal? Please answer yes or no.";
       return { message, decision: { action: "ask_follow_up", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false }, userFacingMessage: message } };
+      }
       }
     }
     const pendingCorrectionId = this.pendingEntryCorrectionIdsByConversation.get(conversationKey);
@@ -1737,7 +1741,7 @@ function personalizeOrdinaryFinancialReply(
     /\b(?:save|saving|goal|budget|money|financial|fund)\b/i.test(userMessage));
   const goalTarget = goal && (goal.key === "emergency_fund"
     ? "an emergency fund"
-    : formatRememberedGoalTarget(goal.key.slice("goal:".length)));
+    : formatRememberedGoalTarget(goal.key.startsWith("goal:") ? goal.key.slice("goal:".length) : goal.key));
   if (goalTarget) details.push(`your goal of saving for ${goalTarget}`);
 
   const preference = memories.find((item) => item.category === "preference" && memoryTextMatchesMessage(item, userMessage));
