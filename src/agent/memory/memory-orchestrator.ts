@@ -40,12 +40,9 @@ export class MemoryOrchestrator implements MemoryProvider {
 
   async getMemoryForUser(userId: string, query?: string): Promise<AgentMemory> {
     const memory = await this.storage.getMemoryForUser(userId, query);
-    if (await this.isMemoryPaused(userId)) return Object.freeze({
-      ...memory,
-      conversationalMemories: Object.freeze((memory.conversationalMemories ?? [])
-        .filter((item) => item.sourceType === "plaid_transaction_profile"))
-    });
-    const candidates = memory.conversationalMemories ?? [];
+    const paused = await this.isMemoryPaused(userId);
+    const candidates = (memory.conversationalMemories ?? []).filter((item) =>
+      !paused || item.sourceType === "plaid_transaction_profile");
     const current = await this.currentMemoryIds(userId);
     return Object.freeze({
       ...memory,

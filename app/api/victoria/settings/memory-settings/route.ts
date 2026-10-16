@@ -1,15 +1,15 @@
-import { getLocalMockVictoriaRuntime } from "../../../../../src/app/http/create-local-mock-victoria-runtime";
+import { getLocalMemoryControlsRuntime } from "../../../../../src/app/http/local-memory-controls-runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
-  const handler = getLocalMockVictoriaRuntime()?.memorySettingsHandler;
+  const handler = getLocalMemoryControlsRuntime()?.memorySettingsHandler;
   return handler ? handler(request) : notConfigured();
 }
 
 export async function PUT(request: Request): Promise<Response> {
-  const handler = getLocalMockVictoriaRuntime()?.memorySettingsHandler;
+  const handler = getLocalMemoryControlsRuntime()?.memorySettingsHandler;
   return handler ? handler(request) : notConfigured();
 }
 

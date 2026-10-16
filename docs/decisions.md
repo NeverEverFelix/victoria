@@ -161,7 +161,7 @@ Implications:
 - Pause does not disable short-term context, immutable financial decision history, ordinary savings behavior, or consented Plaid profile processing; transaction-profile facts remain governed by profile disconnect/deletion.
 - Controls: `DELETE /api/victoria/settings/memories` forgets all conversational memories; `GET`/`PUT /api/victoria/settings/memory-settings` reads or changes `{ paused: boolean }`.
 - Plaid-derived profile memories are excluded from this operation and remain managed by profile disconnect/deletion, so an active profile refresh does not silently recreate a forgotten user fact.
-- The local mock runtime exposes these controls for development. The explicit PostgreSQL-backed runtime factory also exposes the same handlers and requires the host application to inject its trusted request authenticator. The Next.js routes remain local-runtime mounted until the authenticated live runtime is activated.
+- The local mock runtime exposes these controls for development. Its Next.js API routes return 503 unless `APP_ENV=local`, `NODE_ENV=development`, and a valid local session secret is configured; each operation also requires a signed bearer session. The explicit PostgreSQL-backed runtime factory exposes handlers to trusted host code only and requires the host application to inject its authenticator. The Next.js routes are not wired to the persistent runtime; live authentication and deployment remain future work.
 - User-facing memory controls are conversational, as specified in “Conversational Memory Management” below.
 
 ### Recorded Amount Corrections Use Linked Adjustment Records

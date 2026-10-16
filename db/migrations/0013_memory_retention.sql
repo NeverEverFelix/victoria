@@ -7,7 +7,7 @@
 -- All source and vector deletion happens in the same transaction.
 CREATE OR REPLACE FUNCTION public.victoria_expire_plaid_data(p_now timestamptz DEFAULT now())
 RETURNS integer LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public AS $$
+SET search_path = pg_catalog AS $$
 DECLARE
   removed_transactions integer;
   removed_memories integer;
@@ -16,7 +16,7 @@ BEGIN
   DELETE FROM public.victoria_plaid_transactions WHERE expires_at <= p_now;
   GET DIAGNOSTICS removed_transactions = ROW_COUNT;
 
-  PERFORM set_config('app.plaid_profile_purge_user', 'retention-job', true);
+  PERFORM pg_catalog.set_config('app.plaid_profile_purge_user', 'retention-job', true);
   WITH RECURSIVE expired_roots(id, user_id) AS (
     SELECT m.id, m.user_id
     FROM public.victoria_conversational_memories m
@@ -46,7 +46,7 @@ BEGIN
     JOIN public.victoria_conversational_memories child
       ON child.user_id = parent.user_id
      AND (child.supersedes_id = parent.id
-       OR child.source_metadata->>'correctionOfMemoryId' = parent.id)
+       OR child.source_metadata->>'correctionOfMemoryId' = parent.id::text)
   )
   DELETE FROM public.victoria_memory_embeddings e
   WHERE EXISTS (SELECT 1 FROM expired_lineage d WHERE d.user_id=e.user_id AND d.id=e.memory_id);
@@ -81,7 +81,7 @@ BEGIN
     JOIN public.victoria_conversational_memories child
       ON child.user_id = parent.user_id
      AND (child.supersedes_id = parent.id
-       OR child.source_metadata->>'correctionOfMemoryId' = parent.id)
+       OR child.source_metadata->>'correctionOfMemoryId' = parent.id::text)
   )
   DELETE FROM public.victoria_conversational_memories m
   WHERE EXISTS (SELECT 1 FROM expired_lineage d WHERE d.user_id=m.user_id AND d.id=m.id);
@@ -90,5 +90,17 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.victoria_expire_plaid_data(timestamptz) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.victoria_expire_plaid_data(timestamptz) TO service_role;
+REVOKE ALL ON FUNCTION public.victoria_expire_plaid_data(timestamptz) FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'REVOKE ALL ON FUNCTION public.victoria_expire_plaid_data(timestamptz) FROM anon';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'authenticated') THEN
+    EXECUTE 'REVOKE ALL ON FUNCTION public.victoria_expire_plaid_data(timestamptz) FROM authenticated';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'service_role') THEN
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public.victoria_expire_plaid_data(timestamptz) TO service_role';
+  END IF;
+END;
+$$;

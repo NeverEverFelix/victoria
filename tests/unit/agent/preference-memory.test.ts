@@ -624,9 +624,25 @@ describe("general conversational memory extraction", () => {
     expect(await tools.listSavingsGoalAllocations(userId)).toEqual([]);
     expect(await memory.listGoals(userId)).toEqual([]);
     const created = await agent.respond({ userId, message: "Yes" });
+    expect(created.decision.action).toBe("create_goal");
     expect(created.decision.savingsGoal).toMatchObject({ name: "Trip to Japan", targetAmountCents: 100000, savedAmountCents: 0 });
     expect(await memory.listGoals(userId)).toHaveLength(1);
     expect(await tools.listSavingsGoalAllocations(userId)).toEqual([]);
+  });
+
+  it("clarifies malformed goal target amounts and parses the corrected USD amount exactly", async () => {
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
+    const context = { userId: "goal_invalid_target", conversationId: "goal-invalid-target" };
+
+    const unclear = await agent.respond({ ...context, message: "My goal is to save $1,2 for a trip to Japan." });
+    expect(unclear.message).toContain("couldn't safely read the target amount");
+    expect(await memory.listGoals(context.userId)).toEqual([]);
+
+    const clarified = await agent.respond({ ...context, message: "$1,200.00" });
+    expect(clarified.message).toContain("$1,200.00");
+    const created = await agent.respond({ ...context, message: "Yes" });
+    expect(created.decision.savingsGoal).toMatchObject({ name: "Trip to Japan", targetAmountCents: 120000 });
   });
 
   it("does not create a structured goal when the user declines", async () => {
@@ -634,7 +650,7 @@ describe("general conversational memory extraction", () => {
     const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
     await agent.respond({ userId: "goal_decline", message: "My goal is to save for a new laptop." });
     const declined = await agent.respond({ userId: "goal_decline", message: "No" });
-    expect(declined.message).toContain("won’t create a structured savings goal");
+    expect(declined.message).toMatch(/won['’]t create a structured savings goal/);
     expect(await memory.listGoals("goal_decline")).toEqual([]);
   });
 
@@ -644,7 +660,7 @@ describe("general conversational memory extraction", () => {
     const retry = await memory.createSavingsGoal("goal_owner", { id: "g1", name: "Emergency fund", targetAmountCents: 50000, currency: "USD" }, "approved_goal_action");
     expect(retry).toEqual(first);
     expect(await memory.listGoals("another_user")).toEqual([]);
-    await expect(memory.createSavingsGoal("goal_owner", { id: "g2", name: "Vacation", currency: "USD" }, "approved_goal_action"))
+    await expect(memory.createSavingsGoal("goal_owner", { id: "g2", name: "Vacation", targetAmountCents: 50000, currency: "USD" }, "approved_goal_action"))
       .rejects.toThrow("cannot be reused");
   });
 

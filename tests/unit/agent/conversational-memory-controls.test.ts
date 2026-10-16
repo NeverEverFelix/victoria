@@ -34,6 +34,7 @@ describe("conversational memory controls", () => {
 
     const unclear = await agent.respond({ userId: "user-a", message: "Forget that thing." });
     expect(unclear.decision.action).toBe("ask_follow_up");
+    expect((await agent.respond({ userId: "user-a", message: "Forget it." })).decision.action).toBe("ask_follow_up");
   });
 
   it("supports forget all and pause/resume in conversation", async () => {

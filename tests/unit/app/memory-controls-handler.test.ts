@@ -23,7 +23,7 @@ describe("memory controls handler", () => {
   it("requires a signed-in user and does not accept caller-selected user IDs", async () => {
     const handler = createMemoryControlsCollectionHandler({ authenticate, memory: new MemoryOrchestrator(new MockMemoryProvider()) });
     expect((await handler(request("GET", null))).status).toBe(401);
-    expect((await handler(request("GET", "user-a", "https://victoria.local/api/victoria/memories?userId=user-b"))).status).toBe(200);
+    expect((await handler(request("GET", "user-a", "https://victoria.local/api/victoria/settings/memories?userId=user-b"))).status).toBe(200);
   });
 
   it("edits by appending a correction and requires the exact bounded payload", async () => {
@@ -33,13 +33,26 @@ describe("memory controls handler", () => {
     });
     const handler = createMemoryControlHandler({ authenticate, memory });
 
-    const response = await handler(new Request("https://victoria.local/api/victoria/memories/m1", {
+    const response = await handler(new Request(`https://victoria.local/api/victoria/settings/memories/${original.id}`, {
       method: "PUT", headers: { authorization: "Bearer user-a", "content-type": "application/json" },
       body: JSON.stringify({ value: "Prefers detailed replies." })
     }), original.id);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ memory: { value: "Prefers detailed replies.", supersedesId: original.id } });
     await expect(memory.listConversationalMemories("user-a")).resolves.toMatchObject([{ value: "Prefers detailed replies." }]);
+  });
+
+  it("distinguishes a missing correction body from malformed JSON", async () => {
+    const memory = new MemoryOrchestrator(new MockMemoryProvider());
+    const saved = await memory.rememberConversationalMemory("user-a", {
+      category: "preference", key: "response_style", value: "Prefers concise replies.", evidence: "User said concise.", confidence: 0.9
+    });
+    const handler = createMemoryControlHandler({ authenticate, memory });
+    const response = await handler(new Request(`https://victoria.local/api/victoria/settings/memories/${saved.id}`, {
+      method: "PUT", headers: { authorization: "Bearer user-a", "content-type": "application/json" }
+    }), saved.id);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "missing_body" });
   });
 
   it("forgets a selected memory and its superseded versions without affecting another user", async () => {
@@ -69,7 +82,7 @@ describe("memory controls handler", () => {
     });
     const handler = createMemoryControlHandler({ authenticate, memory });
 
-    const editResponse = await handler(new Request("https://victoria.local/api/victoria/memories/m1", {
+    const editResponse = await handler(new Request(`https://victoria.local/api/victoria/settings/memories/${profile.id}`, {
       method: "PUT", headers: { authorization: "Bearer user-a", "content-type": "application/json" },
       body: JSON.stringify({ value: "User corrected amount." })
     }), profile.id);

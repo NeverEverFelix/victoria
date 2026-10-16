@@ -14,6 +14,7 @@ import { canCallTool, interpretApprovalResponse } from "./policy.js";
 import { validateClassifiedMessage, validateSavingsSuggestion } from "./validation.js";
 import { applyClassificationConfidencePolicy } from "./confidence-policy.js";
 import { transitionSavingsProposal } from "../domain/savings/proposal-lifecycle.js";
+import { parseExplicitDollarAmount } from "../domain/financial-events/parse-explicit-amount.js";
 import type { VictoriaTools } from "./tools/contracts.js";
 import { formatUsd } from "../domain/money.js";
 import { immutableSnapshot } from "../domain/immutable.js";
@@ -78,7 +79,12 @@ export class VictoriaAgent {
     { userId: string; conversationKey: string; decision: AgentDecision; approval?: SavingsGoalAllocation["approval"] }
   >();
   private readonly pendingGoalAllocationIdsByConversation = new Map<string, string>();
-  private readonly pendingGoalCreations = new Map<string, { userId: string; actionId: string; goal: Omit<SavingsGoal, "userId" | "savedAmountCents"> }>();
+  private readonly pendingGoalCreations = new Map<string, {
+    userId: string;
+    actionId: string;
+    goal: Omit<SavingsGoal, "userId" | "savedAmountCents">;
+    needsTargetClarification?: boolean;
+  }>();
   private nextGoalCreationNumber = 1;
   private readonly pendingEntryCorrections = new Map<string, { userId: string; conversationKey: string; decision: AgentDecision; approvalId?: string }>();
   private readonly pendingEntryCorrectionIdsByConversation = new Map<string, string>();
@@ -143,6 +149,21 @@ export class VictoriaAgent {
     const conversationKey = this.conversationKey(request);
     const pendingGoalCreation = this.pendingGoalCreations.get(conversationKey);
     if (pendingGoalCreation?.userId === request.userId) {
+      if (pendingGoalCreation.needsTargetClarification) {
+        const parsedAmount = parseExplicitDollarAmount(request.message);
+        const explicitlyNoTarget = /^(?:no target|without a target|without target)$/i.test(request.message.trim().replace(/[.!?]+$/, ""));
+        if (parsedAmount.status === "valid") {
+          pendingGoalCreation.goal = { ...pendingGoalCreation.goal, targetAmountCents: parsedAmount.amountCents };
+        } else if (!explicitlyNoTarget) {
+          const message = parsedAmount.status === "absent"
+            ? "What USD target amount should I use? You can also say ‘no target’ if you want a goal without one."
+            : "I couldn't read that as a valid USD amount. Please give a positive amount with at most two decimal places, such as $1,000.00, or say ‘no target’.";
+          return { message, decision: { action: "ask_follow_up", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: true }, userFacingMessage: message } };
+        }
+        this.pendingGoalCreations.set(conversationKey, { ...pendingGoalCreation, needsTargetClarification: false });
+        const message = goalCreationConfirmationPrompt(pendingGoalCreation.goal);
+        return { message, decision: { action: "ask_follow_up", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false }, userFacingMessage: message } };
+      }
       const answer = interpretApprovalResponse(request.message);
       const newGoalStatement = extractConversationalMemory(request.message)?.category === "goal";
       if (newGoalStatement && answer === "not_approval") this.pendingGoalCreations.delete(conversationKey);
@@ -151,12 +172,12 @@ export class VictoriaAgent {
         const toolCall = { name: "createSavingsGoal" as const, actionId: pendingGoalCreation.actionId,
           arguments: { ...pendingGoalCreation.goal }, requiresApproval: true };
         const allowed = canCallTool({ ...request, approvedActionId: pendingGoalCreation.actionId }, toolCall);
-        if (!allowed.allowed) return this.refuseApproval({ action: "update_goal", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false }, toolCall, userFacingMessage: allowed.reason ?? "I couldn't approve that goal." }, allowed.reason ?? "I couldn't approve that goal.");
+        if (!allowed.allowed) return this.refuseApproval({ action: "create_goal", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false }, toolCall, userFacingMessage: allowed.reason ?? "I couldn't approve that goal." }, allowed.reason ?? "I couldn't approve that goal.");
         try {
           const goal = await this.dependencies.memory.createSavingsGoal(request.userId, pendingGoalCreation.goal, pendingGoalCreation.actionId);
           this.pendingGoalCreations.delete(conversationKey);
           const message = `I added “${goal.name}” as a savings goal${goal.targetAmountCents === undefined ? "" : ` with a target of ${formatUsd(goal.targetAmountCents)}`}. This only creates a goal in your mocked savings ledger; no money has moved. You can ask me to allocate a recorded savings entry to it, and I’ll ask for separate confirmation.`;
-          return { message, decision: { action: "update_goal", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false }, savingsGoal: goal, toolCall, userFacingMessage: message } };
+          return { message, decision: { action: "create_goal", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false }, savingsGoal: goal, toolCall, userFacingMessage: message } };
         } catch {
           const message = "I couldn't add that savings goal just now. It wasn't created; you can ask me to try again.";
           return { message, decision: { action: "ask_follow_up", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false }, userFacingMessage: message } };
@@ -442,12 +463,16 @@ export class VictoriaAgent {
       }
       if (memoryToRemember.category === "goal") {
         const name = memoryToRemember.key === "emergency_fund" ? "Emergency fund" : goalNameFromMemoryKey(memoryToRemember.key);
-        const amountMatch = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)/.exec(request.message);
-        const targetAmountCents = amountMatch?.[1] ? Math.round(Number(amountMatch[1].replaceAll(",", "")) * 100) : undefined;
+        const parsedAmount = parseExplicitDollarAmount(request.message);
+        const targetAmountCents = parsedAmount.status === "valid" ? parsedAmount.amountCents : undefined;
+        const needsTargetClarification = parsedAmount.status !== "valid" && parsedAmount.status !== "absent";
         const actionId = `savings_goal_create_${this.nextGoalCreationNumber++}`;
         this.pendingGoalCreations.set(conversationKey, { userId: request.userId, actionId,
-          goal: { id: `goal_pending_${this.nextGoalCreationNumber - 1}`, name, ...(targetAmountCents ? { targetAmountCents } : {}), currency: "USD" } });
-        const prompt = `I’ll remember that goal. Would you like me to add “${name}”${targetAmountCents ? ` with a target of ${formatUsd(targetAmountCents)}` : ""} as a structured savings goal? Please answer yes or no. Creating the goal won’t move money, and allocating recorded savings will still need separate confirmation.`;
+          goal: { id: `goal_pending_${this.nextGoalCreationNumber - 1}`, name, ...(targetAmountCents ? { targetAmountCents } : {}), currency: "USD" },
+          ...(needsTargetClarification ? { needsTargetClarification: true } : {}) });
+        const prompt = needsTargetClarification
+          ? "I’ll remember that goal, but I couldn't safely read the target amount. Please give a valid USD amount with at most two decimal places, such as $1,000.00, or say ‘no target’."
+          : goalCreationConfirmationPrompt({ name, ...(targetAmountCents ? { targetAmountCents } : {}), currency: "USD" });
         return { message: prompt, decision: { action: "ask_follow_up", classification, userFacingMessage: prompt } };
       }
       return { message, decision: { action: "reflect", classification, userFacingMessage: message } };
@@ -1766,6 +1791,10 @@ function goalNameFromMemoryKey(key: string): string {
   return formatted.split(/\s+/).map((word, index) => word && index > 0 && ["to", "for", "of"].includes(word.toLowerCase())
     ? word.toLowerCase()
     : word ? `${word[0]?.toLocaleUpperCase("en-US")}${word.slice(1)}` : "").join(" ").slice(0, 120) || "Savings goal";
+}
+
+function goalCreationConfirmationPrompt(goal: Pick<SavingsGoal, "name" | "currency"> & Partial<Pick<SavingsGoal, "targetAmountCents">>): string {
+  return `I’ll remember that goal. Would you like me to add “${goal.name}”${goal.targetAmountCents === undefined ? "" : ` with a target of ${formatUsd(goal.targetAmountCents)}`} as a structured savings goal? Please answer yes or no. Creating the goal won’t move money, and allocating recorded savings will still need separate confirmation.`;
 }
 
 function isRelevantRecurringRoutine(

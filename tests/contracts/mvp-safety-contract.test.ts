@@ -83,7 +83,7 @@ describe("Victoria MVP safety contract", () => {
     ));
 
     const allowedActions = new Set([
-      "ask_follow_up", "suggest_savings", "create_ledger_entry", "update_goal",
+      "ask_follow_up", "suggest_savings", "create_ledger_entry", "create_goal", "update_goal",
       "record_goal_allocation", "correct_ledger_entry", "summarize_progress", "reflect", "refuse"
     ]);
     const allowedTools = new Set([

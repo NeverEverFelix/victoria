@@ -5,8 +5,8 @@ CREATE TABLE IF NOT EXISTS public.victoria_memory_settings (
 );
 ALTER TABLE public.victoria_memory_settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS victoria_memory_settings_user_select ON public.victoria_memory_settings;
-CREATE POLICY victoria_memory_settings_user_select ON public.victoria_memory_settings
-  FOR SELECT TO authenticated USING (user_id = auth.uid()::text);
+-- The application accesses pause settings through its trusted server runtime.
+-- Authenticated clients have no direct table privileges or policies.
 REVOKE ALL ON public.victoria_memory_settings FROM anon, authenticated;
 GRANT ALL ON public.victoria_memory_settings TO service_role;
 

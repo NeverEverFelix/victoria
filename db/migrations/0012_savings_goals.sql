@@ -17,6 +17,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS victoria_savings_goals_user_name_ci_idx
 ALTER TABLE victoria_savings_goals ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS victoria_savings_goals_owner_policy ON victoria_savings_goals;
 CREATE POLICY victoria_savings_goals_owner_policy ON victoria_savings_goals
-  FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()::text))
-  WITH CHECK (user_id = (SELECT auth.uid()::text));
+  FOR SELECT TO authenticated USING (user_id = (SELECT auth.uid()::text));
+REVOKE ALL ON victoria_savings_goals FROM anon, authenticated;
 GRANT SELECT ON victoria_savings_goals TO authenticated;
+-- Goal creation and allocation updates stay behind the trusted server runtime.
+GRANT ALL ON victoria_savings_goals TO service_role;

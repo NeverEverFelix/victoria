@@ -43,7 +43,7 @@ describe("PostgresMemoryRepository semantic memory", () => {
     expect(saved.id).toBe("memory-1");
     expect(database.calls).toHaveLength(2);
     expect(database.calls[0]?.values[1]).toBe("user-a");
-    expect(database.calls[0]?.values[12]).toBe("{}");
+    expect(database.calls[0]?.values.at(-1)).toBe("{}");
     expect(database.calls[1]?.sql).toContain("victoria_memory_embeddings");
     expect(database.calls[1]?.values).toContain("user-a");
     expect(database.calls[1]?.values).toContain("memory-1");

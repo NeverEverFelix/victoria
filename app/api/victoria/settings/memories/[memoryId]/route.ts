@@ -1,4 +1,4 @@
-import { getLocalMockVictoriaRuntime } from "../../../../../../src/app/http/create-local-mock-victoria-runtime";
+import { getLocalMemoryControlsRuntime } from "../../../../../../src/app/http/local-memory-controls-runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,14 +8,14 @@ interface RouteContext {
 }
 
 export async function PUT(request: Request, context: RouteContext): Promise<Response> {
-  const handler = getLocalMockVictoriaRuntime()?.memoryControlHandler;
+  const handler = getLocalMemoryControlsRuntime()?.memoryControlHandler;
   if (!handler) return notConfigured();
   const { memoryId } = await context.params;
   return handler(request, memoryId);
 }
 
 export async function DELETE(request: Request, context: RouteContext): Promise<Response> {
-  const handler = getLocalMockVictoriaRuntime()?.memoryControlHandler;
+  const handler = getLocalMemoryControlsRuntime()?.memoryControlHandler;
   if (!handler) return notConfigured();
   const { memoryId } = await context.params;
   return handler(request, memoryId);

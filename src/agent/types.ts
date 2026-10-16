@@ -34,6 +34,7 @@ export type AgentActionType =
   | "ask_follow_up"
   | "suggest_savings"
   | "create_ledger_entry"
+  | "create_goal"
   | "update_goal"
   | "record_goal_allocation"
   | "correct_ledger_entry"

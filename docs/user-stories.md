@@ -354,6 +354,7 @@ Acceptance criteria:
 - Given a direct savings-amount preference, the fact is available in that user's conversational memory.
 - Given a direct recurring habit or stated goal, its evidence-backed fact is available in that user's conversational memory.
 - Given a directly stated goal, no structured goal exists until the user explicitly confirms Victoria's creation prompt; declining leaves only the conversational fact.
+- Given a directly stated goal with a malformed or unsupported currency target amount, Victoria asks for a valid USD amount or an explicit targetless goal choice before requesting creation approval.
 - Given an explicit confirmation to create a structured goal, the goal is user-scoped and idempotent; another user's goals remain isolated.
 - Given the user says they theorize or think they spend a certain amount at a merchant, Victoria checks available transaction history, treats differences under $1 or 15% as broadly consistent, and appends a linked transaction-supported estimate for larger differences while identifying the evidence basis.
 - Given a tentative statement, no fact is stored.
@@ -429,8 +430,6 @@ Acceptance criteria:
 - Given the user asks Victoria to forget a uniquely matched conversational memory or all conversational memories, Victoria removes the relevant conversational records and embeddings while financial records remain unchanged.
 - Given a forget request could match multiple memories or none, Victoria asks a follow-up and changes nothing.
 - Given the user asks to pause or resume memory in chat, Victoria changes learning and personalization state and confirms the change.
-- Given the user pauses or resumes memory in settings, the displayed state reflects the API result and saved facts remain reviewable.
-- Given the user chooses Forget all in settings, an explicit confirmation precedes deletion, conversational facts clear, and separately managed profile data is disclosed as unaffected.
 
 ## Priority Order
 

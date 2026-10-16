@@ -68,14 +68,26 @@ describe("MemoryOrchestrator", () => {
 
   it("keeps separately managed Plaid profile facts available while conversational memory is paused", async () => {
     const storage = new MockMemoryProvider();
-    const orchestrator = new MemoryOrchestrator(storage);
+    const orchestrator = new MemoryOrchestrator(storage, { maxMemoriesPerTurn: 2 });
     const profile = await storage.rememberConversationalMemory("user-a", profileMemory({
       value: "Typical spend at Cafe is $8.00.", observedThrough: new Date().toISOString().slice(0, 10)
+    }));
+    await storage.rememberConversationalMemory("user-a", profileMemory({
+      key: "financial_profile:merchant:bakery", value: "Typical spend at Bakery is $6.00.",
+      observedThrough: "2026-01-01"
     }));
     await orchestrator.setMemoryPaused("user-a", true);
 
     await expect(orchestrator.searchConversationalMemories("user-a", "cafe")).resolves.toEqual([profile]);
     await expect(orchestrator.getMemoryForUser("user-a", "cafe")).resolves.toMatchObject({ conversationalMemories: [profile] });
+    await Promise.all(["one", "two", "three"].map((merchant) => storage.rememberConversationalMemory("user-a", profileMemory({
+      key: `financial_profile:merchant:${merchant}`, observedThrough: new Date().toISOString().slice(0, 10)
+    }))));
+    const bounded = await orchestrator.getMemoryForUser("user-a");
+    expect(bounded.conversationalMemories).toHaveLength(2);
+    expect(bounded.conversationalMemories?.every((memory) => memory.sourceType === "plaid_transaction_profile" &&
+      memory.observedThrough === new Date().toISOString().slice(0, 10))).toBe(true);
+    expect(bounded.conversationalMemories?.some((memory) => memory.key.includes("bakery"))).toBe(false);
   });
 
   it("excludes stale transaction profile facts but keeps current user memories", async () => {
@@ -93,6 +105,7 @@ describe("MemoryOrchestrator", () => {
   it("makes missing, stale, and future profile observations unavailable in mock retrieval", async () => {
     const storage = new MockMemoryProvider();
     const { observedThrough: _observedThrough, ...missingObservation } = profileMemory({ key: "profile:missing" });
+    void _observedThrough;
     await storage.rememberConversationalMemory("user-a", missingObservation);
     await storage.rememberConversationalMemory("user-a", profileMemory({ key: "profile:stale", observedThrough: "2026-01-01" }));
     await storage.rememberConversationalMemory("user-a", profileMemory({ key: "profile:future", observedThrough: "2027-01-01" }));

@@ -43,7 +43,7 @@ export function createMemorySettingsHandler(dependencies: MemoryControlsHandlerD
       let body: unknown;
       try { body = JSON.parse(await readBoundedBody(request)); }
       catch (error) { return respond(error instanceof RequestTooLargeError ? 413 : 400,
-        { error: error instanceof RequestTooLargeError ? "request_too_large" : "invalid_json" }); }
+        { error: error instanceof RequestTooLargeError ? "request_too_large" : error instanceof MissingBodyError ? "missing_body" : "invalid_json" }); }
       if (!body || typeof body !== "object" || Array.isArray(body) ||
           Object.keys(body).length !== 1 || typeof (body as Record<string, unknown>).paused !== "boolean") {
         return respond(400, { error: "invalid_memory_settings" });
@@ -74,7 +74,7 @@ export function createMemoryControlHandler(dependencies: MemoryControlsHandlerDe
       let body: unknown;
       try { body = JSON.parse(await readBoundedBody(request)); }
       catch (error) { return respond(error instanceof RequestTooLargeError ? 413 : 400,
-        { error: error instanceof RequestTooLargeError ? "request_too_large" : "invalid_json" }); }
+        { error: error instanceof RequestTooLargeError ? "request_too_large" : error instanceof MissingBodyError ? "missing_body" : "invalid_json" }); }
       if (!isCorrectionBody(body)) return respond(400, { error: "invalid_memory_correction" });
       const corrected = await dependencies.memory.correctMemory(user.userId, memoryId, body.value);
       return respond(200, { memory: corrected });
@@ -88,7 +88,7 @@ export function createMemoryControlHandler(dependencies: MemoryControlsHandlerDe
 }
 
 async function readBoundedBody(request: Request): Promise<string> {
-  if (!request.body) throw new Error("Request body is missing.");
+  if (!request.body) throw new MissingBodyError();
   const reader = request.body.getReader();
   const decoder = new TextDecoder();
   let totalBytes = 0;
@@ -103,6 +103,7 @@ async function readBoundedBody(request: Request): Promise<string> {
     }
     text += decoder.decode(value, { stream: true });
   }
+  if (totalBytes === 0) throw new MissingBodyError();
   return text + decoder.decode();
 }
 
@@ -124,3 +125,4 @@ function respond(status: number, body: unknown): Response {
 }
 
 class RequestTooLargeError extends Error {}
+class MissingBodyError extends Error {}

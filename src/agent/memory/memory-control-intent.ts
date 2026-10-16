@@ -15,7 +15,9 @@ export function parseMemoryControlIntent(message: string): MemoryControlIntent |
   const forget = /\bforget\s+(?:that\s+)?(?:you\s+remember(?:ed)?\s+)?(?:about\s+me\s+)?(.+?)[.!?]*$/i.exec(message.trim());
   if (forget?.[1] && !/^(?:everything|all|all my memories)$/i.test(forget[1].trim())) {
     const target = forget[1].trim().replace(/^(?:i said|i told you)\s+/i, "");
-    if (target.length >= 2) return { type: "forget_one", target };
+    if (target.length >= 2 && !/^(?:it|that|this|that thing|something|the thing)$/i.test(target)) {
+      return { type: "forget_one", target };
+    }
   }
   return null;
 }

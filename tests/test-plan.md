@@ -117,11 +117,14 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Ordinary reflections can combine up to four relevant routines, goals, preferences, or fresh episodes; unrelated retrieved preferences are omitted and memory remains a prompt for discussion, not a conclusion.
 - A matching remembered coffee, takeout, or merchant routine can shape an ordinary reflection across conversations; unrelated routines and other users' routines stay out, and routine frequency never becomes a money estimate.
 - A remembered goal asks before structured goal creation; declining creates no goal, and explicit confirmation creates only a user-scoped goal with no allocation or ledger entry.
+- A malformed or unsupported goal target amount is clarified with the shared explicit-dollar parser; it is neither rounded nor silently discarded before structured-goal confirmation.
 - Repeating an approved structured-goal creation is idempotent; reusing its action ID for different goal details is rejected, and a different user cannot read the goal.
 - Allocating a recorded savings entry to a structured goal still requires a separate fresh exact-action approval.
 - User-stated memory remains until explicit forget; stale episodic and current transaction-profile memories expire after 90 days, and expiry removes embeddings and linked profile corrections atomically.
 - Authenticated semantic retrieval is scoped by RLS even when a caller supplies another user's ID; anonymous roles cannot execute vector retrieval or access the vector schema.
 - Forget selected and Forget all delete user-owned conversational memory embeddings; Forget all preserves separately managed Plaid-profile memories, which disconnect/delete-all removes.
+- Pausing memory excludes conversational facts from personalization while retaining fresh, current, user-scoped transaction-profile facts for consented financial estimates; stale, superseded, and over-limit profile facts remain excluded.
+- Next.js memory-control API routes return unavailable outside local development, and local requests require a signed bearer session; they are not mounted on the persistent runtime.
 - A quantified, explicit merchant-spend habit can inform a later estimate only for the same merchant and user; it remains an estimate, needs approval, and does not create a ledger entry by itself.
 - When transaction history is unavailable, Victoria asks for the user's typical merchant spend; a valid answer informs the current proposal and appends a linked user-scoped memory fact for later estimates.
 - A direct “my usual/typical spend at [merchant] is about [amount]” statement is extracted as a merchant-specific recurring spend, used only for that merchant and user, and remains an estimate requiring normal approval before a ledger entry.
