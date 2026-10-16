@@ -104,7 +104,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - PostgreSQL can restore unexpired clarification context after SQLite cache loss, and expired context is not returned.
 - Durable conversational memories retain user-stated preferences with evidence and confidence, isolate by user, and supersede earlier facts through linked append-only records.
 - Durable conversational decisions are append-only and cannot mutate financial event, approval, or ledger history.
-- An injected structured extractor can store at most three stable, ordinary, high-confidence contextual facts only when exact supporting evidence appears in the current user turn; temporary, sensitive, weak-confidence, unsupported, duplicate, or malformed candidates are discarded.
+- An injected structured extractor can propose at most three memories; deterministic validation can store only stable, ordinary, high-confidence facts with exact supporting user evidence. Temporary, sensitive, weak-confidence, unsupported, duplicate, malformed, quoted, third-party, negated, or hypothetical candidates are discarded. The model cannot write memories directly or authorize financial actions.
 - Extraction rejects quoted/third-party, negated, and hypothetical facts even if the words appear in the user's message; memory-extraction failure does not block the chat turn or bypass proposal/approval policy.
 - When the 20-message short-term context is about to roll over, an injected episodic summarizer receives only bounded user-authored messages. It stores a compact append-only summary only when confidence and sensitivity checks pass and each supporting excerpt occurs in the supplied user messages.
 - A relevant episode summary can shape an ordinary reflective reply only when it is well-formed, non-future, and at most 90 days old; unrelated and stale episodes are not surfaced.
@@ -114,8 +114,17 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - A changed explicit preference appends a fact linked to the prior preference; another user's preference is never returned.
 - A direct preference, recurring habit, or stated goal is stored as an evidence-backed structured fact; an identical repeat is deduplicated and an uncertain statement is ignored.
 - A relevant retrieved preference or goal shapes an ordinary reflective reply in a later conversation; the response remains user-scoped and cannot create a savings entry or goal allocation.
+- Ordinary reflections can combine up to four relevant routines, goals, preferences, or fresh episodes; unrelated retrieved preferences are omitted and memory remains a prompt for discussion, not a conclusion.
 - A matching remembered coffee, takeout, or merchant routine can shape an ordinary reflection across conversations; unrelated routines and other users' routines stay out, and routine frequency never becomes a money estimate.
-- Remembering a habit or goal does not create a savings proposal or goal allocation; structured facts remain available as source records for future PostgreSQL semantic/vector indexing.
+- A remembered goal asks before structured goal creation; declining creates no goal, and explicit confirmation creates only a user-scoped goal with no allocation or ledger entry.
+- A malformed or unsupported goal target amount is clarified with the shared explicit-dollar parser; it is neither rounded nor silently discarded before structured-goal confirmation.
+- Repeating an approved structured-goal creation is idempotent; reusing its action ID for different goal details is rejected, and a different user cannot read the goal.
+- Allocating a recorded savings entry to a structured goal still requires a separate fresh exact-action approval.
+- User-stated memory remains until explicit forget; stale episodic and current transaction-profile memories expire after 90 days, and expiry removes embeddings and linked profile corrections atomically.
+- Authenticated semantic retrieval is scoped by RLS even when a caller supplies another user's ID; anonymous roles cannot execute vector retrieval or access the vector schema.
+- Forget selected and Forget all delete user-owned conversational memory embeddings; Forget all preserves separately managed Plaid-profile memories, which disconnect/delete-all removes.
+- Pausing memory excludes conversational facts from personalization while retaining fresh, current, user-scoped transaction-profile facts for consented financial estimates; stale, superseded, and over-limit profile facts remain excluded.
+- Next.js memory-control API routes return unavailable unless `APP_ENV=local`, `NODE_ENV=development`, and `VICTORIA_LOCAL_MEMORY_CONTROLS_ENABLED=true`; local requests also require a signed bearer session. The routes are not mounted on the persistent runtime.
 - A quantified, explicit merchant-spend habit can inform a later estimate only for the same merchant and user; it remains an estimate, needs approval, and does not create a ledger entry by itself.
 - When transaction history is unavailable, Victoria asks for the user's typical merchant spend; a valid answer informs the current proposal and appends a linked user-scoped memory fact for later estimates.
 - A direct “my usual/typical spend at [merchant] is about [amount]” statement is extracted as a merchant-specific recurring spend, used only for that merchant and user, and remains an estimate requiring normal approval before a ledger entry.
@@ -262,4 +271,14 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - An ambiguous correction asks which purchase/day the user means and creates no memory or financial record.
 - A correction during pending savings or ledger-correction approval cannot bypass that approval lifecycle.
 - A correction never updates Plaid data, creates a savings proposal, or writes a ledger entry.
-- The product has no user-facing memory review/edit endpoint or screen.
+- Authenticated memory review returns only the user's current facts; edits append linked corrections; forgetting removes the selected conversational-memory lineage and embeddings without changing financial history (`MEM-011`).
+- Transaction-profile memories cannot be forgotten through conversational-memory controls; users must use the profile disconnect/deletion lifecycle (`MEM-011`).
+- Memory controls reject unauthenticated requests, caller-selected user IDs, malformed edits, and cross-user memory IDs (`MEM-011`).
+- Local memory-control API routes are hidden unless local development and the explicit feature flag are enabled, and every enabled request still requires a signed bearer session.
+- Explicit chat requests can review current memories, forget one uniquely identified conversational memory, Forget all, and pause/resume memory; ambiguous matches ask a follow-up without changing memory.
+- Conversation-driven memory controls create no savings entry, approval, or change to historical financial records. Transaction-profile memories are identified as separately managed.
+- Forget all removes only the authenticated user's conversational memories and linked facts while preserving Plaid-derived profile facts and financial history (`MEM-011`).
+- Pause memory prevents conversational learning and personalization, keeps existing memories reviewable, and leaves short-term context and financial behavior intact (`MEM-012`).
+- A memory-control command cancels a pending structured-goal confirmation and is handled without creating the goal (`MEM-012`).
+- Memory search is user-scoped; forgetting a fact immediately removes it from subsequent semantic retrieval and removes its embeddings (`MEM-011`).
+- Disconnecting Plaid purges profile facts, superseding versions, transaction-detail corrections linked by `correctionOfMemoryId`, and their embeddings while preserving unrelated conversational memory and other users' data (`LIFE-003`).

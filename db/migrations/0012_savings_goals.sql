@@ -1,0 +1,23 @@
+-- Structured user-scoped goals created only after an explicit confirmation.
+CREATE TABLE IF NOT EXISTS victoria_savings_goals (
+  id text PRIMARY KEY,
+  user_id text NOT NULL,
+  name text NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 120),
+  target_amount_cents bigint CHECK (target_amount_cents IS NULL OR target_amount_cents BETWEEN 1 AND 9007199254740991),
+  currency text NOT NULL DEFAULT 'USD' CHECK (currency = 'USD'),
+  approved_action_id text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, approved_action_id),
+  UNIQUE (user_id, name)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS victoria_savings_goals_user_name_ci_idx
+  ON victoria_savings_goals (user_id, lower(name));
+
+ALTER TABLE victoria_savings_goals ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS victoria_savings_goals_owner_policy ON victoria_savings_goals;
+CREATE POLICY victoria_savings_goals_owner_policy ON victoria_savings_goals
+  FOR SELECT TO authenticated USING (user_id = (SELECT auth.uid()::text));
+REVOKE ALL ON victoria_savings_goals FROM anon, authenticated;
+GRANT SELECT ON victoria_savings_goals TO authenticated;
+-- Goal creation and allocation updates stay behind the trusted server runtime.
+GRANT ALL ON victoria_savings_goals TO service_role;

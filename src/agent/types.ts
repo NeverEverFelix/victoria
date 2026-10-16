@@ -34,6 +34,7 @@ export type AgentActionType =
   | "ask_follow_up"
   | "suggest_savings"
   | "create_ledger_entry"
+  | "create_goal"
   | "update_goal"
   | "record_goal_allocation"
   | "correct_ledger_entry"
@@ -85,6 +86,7 @@ export interface AgentDecision {
   proposal?: SavingsProposal;
   proposalTransitions?: readonly SavingsProposalTransition[];
   goalAllocation?: PendingSavingsGoalAllocation | SavingsGoalAllocation;
+  savingsGoal?: SavingsGoal;
   entryCorrection?: SavingsEntryCorrection | PendingSavingsEntryCorrection;
   suggestion?: SavingsSuggestion;
   toolCall?: ToolCallRequest;
@@ -124,4 +126,5 @@ export type VictoriaToolName =
   | "getWeeklySavingsTotal"
   | "createSavingsGoalAllocation"
   | "createSavingsEntryCorrection"
+  | "createSavingsGoal"
   | "eventuallyMoveMoney";

@@ -123,6 +123,47 @@ Implications:
 - The extractor also supports direct general preferences, recurring habit statements, and explicit goal statements. Migration `0004_semantic_user_memory.sql` adds Supabase RLS, versioned pgvector embeddings, and a user-scoped semantic search function for these facts and transaction-derived profile facts. Embedding generation is injected and is not configured in the default mock composition; a remembered goal does not authorize a goal allocation.
 - This does not yet persist learned habits or goals or select a SQLite file path for a deployed runtime.
 
+### Model-Assisted Conversational Memory Extraction
+
+Status: Confirmed by the user on 2026-10-16.
+
+Decision:
+
+When enabled, Victoria may use a language model to propose stable, useful conversational memories from ordinary user messages. The model interprets varied wording; it does not write memories directly or decide alone what becomes durable. Deterministic validation must require exact supporting user wording, user attribution, affirmed and stable content, ordinary sensitivity, and high confidence before persistence. Existing chat controls let users review, correct, forget, or pause conversational memory.
+
+Implications:
+
+- Model-assisted extraction remains opt-in and disabled by default; extraction failure must not interrupt the turn.
+- The validator rejects unsupported, weak, temporary, sensitive, quoted, hypothetical, negated, and third-party candidates.
+- Accepted memories remain user-scoped and append-only. Changed understanding creates a linked fact; corrections and forget requests use the existing conversational controls.
+- A stored memory is context only. It never authorizes a savings entry, goal creation, allocation, or money movement.
+- The OpenAI adapter, validator, persistence seam, and memory controls are already implemented. This decision makes their intended product role explicit; production credentials and runtime activation remain separate.
+
+### User Memory Controls And Forget Semantics
+
+Status: Confirmed by the user on 2026-10-15. Headless review, correction, selected forget, Forget all, and Pause memory controls are implemented in the local runtime.
+
+Decision:
+
+Why:
+
+Users should be able to see and manage what Victoria remembers. A forget request needs a real erasure path for learned personal context, while ordinary corrections retain provenance and financial records retain their audit history.
+
+Implications:
+
+- Review returns only the authenticated user's current memories, with category, value, evidence, source, and creation time.
+- The headless endpoints are `GET /api/victoria/settings/memories`, `PUT /api/victoria/settings/memories/:memoryId`, and `DELETE /api/victoria/settings/memories/:memoryId`.
+- Editing creates a new linked correction; it never updates a prior memory in place.
+- Forget removes the selected conversational memory, its superseded versions, and dependent detail facts derived solely from those conversations, together with their embeddings. It does not remove Plaid-derived profile memories, which remain governed by profile disconnect/delete-all. These are conversational facts only, never savings ledger entry corrections. This is a narrow privacy exception to append-only memory.
+- Forget all removes all conversational memories and embeddings for the authenticated user, including linked versions and transaction-detail corrections; it leaves Plaid profile-derived facts under their separate profile lifecycle.
+- Pause memory prevents conversational memories from being used for personalization or newly learned, including episodic summaries and remembered merchant routines. It preserves existing memories so they can be reviewed and used again after resuming.
+- Forget does not alter short-term conversation context, bank transaction records, financial events, proposals, approvals, ledger entries, or corrections. Conversation context expires under its existing 30-minute policy.
+- Pause does not disable short-term context, immutable financial decision history, ordinary savings behavior, or consented Plaid profile processing; transaction-profile facts remain governed by profile disconnect/deletion.
+- Controls: `DELETE /api/victoria/settings/memories` forgets all conversational memories; `GET`/`PUT /api/victoria/settings/memory-settings` reads or changes `{ paused: boolean }`.
+- Plaid-derived profile memories are excluded from this operation and remain managed by profile disconnect/deletion, so an active profile refresh does not silently recreate a forgotten user fact.
+- The local mock runtime exposes these controls for development. Its Next.js API routes return 404 unless `APP_ENV=local`, `NODE_ENV=development`, and `VICTORIA_LOCAL_MEMORY_CONTROLS_ENABLED=true`; an enabled route with invalid local runtime configuration returns 503. Each operation also requires a signed bearer session. The explicit PostgreSQL-backed runtime factory exposes handlers to trusted host code only and requires the host application to inject its authenticator. The Next.js routes are not wired to the persistent runtime; live authentication and deployment remain future work.
+- User-facing memory controls are conversational, as specified in “Conversational Memory Management” below.
+
 ### Recorded Amount Corrections Use Linked Adjustment Records
 
 Decision:
@@ -158,6 +199,20 @@ Implications:
 - Frontend dependencies and configuration may be prepared without implementing UI.
 - UI implementation becomes the final product phase after the non-UI work queue is complete and `npm run check` passes.
 - End-to-end browser journeys and production deployment follow the UI phase.
+
+### Conversational Memory Management
+
+Status: Confirmed by the user on 2026-10-16; this supersedes the temporary local-settings-screen exception recorded during implementation.
+
+Decision:
+
+Users manage memory by talking to Victoria in chat. They can ask what Victoria remembers, correct a remembered detail, ask Victoria to forget a selected detail or all conversational memories, and pause or resume memory. No separate settings screen exposes direct memory changes.
+
+Implications:
+
+- Explicit chat requests use the existing user-scoped memory operations; an ambiguous forget request asks a follow-up before changing anything.
+- Authenticated memory-control handlers remain for trusted application integrations, but are not the user-facing memory-management experience.
+- Profile-derived memories remain governed by the connected-profile lifecycle, and financial history is unchanged by conversational memory controls.
 
 ### Transactions-Only Financial Profile
 
@@ -308,3 +363,24 @@ Related docs:
 - `docs/agent-work-queue.md`
 - `tests/test-plan.md`
 - `docs/environments.md`
+
+## Memory Retention And Deletion
+
+Decision for the persistent memory implementation:
+
+- User-stated preferences, habits, goals, and corrections remain until the user uses Forget on the memory lineage or Forget all.
+- Superseded user-stated facts remain as non-retrievable history unless their lineage is forgotten.
+- Episodic summaries expire 90 days after creation.
+- Current Transactions-profile facts expire 90 days after their last observation. Linked correction records expire with that stale source. A refreshed current profile fact keeps its superseded history until profile disconnect or delete-all.
+- Disconnect/delete-all immediately removes profile-derived facts, linked corrections, and their embeddings.
+- Embeddings are deleted in the same transaction as a memory fact, both for scheduled expiry and explicit deletion.
+- Expiry runs through the existing service-role lifecycle operation. Production scheduling and monitoring remain deployment work.
+
+The 90-day limits align episodic memory with its retrieval freshness bound and profile memory with the approved Transactions lookback. Durable user-stated memories remain under user control through the headless forget controls.
+
+
+### Memory Changes Happen In Conversation
+
+Status: Confirmed by the user on 2026-10-16.
+
+Memory review, correction, selected forget, Forget all, and Pause/resume are user-facing conversational behaviors. Users do not directly edit memory through a separate settings screen. Victoria responds to explicit chat requests, asks for clarification if a forget request has no unique match, and preserves financial history. Existing authenticated handlers remain internal application APIs.

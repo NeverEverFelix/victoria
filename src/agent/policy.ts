@@ -76,6 +76,11 @@ export function canCallTool(request: AgentRequest, toolCall: ToolCallRequest): P
     );
   }
 
+  if (toolCall.name === "createSavingsGoal") {
+    if (!toolCall.requiresApproval) return { allowed: false, reason: "Savings goals require approval for this exact action." };
+    return requireApproval(request, toolCall.actionId, "Savings goals require approval for this exact action.");
+  }
+
   if (toolCall.name === "createSavingsEntryCorrection") {
     if (!toolCall.requiresApproval) {
       return { allowed: false, reason: "Savings entry corrections require approval for this exact action." };

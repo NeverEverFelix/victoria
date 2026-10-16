@@ -6,6 +6,7 @@ import { createVictoriaAgent } from "./create-victoria-agent.js";
 import { createPostgresTurnStore } from "./turns/postgres-pool.js";
 import type { VictoriaEnv } from "../config/index.js";
 import { SEMANTIC_MEMORY_EMBEDDING_DIMENSIONS } from "../agent/memory/semantic-embedding.js";
+import { createMemoryControlHandler, createMemoryControlsCollectionHandler, createMemorySettingsHandler } from "./http/memory-controls-handler.js";
 
 /** Explicit durable/Supabase-compatible runtime. Default agent composition stays mock-backed. */
 export function createPersistentVictoriaAgent(options: {
@@ -13,6 +14,8 @@ export function createPersistentVictoriaAgent(options: {
   embeddingApiKey: string;
   embeddingModel?: string;
   fetcher?: typeof fetch;
+  /** Must resolve identity from the application's trusted session boundary. */
+  authenticate(request: Request): Promise<{ readonly userId: string } | null>;
 }) {
   const { pool } = createPostgresTurnStore(options.env.databaseUrl);
   const embeddings = new OpenAiEmbeddingProvider({ apiKey: options.embeddingApiKey,
@@ -23,5 +26,15 @@ export function createPersistentVictoriaAgent(options: {
   const sqliteMemory = new SqliteCachedMemoryProvider(postgresMemory);
   const memory = new MemoryOrchestrator(sqliteMemory, { financialProfiles: postgresMemory });
   const agent = createVictoriaAgent({ env: options.env, memory, ...(options.fetcher ? { fetcher: options.fetcher } : {}) });
-  return Object.freeze({ agent, pool, memory, sqliteMemory, postgresMemory });
+  const memoryControls = { authenticate: options.authenticate, memory };
+  return Object.freeze({
+    agent,
+    pool,
+    memory,
+    sqliteMemory,
+    postgresMemory,
+    memoryControlsCollectionHandler: createMemoryControlsCollectionHandler(memoryControls),
+    memoryControlHandler: createMemoryControlHandler(memoryControls),
+    memorySettingsHandler: createMemorySettingsHandler(memoryControls)
+  });
 }

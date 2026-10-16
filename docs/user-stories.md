@@ -344,7 +344,8 @@ Expected behavior:
 - A speculative merchant-spend amount may be stored as low-confidence evidence, but it is not used for estimates unless verified by more reliable user memory or transaction history.
 - Direct recurring-spend statements such as “My usual spend at Blue Bottle is around $6” are stored as merchant-specific habits, while non-recurring or unclear amounts are not inferred as typical spend.
 - Recurring behavior tied to a named merchant, such as ordering lunch from DoorDash on Fridays, is stored separately from both another merchant's routine and a generic category habit.
-- Victoria acknowledges a remembered fact without suggesting a savings entry or creating a goal allocation.
+- Victoria asks before turning a remembered goal into a structured savings goal; creating that goal does not create an allocation or move money.
+- Any later allocation of a recorded savings entry to a structured goal requires its own fresh, exact-action approval.
 - A clearly stated newer fact is appended and linked to the prior fact it supersedes; identical facts are not duplicated.
 - Tentative, ambiguous, or conflicting statements are not stored as facts.
 
@@ -352,6 +353,9 @@ Acceptance criteria:
 
 - Given a direct savings-amount preference, the fact is available in that user's conversational memory.
 - Given a direct recurring habit or stated goal, its evidence-backed fact is available in that user's conversational memory.
+- Given a directly stated goal, no structured goal exists until the user explicitly confirms Victoria's creation prompt; declining leaves only the conversational fact.
+- Given a directly stated goal with a malformed or unsupported currency target amount, Victoria asks for a valid USD amount or an explicit targetless goal choice before requesting creation approval.
+- Given an explicit confirmation to create a structured goal, the goal is user-scoped and idempotent; another user's goals remain isolated.
 - Given the user says they theorize or think they spend a certain amount at a merchant, Victoria checks available transaction history, treats differences under $1 or 15% as broadly consistent, and appends a linked transaction-supported estimate for larger differences while identifying the evidence basis.
 - Given a tentative statement, no fact is stored.
 - Given a newer fact on the same topic, the earlier record remains unchanged and the new fact links to it.
@@ -381,7 +385,10 @@ Expected behavior:
 - Victoria appends the user's correction as evidence and links it to the prior fact where available; prior history is not rewritten.
 - If multiple facts could be the target, Victoria asks which purchase or day the user means and stores nothing until clear.
 - The correction only changes conversational understanding. It does not update bank history, propose savings, or create a ledger entry.
-- Victoria does not expose a memory-review or memory-edit interface.
+- A memory correction appends a linked fact; it does not rewrite the prior fact.
+- A user can review current learned memories, correct a remembered fact, ask Victoria to forget a selected fact or all conversational memories, and pause/resume memory through ordinary chat language.
+- Victoria asks which fact to forget when the request does not identify one uniquely. Forgetting does not change financial events, approvals, or ledger history.
+- Transaction-profile memories are identified as connected-profile data and remain managed through profile disconnect/deletion controls.
 
 Acceptance criteria:
 
@@ -396,25 +403,33 @@ As a user, I want Victoria to retain a small amount of useful context from ordin
 
 Expected behavior:
 
-- When the optional memory extraction provider is enabled, Victoria may retain up to three stable, useful facts explicitly stated by the user in the current turn.
+- When the optional memory extraction provider is enabled, a language model proposes up to three stable, useful facts explicitly stated by the user in the current turn; deterministic validation decides whether any candidate may be retained.
+- The model proposes candidates only. It cannot write durable memories or authorize financial actions.
 - Victoria retains only candidates with exact supporting evidence, high confidence, user attribution, affirmed statements, and ordinary sensitivity.
 - Quoted or third-party claims, negations, hypotheticals, temporary states, transaction details, and sensitive personal information are not retained through this path.
 - When short-term conversation context reaches its 20-message limit, an optional summarizer may append a compact episode summary from bounded user-authored context. It must include supporting excerpts and pass the same user-attribution and sensitivity checks.
 - Victoria may refer to a retrieved episode in an ordinary reflection only when it is no more than 90 days old and clearly matches the current topic; old, future-dated, malformed, or unrelated episodes are ignored.
-- Memory learning and summaries are internal. Victoria does not expose a memory-review or memory-edit interface; users correct relevant details naturally in conversation.
+- Memory learning and summaries remain internal. The user manages memory only through ordinary chat language: review, correct, forget a selected fact or all conversational memories, and pause/resume. No separate settings screen offers direct memory changes.
 - On an ordinary financial reflection, Victoria may use a relevant user-stated preference or goal from prior conversations to make its reply more personal, while keeping the language factual and brief.
 - When an ordinary reflection matches a remembered recurring coffee, takeout, or merchant routine, Victoria may refer to that routine and ask what would feel manageable, without inferring a spend amount or treating the routine as approval.
+- Victoria may briefly combine up to four relevant memories in one ordinary reflection. It should leave unrelated preferences and goals out, and ask what the user wants to focus on rather than presenting memory as a conclusion.
 - Both provider features are disabled by default and are currently opt-in only in local development. No provider calls are made by default.
 
 Acceptance criteria:
 
 - Given a stable, explicit preference in an ordinary message, an enabled extractor stores it with the user's evidence and it can be retrieved in a later conversation.
 - Given a relevant remembered preference or goal and an ordinary financial reflection in a later conversation, Victoria shapes its reply around that context; unrelated users do not receive it and it does not create a financial action.
+- Given multiple relevant memories and an ordinary reflection, Victoria may combine up to four in a brief response; unrelated retrieved preferences are omitted and no financial action is created.
 - Given weak, temporary, sensitive, unsupported, quoted, third-party, negated, or hypothetical extraction, no memory is stored.
 - Given extraction or summarization failure, the current chat turn still completes and no financial action is approved.
 - Given the short-term context reaches its limit, a supported episode summary is appended; unsupported or sensitive summaries are discarded.
 - Given a fresh, relevant episode summary is retrieved during a later ordinary reflection, Victoria may briefly reconnect to that prior topic and invite correction; unrelated or more-than-90-day-old episodes are not surfaced.
 - Given the user corrects a learned fact later, the correction is handled through the existing conversational correction flow and history remains append-only.
+- Given the user asks what Victoria remembers, only current memories for that user are summarized in chat.
+- Given the user corrects a remembered fact in chat, Victoria appends a linked correction rather than rewriting the earlier value.
+- Given the user asks Victoria to forget a uniquely matched conversational memory or all conversational memories, Victoria removes the relevant conversational records and embeddings while financial records remain unchanged.
+- Given a forget request could match multiple memories or none, Victoria asks a follow-up and changes nothing.
+- Given the user asks to pause or resume memory in chat, Victoria changes learning and personalization state and confirms the change.
 
 ## Priority Order
 

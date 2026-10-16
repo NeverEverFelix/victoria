@@ -43,6 +43,7 @@ describe("PostgresMemoryRepository semantic memory", () => {
     expect(saved.id).toBe("memory-1");
     expect(database.calls).toHaveLength(2);
     expect(database.calls[0]?.values[1]).toBe("user-a");
+    expect(database.calls[0]?.values.at(-1)).toBe("{}");
     expect(database.calls[1]?.sql).toContain("victoria_memory_embeddings");
     expect(database.calls[1]?.values).toContain("user-a");
     expect(database.calls[1]?.values).toContain("memory-1");
@@ -64,6 +65,37 @@ describe("PostgresMemoryRepository semantic memory", () => {
     expect(database.calls[0]?.sql).toContain("victoria_search_conversational_memories");
     expect(database.calls[0]?.values?.[0]).toBe("user-a");
     expect(database.calls[0]?.values?.[2]).toBe("test-embedding-model");
+  });
+
+  it("delegates explicit memory forgetting to the user-scoped database function", async () => {
+    const database = new ScriptedDatabase((sql) => sql.includes("victoria_forget_conversational_memory") ? [{ deleted: true }] : []);
+    const repository = new PostgresMemoryRepository(database);
+
+    await expect(repository.forgetConversationalMemory("user-a", "memory-a")).resolves.toBe(true);
+    expect(database.calls[0]?.sql).toContain("victoria_forget_conversational_memory($1, $2)");
+    expect(database.calls[0]?.values).toEqual(["user-a", "memory-a"]);
+  });
+
+  it("removes forgotten facts from subsequent semantic retrieval", async () => {
+    let forgotten = false;
+    const database = new ScriptedDatabase((sql) => {
+      if (sql.includes("victoria_forget_conversational_memory")) {
+        forgotten = true;
+        return [{ deleted: true }];
+      }
+      if (sql.includes("victoria_search_conversational_memories") && !forgotten) {
+        return [{ id: "memory-a", category: "habit", key: "coffee", value: "Prefers decaf.",
+          evidence: "User said so.", confidence: 1, createdAt: "2026-10-15T12:00:00.000Z", sourceType: "user_statement" }];
+      }
+      return [];
+    });
+    const repository = new PostgresMemoryRepository(database, 30_000, embeddingProvider);
+
+    await expect(repository.searchConversationalMemories("user-a", "coffee")).resolves.toMatchObject([{ id: "memory-a" }]);
+    await expect(repository.forgetConversationalMemory("user-a", "memory-a")).resolves.toBe(true);
+    await expect(repository.searchConversationalMemories("user-a", "coffee")).resolves.toEqual([]);
+    expect(database.calls.find((call) => call.sql.includes("victoria_forget_conversational_memory"))?.values)
+      .toEqual(["user-a", "memory-a"]);
   });
 
   it("keeps the non-vector fallback user-scoped and excludes superseded or stale profile facts", async () => {

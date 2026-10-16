@@ -32,7 +32,41 @@ export class PostgresMemoryRepository implements MemoryProvider {
   }
 
   async listHabits(userId: string): Promise<UserHabit[]> { void userId; return []; }
-  async listGoals(userId: string): Promise<SavingsGoal[]> { void userId; return []; }
+  async listGoals(userId: string): Promise<SavingsGoal[]> {
+    const result = await this.db.query<{ id: string; name: string; target_amount_cents: number | null; currency: "USD" }>(
+      "SELECT id, name, target_amount_cents, currency FROM victoria_savings_goals WHERE user_id = $1 ORDER BY created_at", [userId]);
+    return result.rows.map((row) => Object.freeze({ userId, id: row.id, name: row.name,
+      ...(row.target_amount_cents === null ? {} : { targetAmountCents: Number(row.target_amount_cents) }),
+      savedAmountCents: 0, currency: row.currency }));
+  }
+
+  async createSavingsGoal(userId: string, goal: Omit<SavingsGoal, "id" | "userId" | "savedAmountCents">, approvedActionId: string): Promise<SavingsGoal> {
+    const name = goal.name.trim();
+    if (!userId.trim() || !name || !approvedActionId.trim() || goal.currency !== "USD" ||
+        (goal.targetAmountCents !== undefined && (!Number.isSafeInteger(goal.targetAmountCents) || goal.targetAmountCents <= 0))) {
+      throw new Error("A savings goal requires a user, name, approved action, optional positive target, and USD currency.");
+    }
+    const id = `goal_${randomUUID()}`;
+    const result = await this.db.query<{ id: string; name: string; target_amount_cents: number | null; currency: "USD" }>(
+      `INSERT INTO victoria_savings_goals (id, user_id, name, target_amount_cents, currency, approved_action_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT DO NOTHING
+       RETURNING id, name, target_amount_cents, currency`,
+      [id, userId, name, goal.targetAmountCents ?? null, goal.currency, approvedActionId]);
+    const row = result.rows[0] ?? (await this.db.query<{ id: string; name: string; target_amount_cents: number | null; currency: "USD"; approved_action_id: string }>(
+      "SELECT id, name, target_amount_cents, currency, approved_action_id FROM victoria_savings_goals WHERE user_id = $1 AND (approved_action_id = $2 OR lower(name) = lower($3)) ORDER BY (approved_action_id = $2) DESC LIMIT 1",
+      [userId, approvedActionId, name])).rows[0];
+    if (!row) throw new Error("PostgreSQL did not return the stored savings goal.");
+    const existingActionId = "approved_action_id" in row ? row.approved_action_id : approvedActionId;
+    if (row.name !== name || (row.target_amount_cents === null ? undefined : Number(row.target_amount_cents)) !== goal.targetAmountCents || row.currency !== goal.currency ||
+        existingActionId !== approvedActionId) {
+      if (existingActionId !== approvedActionId) throw new Error("A savings goal with this name already exists with different details.");
+      throw new Error("An approved action cannot be reused for a different savings goal.");
+    }
+    return Object.freeze({ userId, id: row.id, name: row.name,
+      ...(row.target_amount_cents === null ? {} : { targetAmountCents: Number(row.target_amount_cents) }),
+      savedAmountCents: 0, currency: row.currency });
+  }
 
   async listDecisions(userId: string): Promise<FinancialDecision[]> {
     const result = await this.db.query<{ id: string; decision: Omit<FinancialDecision, "id" | "createdAt">; created_at: string | Date }>(
@@ -134,7 +168,7 @@ export class PostgresMemoryRepository implements MemoryProvider {
          source_record_count AS "sourceRecordCount", source_metadata AS "sourceMetadata"`,
       [id, userId, memory.category, memory.key, memory.value, memory.evidence, memory.confidence,
         memory.supersedesId ?? null, sourceType, memory.observedFrom ?? null, memory.observedThrough ?? null,
-        memory.sourceRecordCount ?? null, memory.sourceMetadata === undefined ? null : JSON.stringify(memory.sourceMetadata)]
+        memory.sourceRecordCount ?? null, JSON.stringify(memory.sourceMetadata ?? {})]
     );
     const saved = result.rows[0];
     if (!saved) throw new Error("PostgreSQL did not return the stored conversational memory.");
@@ -142,6 +176,35 @@ export class PostgresMemoryRepository implements MemoryProvider {
       await this.storeEmbedding(userId, saved.id, `${saved.category}: ${saved.key}. ${saved.value}`);
     }
     return Object.freeze(saved);
+  }
+
+  async forgetConversationalMemory(userId: string, memoryId: string): Promise<boolean> {
+    if (!userId.trim() || !memoryId.trim()) return false;
+    const result = await this.db.query<{ deleted: boolean }>(
+      "SELECT victoria_forget_conversational_memory($1, $2) AS deleted", [userId, memoryId]
+    );
+    return result.rows[0]?.deleted === true;
+  }
+
+  async forgetAllConversationalMemories(userId: string): Promise<number> {
+    if (!userId.trim()) return 0;
+    const result = await this.db.query<{ deleted_count: number }>(
+      "SELECT victoria_forget_all_conversational_memories($1) AS deleted_count", [userId]
+    );
+    return Number(result.rows[0]?.deleted_count ?? 0);
+  }
+
+  async isMemoryPaused(userId: string): Promise<boolean> {
+    const result = await this.db.query<{ memory_paused: boolean }>(
+      "SELECT memory_paused FROM victoria_memory_settings WHERE user_id = $1", [userId]
+    );
+    return result.rows[0]?.memory_paused === true;
+  }
+
+  async setMemoryPaused(userId: string, paused: boolean): Promise<void> {
+    await this.db.query(`INSERT INTO victoria_memory_settings (user_id, memory_paused)
+      VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET memory_paused = EXCLUDED.memory_paused, updated_at = now()`,
+    [userId, paused]);
   }
 
   async rememberFinancialProfile(profile: TransactionFinancialProfile): Promise<readonly ConversationalMemory[]> {

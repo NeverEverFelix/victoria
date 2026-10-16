@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { AgentMemory, FinancialDecision, SavingsGoal, UserHabit } from "../types.js";
 import { DEFAULT_CONVERSATION_CONTEXT_LIMIT, type ConversationalMemory, type MemoryProvider } from "./types.js";
 import { immutableSnapshot } from "../../domain/immutable.js";
@@ -6,6 +7,9 @@ export class MockMemoryProvider implements MemoryProvider {
   private readonly decisionsByUser = new Map<string, FinancialDecision[]>();
   private readonly contextByConversation = new Map<string, readonly string[]>();
   private readonly memoriesByUser = new Map<string, ConversationalMemory[]>();
+  private readonly pausedUsers = new Set<string>();
+  private nextMemoryId = 1;
+  private readonly goalsByAction = new Map<string, SavingsGoal>();
 
   constructor(
     private readonly habits: UserHabit[] = [],
@@ -45,7 +49,29 @@ export class MockMemoryProvider implements MemoryProvider {
   }
 
   async listGoals(userId: string): Promise<SavingsGoal[]> {
-    return this.goals.filter((goal) => goal.userId === userId);
+    return immutableSnapshot(this.goals.filter((goal) => goal.userId === userId));
+  }
+
+  async createSavingsGoal(userId: string, goal: Omit<SavingsGoal, "id" | "userId" | "savedAmountCents">, approvedActionId: string): Promise<SavingsGoal> {
+    const key = `${userId}:${approvedActionId}`;
+    const prior = this.goalsByAction.get(key);
+    if (prior) {
+      if (prior.name !== goal.name || prior.targetAmountCents !== goal.targetAmountCents || prior.currency !== goal.currency) throw new Error("An approved action cannot be reused for a different savings goal.");
+      return immutableSnapshot(prior);
+    }
+    const normalizedName = goal.name.trim();
+    if (!userId.trim() || !normalizedName || (goal.targetAmountCents !== undefined && (!Number.isSafeInteger(goal.targetAmountCents) || goal.targetAmountCents <= 0)) || goal.currency !== "USD") throw new Error("A savings goal requires a user, name, optional positive target, and USD currency.");
+    const same = this.goals.find((item) => item.userId === userId && item.name.toLowerCase() === normalizedName.toLowerCase());
+    if (same) {
+      if (same.targetAmountCents !== goal.targetAmountCents || same.currency !== goal.currency) {
+        throw new Error("A savings goal with this name already exists with different details.");
+      }
+      return immutableSnapshot(same);
+    }
+    const created = immutableSnapshot({ ...goal, id: `goal_${randomUUID()}`, userId, name: normalizedName, savedAmountCents: 0 });
+    this.goals.push(created);
+    this.goalsByAction.set(key, created);
+    return created;
   }
 
   async getConversationContext(userId: string, conversationId: string): Promise<readonly string[]> {
@@ -90,10 +116,45 @@ export class MockMemoryProvider implements MemoryProvider {
       throw new Error("Conversational memory requires a user, key, value, evidence, a valid category, confidence in [0, 1], and a positive safe source record count when provided.");
     }
     const userMemories = this.memoriesByUser.get(userId) ?? [];
-    const saved = immutableSnapshot({ ...memory, id: `memory_${userMemories.length + 1}`, createdAt: new Date().toISOString() });
+    const saved = immutableSnapshot({ ...memory, id: `memory_${this.nextMemoryId++}`, createdAt: new Date().toISOString() });
     userMemories.push(saved);
     this.memoriesByUser.set(userId, userMemories);
     return saved;
+  }
+
+  async forgetConversationalMemory(userId: string, memoryId: string): Promise<boolean> {
+    const memories = this.memoriesByUser.get(userId) ?? [];
+    const target = memories.find((memory) => memory.id === memoryId);
+    if (!target || target.sourceType === "plaid_transaction_profile") return false;
+    const removed = new Set([memoryId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const memory of memories) {
+        if ((memory.supersedesId && removed.has(memory.supersedesId)) ||
+            (typeof memory.sourceMetadata?.correctionOfMemoryId === "string" && removed.has(memory.sourceMetadata.correctionOfMemoryId))) {
+          if (!removed.has(memory.id)) { removed.add(memory.id); changed = true; }
+        }
+        if (memory.supersedesId && removed.has(memory.id) && !removed.has(memory.supersedesId)) {
+          removed.add(memory.supersedesId); changed = true;
+        }
+      }
+    }
+    this.memoriesByUser.set(userId, memories.filter((memory) => !removed.has(memory.id)));
+    return true;
+  }
+
+  async forgetAllConversationalMemories(userId: string): Promise<number> {
+    const memories = this.memoriesByUser.get(userId) ?? [];
+    const kept = memories.filter((memory) => memory.sourceType === "plaid_transaction_profile");
+    this.memoriesByUser.set(userId, kept);
+    return memories.length - kept.length;
+  }
+
+  async isMemoryPaused(userId: string): Promise<boolean> { return this.pausedUsers.has(userId); }
+  async setMemoryPaused(userId: string, paused: boolean): Promise<void> {
+    if (paused) this.pausedUsers.add(userId);
+    else this.pausedUsers.delete(userId);
   }
 }
 
