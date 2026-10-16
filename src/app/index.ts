@@ -16,3 +16,4 @@ export * from "./turns/in-memory-turn-repository.js";
 export * from "./http/submit-turn-handler.js";
 export * from "./http/signed-session-auth.js";
 export * from "./http/victoria-chat-handler.js";
+export * from "./http/memory-controls-handler.js";

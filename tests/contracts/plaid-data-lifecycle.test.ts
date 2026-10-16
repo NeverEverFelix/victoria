@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const lifecycleMigration = readFileSync(new URL("../../db/migrations/0007_plaid_data_lifecycle.sql", import.meta.url), "utf8");
+const profileCorrectionPurgeMigration = readFileSync(new URL("../../db/migrations/0011_plaid_profile_correction_purge.sql", import.meta.url), "utf8");
 const dataRepository = readFileSync(new URL("../../src/app/plaid/plaid-data-repository.ts", import.meta.url), "utf8");
 
 describe("Plaid lifecycle contract", () => {
@@ -29,6 +30,16 @@ describe("Plaid lifecycle contract", () => {
     expect(purgeFunction).toMatch(/GET DIAGNOSTICS removed_embeddings = ROW_COUNT/i);
     expect(purgeFunction).toMatch(/RETURN removed_memories \+ removed_embeddings/i);
     expect(lifecycleMigration).toMatch(/RETURN removed_transactions \+ removed_embeddings \+ removed_memories/i);
+  });
+
+  it("LIFE-003 removes embeddings and correction descendants when a Plaid profile is disconnected", () => {
+    expect(profileCorrectionPurgeMigration).toMatch(/source_type = 'plaid_transaction_profile'/i);
+    expect(profileCorrectionPurgeMigration).toMatch(/linked\.supersedes_id = parent\.id/i);
+    expect(profileCorrectionPurgeMigration).toMatch(/linked\.source_metadata->>'correctionOfMemoryId' = parent\.id/i);
+    expect(profileCorrectionPurgeMigration).toMatch(/DELETE FROM public\.victoria_memory_embeddings/i);
+    expect(profileCorrectionPurgeMigration).toMatch(/DELETE FROM public\.victoria_conversational_memories/i);
+    expect(profileCorrectionPurgeMigration).toMatch(/REVOKE ALL ON FUNCTION public\.victoria_purge_plaid_profile_memories\(text\) FROM PUBLIC, anon, authenticated/i);
+    expect(profileCorrectionPurgeMigration).toMatch(/GRANT EXECUTE ON FUNCTION public\.victoria_purge_plaid_profile_memories\(text\) TO service_role/i);
   });
 
   it("LIFE-004 stores only encrypted token envelopes in the persistent retry record", () => {

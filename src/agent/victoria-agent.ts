@@ -20,6 +20,7 @@ import { immutableSnapshot } from "../domain/immutable.js";
 import type {
   PendingSavingsGoalAllocation,
   SavingsEntry,
+  SavingsGoal,
   SavingsGoalAllocation,
   SavingsApproval
 } from "../domain/savings/types.js";
@@ -46,6 +47,7 @@ import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } f
 import { isRealMoneyMovementRequest } from "./money-movement-intent.js";
 import { isExplicitUserEvidence, validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
 import { isUsableEpisodicSummary, validateEpisodicSummary, type EpisodicMemorySummarizer } from "./memory/episodic-summary.js";
+import { parseMemoryControlIntent } from "./memory/memory-control-intent.js";
 
 export interface VictoriaAgentDependencies {
   llm: LlmAdapter;
@@ -76,6 +78,8 @@ export class VictoriaAgent {
     { userId: string; conversationKey: string; decision: AgentDecision; approval?: SavingsGoalAllocation["approval"] }
   >();
   private readonly pendingGoalAllocationIdsByConversation = new Map<string, string>();
+  private readonly pendingGoalCreations = new Map<string, { userId: string; actionId: string; goal: Omit<SavingsGoal, "userId" | "savedAmountCents"> }>();
+  private nextGoalCreationNumber = 1;
   private readonly pendingEntryCorrections = new Map<string, { userId: string; conversationKey: string; decision: AgentDecision; approvalId?: string }>();
   private readonly pendingEntryCorrectionIdsByConversation = new Map<string, string>();
   private readonly recentSavingsEntriesByConversation = new Map<string, SavingsEntry>();
@@ -113,6 +117,7 @@ export class VictoriaAgent {
   }
 
   private async summarizeOverflowingConversation(userId: string, context: readonly string[]): Promise<void> {
+    if (await this.dependencies.memory.isMemoryPaused(userId)) return;
     const summarizer = this.dependencies.episodicMemorySummarizer;
     if (!summarizer || context.length < DEFAULT_CONVERSATION_CONTEXT_LIMIT) return;
     const userMessages = context.slice(-8)
@@ -134,7 +139,38 @@ export class VictoriaAgent {
   }
 
   private async respondTurn(request: AgentRequest, conversationContext: readonly string[]): Promise<AgentResponse> {
+    const memoryPaused = await this.dependencies.memory.isMemoryPaused(request.userId);
     const conversationKey = this.conversationKey(request);
+    const pendingGoalCreation = this.pendingGoalCreations.get(conversationKey);
+    if (pendingGoalCreation?.userId === request.userId) {
+      const answer = interpretApprovalResponse(request.message);
+      const newGoalStatement = extractConversationalMemory(request.message)?.category === "goal";
+      if (newGoalStatement && answer === "not_approval") this.pendingGoalCreations.delete(conversationKey);
+      else {
+      if (answer === "explicit_approval") {
+        const toolCall = { name: "createSavingsGoal" as const, actionId: pendingGoalCreation.actionId,
+          arguments: { ...pendingGoalCreation.goal }, requiresApproval: true };
+        const allowed = canCallTool({ ...request, approvedActionId: pendingGoalCreation.actionId }, toolCall);
+        if (!allowed.allowed) return this.refuseApproval({ action: "update_goal", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false }, toolCall, userFacingMessage: allowed.reason ?? "I couldn't approve that goal." }, allowed.reason ?? "I couldn't approve that goal.");
+        try {
+          const goal = await this.dependencies.memory.createSavingsGoal(request.userId, pendingGoalCreation.goal, pendingGoalCreation.actionId);
+          this.pendingGoalCreations.delete(conversationKey);
+          const message = `I added “${goal.name}” as a savings goal${goal.targetAmountCents === undefined ? "" : ` with a target of ${formatUsd(goal.targetAmountCents)}`}. This only creates a goal in your mocked savings ledger; no money has moved. You can ask me to allocate a recorded savings entry to it, and I’ll ask for separate confirmation.`;
+          return { message, decision: { action: "update_goal", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false }, savingsGoal: goal, toolCall, userFacingMessage: message } };
+        } catch {
+          const message = "I couldn't add that savings goal just now. It wasn't created; you can ask me to try again.";
+          return { message, decision: { action: "ask_follow_up", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false }, userFacingMessage: message } };
+        }
+      }
+      if (answer === "explicit_decline") {
+        this.pendingGoalCreations.delete(conversationKey);
+        const message = "No problem. I’ll keep it as conversational memory and won’t create a structured savings goal.";
+        return { message, decision: { action: "reflect", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false }, userFacingMessage: message } };
+      }
+      const message = "Would you like me to add that as a structured savings goal? Please answer yes or no.";
+      return { message, decision: { action: "ask_follow_up", classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false }, userFacingMessage: message } };
+      }
+    }
     const pendingCorrectionId = this.pendingEntryCorrectionIdsByConversation.get(conversationKey);
     const pendingCorrection = pendingCorrectionId
       ? this.pendingEntryCorrections.get(pendingCorrectionId)
@@ -161,6 +197,7 @@ export class VictoriaAgent {
     const pendingGoalAction = pendingGoalActionId
       ? this.pendingGoalAllocationActions.get(pendingGoalActionId)
       : undefined;
+
 
     if (pendingGoalAction && pendingGoalActionId) {
       const approvalResponse = interpretApprovalResponse(request.message, pendingGoalAction.decision.goalAllocation?.amountCents);
@@ -275,8 +312,45 @@ export class VictoriaAgent {
       }
     }
 
+    const memoryControl = parseMemoryControlIntent(request.message);
+    if (memoryControl && !pendingCorrection && !pendingGoalAction && !pendingAction) {
+      const memories = await this.dependencies.memory.listConversationalMemories(request.userId);
+      if (memoryControl.type === "pause" || memoryControl.type === "resume") {
+        const paused = memoryControl.type === "pause";
+        await this.dependencies.memory.setMemoryPaused(request.userId, paused);
+        const message = paused
+          ? "Memory is paused. I won't learn or use conversational memories until you ask me to resume."
+          : "Memory is resumed. I can learn from relevant details you share in conversation again.";
+        return this.memoryControlResponse(request, message);
+      }
+      if (memoryControl.type === "forget_all") {
+        const removed = await this.dependencies.memory.forgetAllConversationalMemories(request.userId);
+        const message = `I forgot ${removed} conversational memor${removed === 1 ? "y" : "ies"}. Your financial records and any connected transaction profile are separate.`;
+        return this.memoryControlResponse(request, message);
+      }
+      if (memoryControl.type === "review") {
+        const current = memories.filter((item) => !item.supersedesId || !memories.some((newer) => newer.supersedesId === item.id));
+        const message = current.length
+          ? `Here's what I currently remember:\n${current.map((item) => `• ${item.value}${item.sourceType === "plaid_transaction_profile" ? " (from your connected transaction profile)" : ""}`).join("\n")}\nYou can correct any of this or ask me to forget something.`
+          : "I don't have any current conversational memories saved. You can tell me what to remember, or ask me to pause memory.";
+        return this.memoryControlResponse(request, message);
+      }
+      const query = memoryControl.target.toLocaleLowerCase("en-US").split(/[^a-z0-9]+/).filter((word) => word.length > 2);
+      const candidates = memories.filter((item) => item.sourceType !== "plaid_transaction_profile" &&
+        query.some((word) => `${item.value} ${item.key}`.toLocaleLowerCase("en-US").includes(word)));
+      if (candidates.length !== 1) {
+        const message = candidates.length > 1
+          ? `I found more than one memory that could match. Which one should I forget? ${candidates.map((item) => `“${item.value}”`).join("; „")}`
+          : "I couldn't identify a specific conversational memory to forget. What detail would you like me to forget?";
+        return this.memoryControlResponse(request, message, "ask_follow_up");
+      }
+      await this.dependencies.memory.forgetConversationalMemory(request.userId, candidates[0]!.id);
+      return this.memoryControlResponse(request, `I forgot “${candidates[0]!.value}”.`);
+    }
+
+
     const spendCorrection = extractConversationalSpendCorrection(request.message);
-    if (spendCorrection && !pendingCorrection && !pendingGoalAction && !pendingAction) {
+    if (spendCorrection && !memoryPaused && !pendingCorrection && !pendingGoalAction && !pendingAction) {
       return this.correctRememberedSpendFromConversation(request, conversationContext, spendCorrection);
     }
 
@@ -306,7 +380,7 @@ export class VictoriaAgent {
       };
     }
 
-    const extractedCandidate = extractConversationalMemory(request.message);
+    const extractedCandidate = memoryPaused ? null : extractConversationalMemory(request.message);
     const extractedMemory = extractedCandidate && extractedCandidate.evidence.length <= 240 &&
       isExplicitUserEvidence(request.message, extractedCandidate.evidence) ? extractedCandidate : null;
     if (extractedMemory) {
@@ -366,6 +440,16 @@ export class VictoriaAgent {
           decision: { action: "ask_follow_up", classification, userFacingMessage: followUp }
         };
       }
+      if (memoryToRemember.category === "goal") {
+        const name = memoryToRemember.key === "emergency_fund" ? "Emergency fund" : goalNameFromMemoryKey(memoryToRemember.key);
+        const amountMatch = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)/.exec(request.message);
+        const targetAmountCents = amountMatch?.[1] ? Math.round(Number(amountMatch[1].replaceAll(",", "")) * 100) : undefined;
+        const actionId = `savings_goal_create_${this.nextGoalCreationNumber++}`;
+        this.pendingGoalCreations.set(conversationKey, { userId: request.userId, actionId,
+          goal: { id: `goal_pending_${this.nextGoalCreationNumber - 1}`, name, ...(targetAmountCents ? { targetAmountCents } : {}), currency: "USD" } });
+        const prompt = `I’ll remember that goal. Would you like me to add “${name}”${targetAmountCents ? ` with a target of ${formatUsd(targetAmountCents)}` : ""} as a structured savings goal? Please answer yes or no. Creating the goal won’t move money, and allocating recorded savings will still need separate confirmation.`;
+        return { message: prompt, decision: { action: "ask_follow_up", classification, userFacingMessage: prompt } };
+      }
       return { message, decision: { action: "reflect", classification, userFacingMessage: message } };
     }
 
@@ -373,7 +457,7 @@ export class VictoriaAgent {
     const { classification, teamAdvice } = await this.classifyWithTeam(
       request.message, memory, conversationContext
     );
-    if (classification.type === "general_finance" && this.dependencies.conversationalMemoryExtractor &&
+    if (!memoryPaused && classification.type === "general_finance" && this.dependencies.conversationalMemoryExtractor &&
         !pendingCorrection && !pendingGoalAction && !pendingAction) {
       try {
         const candidates = await this.dependencies.conversationalMemoryExtractor.extract({ userMessage: request.message });
@@ -682,6 +766,17 @@ export class VictoriaAgent {
     return { message, decision: { action: "reflect", classification, userFacingMessage: message } };
   }
 
+  private memoryControlResponse(
+    request: AgentRequest,
+    message: string,
+    action: "reflect" | "ask_follow_up" = "reflect"
+  ): AgentResponse {
+    const classification: ClassifiedMessage = {
+      type: "general_finance", confidence: 1, summary: request.message, needsClarification: action === "ask_follow_up"
+    };
+    return { message, decision: { action, classification, userFacingMessage: message } };
+  }
+
   private async classifyWithTeam(
     message: string,
     memory: Awaited<ReturnType<MemoryProvider["getMemoryForUser"]>>,
@@ -945,6 +1040,7 @@ export class VictoriaAgent {
   }
 
   private async findRememberedMerchantSpend(userId: string, merchantName: string): Promise<number | undefined> {
+    if (await this.dependencies.memory.isMemoryPaused(userId)) return undefined;
     const memories = await this.dependencies.memory.listConversationalMemories(userId);
     const key = merchantSpendMemoryKey(merchantName);
     const memory = [...memories].reverse().find((item) => item.category === "habit" && item.key === key && item.confidence >= 0.8);
@@ -955,6 +1051,7 @@ export class VictoriaAgent {
   }
 
   private async findRememberedMerchantHabit(userId: string, merchantName: string): Promise<string | undefined> {
+    if (await this.dependencies.memory.isMemoryPaused(userId)) return undefined;
     const memories = await this.dependencies.memory.listConversationalMemories(userId);
     const key = merchantHabitMemoryKey(merchantName);
     return [...memories].reverse().find((item) => item.category === "habit" &&
@@ -967,6 +1064,7 @@ export class VictoriaAgent {
     amountCents: number,
     answer: string
   ): Promise<void> {
+    if (await this.dependencies.memory.isMemoryPaused(userId)) return;
     if (!Number.isSafeInteger(amountCents) || amountCents <= 0) return;
     const memories = await this.dependencies.memory.listConversationalMemories(userId);
     const key = merchantSpendMemoryKey(merchantName);
@@ -1603,43 +1701,71 @@ function personalizeOrdinaryFinancialReply(
   userMessage: string
 ): string | undefined {
   const memories = memory.conversationalMemories ?? [];
+  const details: string[] = [];
   const routine = memories.find((item) => isRelevantRecurringRoutine(item, userMessage));
-  if (routine) {
-    const routineName = describeRecurringRoutine(routine.key);
-    if (routineName) {
-      return `I remember you’ve mentioned your ${routineName} routine. We can think through what would feel manageable this time. What’s been making it difficult?`;
-    }
-  }
+  const routineName = routine && describeRecurringRoutine(routine.key);
+  if (routineName) details.push(`your ${routineName} routine`);
 
   const goal = memories.find((item) => item.category === "goal" &&
-    (item.key === "emergency_fund" || item.key.startsWith("goal:")));
-  if (goal) {
-    const target = goal.key === "emergency_fund"
-      ? "an emergency fund"
-      : formatRememberedGoalTarget(goal.key.slice("goal:".length));
-    if (target) {
-      return `I’m here with you. You’ve mentioned saving for ${target}; we can keep that in mind as we talk this through. What feels most important right now?`;
-    }
-  }
+    (item.key === "emergency_fund" || item.key.startsWith("goal:")) &&
+    /\b(?:save|saving|goal|budget|money|financial|fund)\b/i.test(userMessage));
+  const goalTarget = goal && (goal.key === "emergency_fund"
+    ? "an emergency fund"
+    : formatRememberedGoalTarget(goal.key.slice("goal:".length)));
+  if (goalTarget) details.push(`your goal of saving for ${goalTarget}`);
 
-  const preference = memories.find((item) => item.category === "preference");
-  if (preference) {
-    const preferredApproach = preference.key.startsWith("preference:")
-      ? preference.key.slice("preference:".length).replace(/_/g, " ").replace(/[^a-z0-9 '$.,&-]/gi, "").trim().slice(0, 60)
-      : preference.evidence.match(/\bi\s+(?:would\s+|’d\s+)?prefer\s+(?:a\s+|an\s+|the\s+)?([^.!?]+)/i)?.[1]
-        ?? preference.evidence.match(/\b([a-z][^,.!?]{1,50}?)\s+(?:is|are)\s+easier\s+for\s+me\b/i)?.[1]
-          ?.replace(/^.*\bso\s+/i, "");
-    const safePreferredApproach = preferredApproach
-      ?.replace(/[^a-z0-9 '$.,&-]/gi, "").trim().slice(0, 60);
-    if (safePreferredApproach) {
-      return `I’ll keep your preference for ${safePreferredApproach} in mind. What would be most helpful right now?`;
-    }
-  }
+  const preference = memories.find((item) => item.category === "preference" && memoryTextMatchesMessage(item, userMessage));
+  const preferenceDescription = preference && describeRememberedPreference(preference);
+  if (preferenceDescription) details.push(`your preference for ${preferenceDescription}`);
 
   const episode = memories.find((item) => isUsableEpisodicSummary(item, userMessage));
-  return episode
-    ? `I have a note from an earlier conversation: “${episode.value}” Is that still relevant, or has something changed?`
-    : fallbackMessage;
+  if (episode && details.length < 4) details.push(`what you shared before: “${sanitizeMemoryEvidence(episode.value)}”`);
+
+  if (details.length === 0) return fallbackMessage;
+  if (details.length === 1 && routineName) {
+    return `I remember you’ve mentioned your ${routineName} routine. We can think through what would feel manageable this time. What’s been making it difficult?`;
+  }
+  if (details.length === 1 && goalTarget) {
+    return `I’m here with you. You’ve mentioned saving for ${goalTarget}; we can keep that in mind as we talk this through. What feels most important right now?`;
+  }
+  if (details.length === 1 && preferenceDescription) {
+    return `I’ll keep your preference for ${preferenceDescription} in mind. What would be most helpful right now?`;
+  }
+  if (details.length === 1 && episode) {
+    return `I have a note from an earlier conversation: “${sanitizeMemoryEvidence(episode.value)}” Is that still relevant, or has something changed?`;
+  }
+  return `You’ve mentioned ${details.slice(0, 4).join(" and ")}. What would feel most helpful to focus on right now?`;
+}
+
+function describeRememberedPreference(preference: import("./memory/types.js").ConversationalMemory): string | undefined {
+  const raw = preference.key.startsWith("preference:")
+    ? preference.key.slice("preference:".length).replace(/_/g, " ")
+    : preference.evidence.match(/\bi\s+(?:would\s+|’d\s+)?prefer\s+(?:a\s+|an\s+|the\s+)?([^.!?]+)/i)?.[1]
+      ?? preference.evidence.match(/\b([a-z][^,.!?]{1,50}?)\s+(?:is|are)\s+easier\s+for\s+me\b/i)?.[1]?.replace(/^.*\bso\s+/i, "");
+  const safe = raw?.replace(/[^a-z0-9 '$.,&-]/gi, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+  return safe || undefined;
+}
+
+const PERSONALIZATION_STOP_WORDS = new Set([
+  "about", "after", "again", "before", "being", "could", "feel", "feels", "from", "have", "help", "here",
+  "just", "like", "make", "making", "maybe", "more", "much", "need", "really", "some", "that", "them",
+  "then", "they", "this", "through", "want", "what", "when", "with", "would", "your", "money", "financial"
+]);
+
+function memoryTextMatchesMessage(memory: import("./memory/types.js").ConversationalMemory, message: string): boolean {
+  const terms = (value: string) => new Set(value.toLocaleLowerCase("en-US").match(/[a-z]{4,}/g)
+    ?.filter((term) => !PERSONALIZATION_STOP_WORDS.has(term)) ?? []);
+  const messageTerms = terms(message);
+  const memoryTerms = terms(`${memory.key.replace(/[_:]/g, " ")} ${memory.value} ${memory.evidence}`);
+  return [...memoryTerms].some((term) => messageTerms.has(term));
+}
+
+function goalNameFromMemoryKey(key: string): string {
+  const topic = key.replace(/^goal:/, "").trim();
+  const formatted = formatRememberedGoalTarget(topic).replace(/^a /i, "");
+  return formatted.split(/\s+/).map((word, index) => word && index > 0 && ["to", "for", "of"].includes(word.toLowerCase())
+    ? word.toLowerCase()
+    : word ? `${word[0]?.toLocaleUpperCase("en-US")}${word.slice(1)}` : "").join(" ").slice(0, 120) || "Savings goal";
 }
 
 function isRelevantRecurringRoutine(

@@ -61,12 +61,32 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
     return saved;
   }
 
+  async forgetConversationalMemory(userId: string, memoryId: string): Promise<boolean> {
+    const removed = await this.durable.forgetConversationalMemory(userId, memoryId);
+    if (removed) this.db.prepare("DELETE FROM memory_cache WHERE user_id = ?").run(userId);
+    return removed;
+  }
+
+  async forgetAllConversationalMemories(userId: string): Promise<number> {
+    const removed = await this.durable.forgetAllConversationalMemories(userId);
+    this.invalidateUserMemoryCache(userId);
+    return removed;
+  }
+  isMemoryPaused(userId: string): Promise<boolean> { return this.durable.isMemoryPaused(userId); }
+  setMemoryPaused(userId: string, paused: boolean): Promise<void> {
+    this.invalidateUserMemoryCache(userId);
+    return this.durable.setMemoryPaused(userId, paused);
+  }
+
   invalidateUserMemoryCache(userId: string): void {
     this.db.prepare("DELETE FROM memory_cache WHERE user_id = ?").run(userId);
   }
 
   listHabits(userId: string): Promise<UserHabit[]> { return this.durable.listHabits(userId); }
   listGoals(userId: string): Promise<SavingsGoal[]> { return this.durable.listGoals(userId); }
+  createSavingsGoal(userId: string, goal: Omit<SavingsGoal, "userId" | "savedAmountCents">, approvedActionId: string): Promise<SavingsGoal> {
+    return this.durable.createSavingsGoal(userId, goal, approvedActionId);
+  }
 
   async getConversationContext(userId: string, conversationId: string): Promise<readonly string[]> {
     const row = this.db.prepare(`SELECT messages, expires_at FROM conversation_context_cache

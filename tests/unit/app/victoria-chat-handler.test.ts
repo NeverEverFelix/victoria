@@ -134,6 +134,55 @@ describe("Victoria chat HTTP boundary", () => {
     expect(otherUserBody.message).not.toContain("$50");
   });
 
+  it("shares the local mock runtime across route compositions for the same session secret", () => {
+    const authSecret = `${secret}-shared-runtime`;
+    const first = getLocalMockVictoriaRuntime({ APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: authSecret });
+    const second = getLocalMockVictoriaRuntime({ APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: authSecret });
+
+    expect(first).not.toBeNull();
+    expect(second).toBe(first);
+  });
+
+  it("reviews, corrects, and forgets learned memory through signed local controls", async () => {
+    const authSecret = `${secret}-memory-controls`;
+    const localRuntime = getLocalMockVictoriaRuntime({
+      APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: authSecret
+    });
+    expect(localRuntime).not.toBeNull();
+    const token = signVictoriaSession({ userId: "controls-user", secret: authSecret });
+    const collection = new Request("https://victoria.local/api/victoria/settings/memories", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    await localRuntime!.handler(chatRequest(token, "learn-memory", "I prefer saving $20 rather than $50 at a time."), { conversationId: "learn-memory" });
+    const listed = await localRuntime!.memoryControlsCollectionHandler(collection);
+    const listedBody = await listed.json() as { memories: Array<{ id: string; value: string }> };
+    expect(listedBody.memories).toMatchObject([{ value: expect.stringContaining("$20.00 rather than $50.00") }]);
+    const memoryId = listedBody.memories[0]!.id;
+
+    const edited = await localRuntime!.memoryControlHandler(new Request(`https://victoria.local/api/victoria/settings/memories/${memoryId}`, {
+      method: "PUT", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ value: "Prefers saving $15 at a time." })
+    }), memoryId);
+    expect(edited.status).toBe(200);
+    expect(await edited.json()).toMatchObject({ memory: { value: "Prefers saving $15 at a time." } });
+
+    const currentResponse = await localRuntime!.memoryControlsCollectionHandler(collection);
+    const currentBody = await currentResponse.json() as { memories: Array<{ id: string; value: string }> };
+    const currentMemory = currentBody.memories[0]!;
+    const forgotten = await localRuntime!.memoryControlHandler(new Request(`https://victoria.local/api/victoria/settings/memories/${currentMemory.id}`, {
+      method: "DELETE", headers: { authorization: `Bearer ${token}` }
+    }), currentMemory.id);
+    expect(forgotten.status).toBe(200);
+    expect(await (await localRuntime!.memoryControlsCollectionHandler(collection)).json()).toEqual({ paused: false, memories: [] });
+
+    const otherToken = signVictoriaSession({ userId: "controls-other-user", secret: authSecret });
+    const otherCollection = new Request("https://victoria.local/api/victoria/settings/memories", {
+      headers: { authorization: `Bearer ${otherToken}` }
+    });
+    expect(await (await localRuntime!.memoryControlsCollectionHandler(otherCollection)).json()).toEqual({ paused: false, memories: [] });
+  });
+
   it("keeps pending savings approval scoped to its conversation and supports a return visit", async () => {
     const authSecret = `${secret}-pending-return`;
     const localRuntime = getLocalMockVictoriaRuntime({

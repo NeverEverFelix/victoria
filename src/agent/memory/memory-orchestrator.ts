@@ -20,6 +20,10 @@ export class InvalidMemoryCorrectionError extends Error {
   constructor() { super("A non-empty memory correction of at most 1000 characters is required."); this.name = "InvalidMemoryCorrectionError"; }
 }
 
+export class ManagedProfileMemoryError extends Error {
+  constructor() { super("Transaction-profile memories are managed by the connected financial profile. Disconnect or delete that profile to remove them."); this.name = "ManagedProfileMemoryError"; }
+}
+
 /**
  * Coordinates durable semantic memories, SQLite short-term context, and derived financial profiles.
  * It owns memory lifecycle policy while storage adapters own persistence and vector search.
@@ -36,12 +40,21 @@ export class MemoryOrchestrator implements MemoryProvider {
 
   async getMemoryForUser(userId: string, query?: string): Promise<AgentMemory> {
     const memory = await this.storage.getMemoryForUser(userId, query);
+    if (await this.isMemoryPaused(userId)) return Object.freeze({
+      ...memory,
+      conversationalMemories: Object.freeze((memory.conversationalMemories ?? [])
+        .filter((item) => item.sourceType === "plaid_transaction_profile"))
+    });
     const candidates = memory.conversationalMemories ?? [];
     const current = await this.currentMemoryIds(userId);
     return Object.freeze({
       ...memory,
       conversationalMemories: Object.freeze(this.selectCurrent(candidates, current))
     });
+  }
+
+  createSavingsGoal(userId: string, goal: Omit<SavingsGoal, "userId" | "savedAmountCents">, approvedActionId: string): Promise<SavingsGoal> {
+    return this.storage.createSavingsGoal(userId, goal, approvedActionId);
   }
 
   async rememberConversationalMemory(
@@ -66,6 +79,7 @@ export class MemoryOrchestrator implements MemoryProvider {
     if (!value || value.length > 1000) throw new InvalidMemoryCorrectionError();
     const target = (await this.listCurrentStoredMemories(userId)).find((memory) => memory.id === memoryId);
     if (!target) throw new MemoryNotFoundError();
+    if (target.sourceType === "plaid_transaction_profile") throw new ManagedProfileMemoryError();
     const corrected = await this.rememberConversationalMemory(userId, {
       category: target.category,
       key: target.key,
@@ -79,6 +93,34 @@ export class MemoryOrchestrator implements MemoryProvider {
     await this.invalidateCachedMemory(userId);
     return corrected;
   }
+
+  async forgetMemory(userId: string, memoryId: string): Promise<void> {
+    if (!userId.trim() || !memoryId.trim()) throw new MemoryNotFoundError();
+    const target = (await this.listCurrentStoredMemories(userId)).find((memory) => memory.id === memoryId);
+    if (!target) throw new MemoryNotFoundError();
+    if (target.sourceType === "plaid_transaction_profile") throw new ManagedProfileMemoryError();
+    const removed = await this.forgetConversationalMemory(userId, memoryId);
+    if (!removed) throw new MemoryNotFoundError();
+  }
+
+  async forgetConversationalMemory(userId: string, memoryId: string): Promise<boolean> {
+    const target = (await this.listCurrentStoredMemories(userId)).find((memory) => memory.id === memoryId);
+    if (!target) return false;
+    if (target.sourceType === "plaid_transaction_profile") throw new ManagedProfileMemoryError();
+    const removed = await this.storage.forgetConversationalMemory(userId, memoryId);
+    if (removed) await this.invalidateCachedMemory(userId);
+    return removed;
+  }
+
+  async forgetAllConversationalMemories(userId: string): Promise<number> {
+    if (!userId.trim()) return 0;
+    const removed = await this.storage.forgetAllConversationalMemories(userId);
+    await this.invalidateCachedMemory(userId);
+    return removed;
+  }
+
+  isMemoryPaused(userId: string): Promise<boolean> { return this.storage.isMemoryPaused(userId); }
+  setMemoryPaused(userId: string, paused: boolean): Promise<void> { return this.storage.setMemoryPaused(userId, paused); }
 
   async rememberTransactionCorrection(input: {
     readonly userId: string;
@@ -128,11 +170,15 @@ export class MemoryOrchestrator implements MemoryProvider {
 
   async searchConversationalMemories(userId: string, query: string, limit = this.maxMemoriesPerTurn): Promise<readonly ConversationalMemory[]> {
     if (!userId.trim() || !query.trim()) return [];
+    const memoryPaused = await this.isMemoryPaused(userId);
     const [candidates, current] = await Promise.all([
       this.storage.searchConversationalMemories(userId, query, Math.max(limit, this.maxMemoriesPerTurn)),
       this.currentMemoryIds(userId)
     ]);
-    return Object.freeze(this.selectCurrent(candidates, current, limit));
+    const results = this.selectCurrent(candidates, current, limit);
+    return Object.freeze(memoryPaused
+      ? results.filter((item) => item.sourceType === "plaid_transaction_profile")
+      : results);
   }
 
   rememberDecision(userId: string, decision: Omit<FinancialDecision, "id" | "createdAt">): Promise<FinancialDecision> {

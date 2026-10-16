@@ -124,6 +124,10 @@ CREATE TRIGGER victoria_memory_embeddings_immutable
   BEFORE UPDATE OR DELETE ON victoria_memory_embeddings
   FOR EACH ROW EXECUTE FUNCTION victoria_reject_conversational_memory_mutation();
 
+REVOKE ALL ON FUNCTION victoria_search_conversational_memories(text, extensions.vector, text, integer)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE USAGE ON SCHEMA extensions FROM PUBLIC, anon;
+GRANT USAGE ON SCHEMA extensions TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION victoria_search_conversational_memories(text, extensions.vector, text, integer)
   TO authenticated, service_role;
 GRANT SELECT ON victoria_conversational_memories, victoria_memory_embeddings TO authenticated;

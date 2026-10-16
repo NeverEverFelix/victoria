@@ -5,6 +5,18 @@ import { MockProfileTransactionHistoryProvider } from "../../../src/app/financia
 import { MockTransactionHistoryProvider } from "../../fixtures/mock-transaction-history-provider.js";
 
 describe("explicit savings preference memory", () => {
+  it("does not learn new conversational memories while memory is paused", async () => {
+    const memory = new MockMemoryProvider();
+    await memory.setMemoryPaused("user_paused_learning", true);
+    const tools = new MockVictoriaTools();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools });
+
+    const response = await agent.respond({ userId: "user_paused_learning", message: "I prefer afternoon reminders." });
+
+    expect(response.message).not.toContain("I'll remember");
+    expect(await memory.listConversationalMemories("user_paused_learning")).toEqual([]);
+  });
+
   it("does not persist direct-extractor evidence containing contact details", async () => {
     const memory = new MockMemoryProvider();
     const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
@@ -591,7 +603,7 @@ describe("general conversational memory extraction", () => {
     expect(later.decision.suggestion).toMatchObject({ amountCents: 700, source: "manual_estimate" });
   });
 
-  it("[MEM-002] remembers explicit preferences, recurring habits, and stated goals without financial actions", async () => {
+  it("[MEM-002] remembers facts and asks before creating a structured savings goal", async () => {
     const memory = new MockMemoryProvider();
     const tools = new MockVictoriaTools();
     const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools });
@@ -599,7 +611,8 @@ describe("general conversational memory extraction", () => {
 
     await agent.respond({ userId, message: "I prefer a short weekly savings goal." });
     await agent.respond({ userId, message: "I usually make coffee at home on weekdays." });
-    await agent.respond({ userId, message: "My goal is to save $1,000 for a trip to Japan." });
+    const goalPrompt = await agent.respond({ userId, message: "My goal is to save $1,000 for a trip to Japan." });
+    expect(goalPrompt.message).toContain("Would you like me to add");
 
     const facts = await memory.listConversationalMemories(userId);
     expect(facts.map((fact) => fact.category)).toEqual(["preference", "habit", "goal"]);
@@ -609,6 +622,30 @@ describe("general conversational memory extraction", () => {
     expect(facts[2]?.value.toLowerCase()).toContain("trip to japan");
     expect(await tools.listSavingsEntries(userId)).toEqual([]);
     expect(await tools.listSavingsGoalAllocations(userId)).toEqual([]);
+    expect(await memory.listGoals(userId)).toEqual([]);
+    const created = await agent.respond({ userId, message: "Yes" });
+    expect(created.decision.savingsGoal).toMatchObject({ name: "Trip to Japan", targetAmountCents: 100000, savedAmountCents: 0 });
+    expect(await memory.listGoals(userId)).toHaveLength(1);
+    expect(await tools.listSavingsGoalAllocations(userId)).toEqual([]);
+  });
+
+  it("does not create a structured goal when the user declines", async () => {
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
+    await agent.respond({ userId: "goal_decline", message: "My goal is to save for a new laptop." });
+    const declined = await agent.respond({ userId: "goal_decline", message: "No" });
+    expect(declined.message).toContain("won’t create a structured savings goal");
+    expect(await memory.listGoals("goal_decline")).toEqual([]);
+  });
+
+  it("keeps structured goals isolated and makes confirmed creation idempotent", async () => {
+    const memory = new MockMemoryProvider();
+    const first = await memory.createSavingsGoal("goal_owner", { id: "g1", name: "Emergency fund", targetAmountCents: 50000, currency: "USD" }, "approved_goal_action");
+    const retry = await memory.createSavingsGoal("goal_owner", { id: "g1", name: "Emergency fund", targetAmountCents: 50000, currency: "USD" }, "approved_goal_action");
+    expect(retry).toEqual(first);
+    expect(await memory.listGoals("another_user")).toEqual([]);
+    await expect(memory.createSavingsGoal("goal_owner", { id: "g2", name: "Vacation", currency: "USD" }, "approved_goal_action"))
+      .rejects.toThrow("cannot be reused");
   });
 
   it("uses a relevant remembered goal to personalize an ordinary reply in a later conversation", async () => {
@@ -671,6 +708,46 @@ describe("general conversational memory extraction", () => {
       message: "I'm struggling with my Friday lunch routine and feel stuck."
     });
     expect(otherUserReply.message).not.toContain("DoorDash");
+  });
+
+  it("combines a relevant routine and goal while leaving unrelated preferences out", async () => {
+    const memory = new MockMemoryProvider();
+    await memory.rememberConversationalMemory("user_synthesis", {
+      category: "habit", key: "merchant_habit:doordash", value: "Orders lunch from DoorDash on Fridays.",
+      evidence: "I usually order lunch from DoorDash on Fridays.", confidence: 0.95
+    });
+    await memory.rememberConversationalMemory("user_synthesis", {
+      category: "goal", key: "goal:trip_japan", value: "Save for a trip to Japan.",
+      evidence: "My goal is to save for a trip to Japan.", confidence: 1
+    });
+    await memory.rememberConversationalMemory("user_synthesis", {
+      category: "preference", key: "reminder_time", value: "Prefers afternoon reminders.",
+      evidence: "I prefer afternoon reminders.", confidence: 1
+    });
+    await memory.rememberConversationalMemory("user_synthesis", {
+      category: "preference", key: "preference:weekend_savings_routine", value: "Prefers a steady weekend savings routine.",
+      evidence: "I prefer a steady weekend savings routine.", confidence: 1
+    });
+    await memory.rememberConversationalMemory("user_synthesis", {
+      category: "other", key: "episode:weekend_savings", value: "The user is exploring a steady weekend savings routine.",
+      evidence: "I want to build a steady weekend savings routine.", confidence: 0.93,
+      sourceType: "system_inference", sourceMetadata: { memoryKind: "episodic_summary", evidenceCount: 1 }
+    });
+    const tools = new MockVictoriaTools();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools });
+
+    const reply = await agent.respond({
+      userId: "user_synthesis", conversationId: "later",
+      message: "I'm stuck on my Friday DoorDash lunch and saving for my trip. I've also been thinking about my weekend savings routine."
+    });
+
+    expect(reply.message).toContain("DoorDash routine");
+    expect(reply.message).toContain("saving for a trip to Japan");
+    expect(reply.message).toContain("steady weekend savings routine");
+    expect(reply.message).not.toContain("afternoon reminders");
+    expect(reply.decision.action).toBe("reflect");
+    expect(reply.decision.suggestion).toBeUndefined();
+    expect(await tools.listSavingsEntries("user_synthesis")).toEqual([]);
   });
 
   it("remembers recurring habits separately for each named merchant", async () => {

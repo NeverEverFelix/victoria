@@ -85,6 +85,7 @@ export interface AgentDecision {
   proposal?: SavingsProposal;
   proposalTransitions?: readonly SavingsProposalTransition[];
   goalAllocation?: PendingSavingsGoalAllocation | SavingsGoalAllocation;
+  savingsGoal?: SavingsGoal;
   entryCorrection?: SavingsEntryCorrection | PendingSavingsEntryCorrection;
   suggestion?: SavingsSuggestion;
   toolCall?: ToolCallRequest;
@@ -124,4 +125,5 @@ export type VictoriaToolName =
   | "getWeeklySavingsTotal"
   | "createSavingsGoalAllocation"
   | "createSavingsEntryCorrection"
+  | "createSavingsGoal"
   | "eventuallyMoveMoney";
