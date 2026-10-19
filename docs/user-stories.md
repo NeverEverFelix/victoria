@@ -381,7 +381,7 @@ Expected behavior:
 - Victoria appends the user's correction as evidence and links it to the prior fact where available; prior history is not rewritten.
 - If multiple facts could be the target, Victoria asks which purchase or day the user means and stores nothing until clear.
 - The correction only changes conversational understanding. It does not update bank history, propose savings, or create a ledger entry.
-- Victoria does not expose a memory-review or memory-edit interface.
+- Victoria does not expose a memory-management UI. Server-side memory endpoints are specified in Story 16.
 
 Acceptance criteria:
 
@@ -401,7 +401,7 @@ Expected behavior:
 - Quoted or third-party claims, negations, hypotheticals, temporary states, transaction details, and sensitive personal information are not retained through this path.
 - When short-term conversation context reaches its 20-message limit, an optional summarizer may append a compact episode summary from bounded user-authored context. It must include supporting excerpts and pass the same user-attribution and sensitivity checks.
 - Victoria may refer to a retrieved episode in an ordinary reflection only when it is no more than 90 days old and clearly matches the current topic; old, future-dated, malformed, or unrelated episodes are ignored.
-- Memory learning and summaries are internal. Victoria does not expose a memory-review or memory-edit interface; users correct relevant details naturally in conversation.
+- Memory learning and summaries are internal. Authenticated server endpoints let users inspect, correct, or forget individual current facts; no UI or bulk-delete endpoint is included in this slice.
 - On an ordinary financial reflection, Victoria may use a relevant user-stated preference or goal from prior conversations to make its reply more personal, while keeping the language factual and brief.
 - When an ordinary reflection matches a remembered recurring coffee, takeout, or merchant routine, Victoria may refer to that routine and ask what would feel manageable, without inferring a spend amount or treating the routine as approval.
 - Both provider features are disabled by default and are currently opt-in only in local development. No provider calls are made by default.
@@ -415,6 +415,33 @@ Acceptance criteria:
 - Given the short-term context reaches its limit, a supported episode summary is appended; unsupported or sensitive summaries are discarded.
 - Given a fresh, relevant episode summary is retrieved during a later ordinary reflection, Victoria may briefly reconnect to that prior topic and invite correction; unrelated or more-than-90-day-old episodes are not surfaced.
 - Given the user corrects a learned fact later, the correction is handled through the existing conversational correction flow and history remains append-only.
+
+## Story 16: Manage Remembered Facts Through Authenticated Server Endpoints
+
+As a user, I want to inspect, correct, or forget a remembered fact so I can keep Victoria's personalization accurate and under my control.
+
+Expected behavior:
+
+- `GET /api/memories` returns a page of the authenticated user's current, fresh memories and bounded provenance fields; `limit` is capped at 100 and `cursor` continues the stable keyset page.
+- `PATCH /api/memories` accepts exactly one current `memoryId` and a non-empty corrected value; it appends a linked correction and preserves the original record.
+- `POST /api/memories/{memoryId}/forget` appends a linked suppression marker so the fact is excluded from future retrieval.
+- The API verifies the Supabase Auth bearer token server-side and never accepts a user ID from the request body or URL.
+- In local persistent development only, inspection, correction, and single-fact forgetting may use the existing signed local chat session; this adds no sign-in or session-issuing flow.
+- Forgetting suppresses conversational recall; it does not physically erase the source record, its embedding, Plaid transactions, or provider history. Responses say that historical memory remains stored.
+- There is no bulk-delete endpoint in this slice.
+- Memory controls are server-side only; no user-facing page or component is added.
+- The Vercel runtime uses PostgreSQL directly for durable memory/context and does not rely on local filesystem state.
+
+Acceptance criteria:
+
+- An unauthenticated or invalid-token request cannot inspect or mutate memories.
+- A valid user can list only their current memories; another user's facts never appear.
+- A valid correction appends a linked user-correction fact and the prior fact remains in history.
+- A valid forget request removes the selected fact from subsequent retrieval while preserving history and embedding rows.
+- Repeated forget requests and unknown/foreign memory IDs do not create extra mutations or reveal whether another user owns an ID.
+- Memory-list cursors are validated, stable across new inserts, and remain scoped to the authenticated user.
+- Malformed, oversized, or extra-field correction bodies are rejected without writing memory.
+- No route accepts a user ID parameter, and no bulk deletion route exists.
 
 ## Priority Order
 

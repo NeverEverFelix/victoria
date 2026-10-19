@@ -71,6 +71,9 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Returned event, suggestion, proposal, approval, correction, allocation, and entry snapshots cannot be mutated by callers; changing a habit only affects later suggestions.
 - Habits, goals, and remembered decisions supplied for one user never appear in another user's memory or affect their merchant estimates.
 - A goal allocation after a correction uses the entry's current effective amount, while preserving the original entry amount in history.
+- Local PostgreSQL mode persists approved goal allocations across tool/runtime instances, returns an identical allocation on retry, rejects changed action details, and leaves the linked entry unchanged.
+- A pending goal-allocation proposal resumes after runtime restart with the same action and approval IDs; approval records one allocation, while decline remains terminal and records none.
+- Local PostgreSQL mode persists an approved savings correction across a tool/runtime restart, applies its signed adjustment to effective amount and weekly total reads, and allows goal allocation against the corrected amount without mutating the original entry.
 - Victoria represents a correction or reversal as a new record linked to the original.
 - Correcting a recorded amount requires exact approval, appends a signed adjustment, and leaves the original entry unchanged.
 - Corrections reject invalid, no-op, cross-user, non-completed, or non-mocked targets, and effective weekly totals retain the original entry's week.
@@ -101,6 +104,13 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria can use updated memory for a future suggestion without rewriting an earlier suggestion.
 - PostgreSQL is authoritative for remembered decisions, while SQLite caches those durable reads.
 - Current conversation context is short-term SQLite memory, scoped by user and conversation, retaining up to 20 user and Victoria messages; it remains available during a PostgreSQL outage while a local outbox retries its backup.
+- The local chat route defaults to mock memory, and `VICTORIA_MEMORY_MODE=persistent` opts into PostgreSQL-backed context and durable memories only under validated local development configuration; persistent mode must not be available in staging or production through this local route.
+- Against a dedicated disposable local PostgreSQL database, a memory written through one local chat runtime is recalled by a fresh runtime for the same user, and is not recalled for another user.
+- In local persistent chat, an unanswered avoided-spend amount clarification survives a fresh runtime for the same user and conversation; a new amount yields a fresh suggestion requiring explicit approval, and another user cannot retrieve or answer that clarification.
+- In local persistent chat, a pending savings proposal survives a fresh runtime; exact confirmation records one immutable `mock_ledger` entry, and weekly progress still includes that entry after another runtime restart. Repeating confirmation cannot create a second entry.
+- In local persistent chat, `GET /api/memories` returns only the signed-in local user’s current facts; invalid or absent sessions cannot inspect memory, local forget suppresses listing and future retrieval while retaining its linked historical record; local correction appends a linked current fact and future retrieval uses the correction.
+- In local persistent chat, concurrent approval and decline attempts for one proposal serialize to one terminal outcome; a recorded entry cannot coexist with a declined or superseded transition.
+- In local persistent chat, simultaneous turns for the same user and conversation execute sequentially across runtime instances; different conversations remain independent.
 - PostgreSQL can restore unexpired clarification context after SQLite cache loss, and expired context is not returned.
 - Durable conversational memories retain user-stated preferences with evidence and confidence, isolate by user, and supersede earlier facts through linked append-only records.
 - Durable conversational decisions are append-only and cannot mutate financial event, approval, or ledger history.
@@ -213,7 +223,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - The transactions-only profile builder derives user-scoped merchant/category facts from posted USD purchases within 90 days, with provenance, observed dates, sample count, and confidence; pending, stale, malformed, non-USD, and non-purchase transactions are excluded.
 - Profile facts contain compact aggregates rather than raw transaction payloads or provider transaction identifiers.
 - Persistent profile and conversational facts can be indexed as 1536-dimensional pgvector embeddings; semantic retrieval filters by authenticated user and embedding model, excludes superseded facts, and ignores stale transaction-profile facts.
-- If embedding generation or vector search is unavailable, the fact remains persisted and memory retrieval falls back to recent user-scoped facts.
+- If embedding generation or vector search is unavailable, the fact remains persisted and memory retrieval falls back to recent user-scoped facts, including when vector search returns no indexed rows.
 - Profile-derived context does not approve a savings entry or allocation; exact action approval remains required.
 
 The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-link-token.test.ts`](unit/app/plaid-link-token.test.ts). Broader financial-profile cases remain pending in [`contracts/financial-profile.pending.test.ts`](contracts/financial-profile.pending.test.ts); convert them to executable assertions as the corresponding bounded interfaces and behaviors are implemented.
@@ -262,4 +272,10 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - An ambiguous correction asks which purchase/day the user means and creates no memory or financial record.
 - A correction during pending savings or ledger-correction approval cannot bypass that approval lifecycle.
 - A correction never updates Plaid data, creates a savings proposal, or writes a ledger entry.
-- The product has no user-facing memory review/edit endpoint or screen.
+- Authenticated memory-management routes expose current memories, append corrections, and append forget suppression markers; they never accept user identity from the request payload.
+- Supabase Auth token verification failure returns unauthorized; Auth service unavailability fails closed without exposing memory.
+- Current memory listing is user-scoped, excludes superseded, forgotten, and stale transaction-profile facts, and does not disclose internal source metadata beyond the bounded public contract.
+- Memory listing supports bounded keyset pagination; malformed cursors and unsupported query parameters are rejected, and a cursor cannot cross user scopes.
+- Corrections are append-only and target only the authenticated user's current fact; unknown and foreign IDs return the same not-found result.
+- Forgetting appends a non-embedded marker that suppresses the fact from list and retrieval; source records and embeddings remain retained, and the API states this clearly.
+- No bulk-delete endpoint is present. Memory-management routes use Postgres directly and do not depend on Vercel local filesystem persistence.

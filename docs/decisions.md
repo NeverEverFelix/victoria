@@ -123,6 +123,16 @@ Implications:
 - The extractor also supports direct general preferences, recurring habit statements, and explicit goal statements. Migration `0004_semantic_user_memory.sql` adds Supabase RLS, versioned pgvector embeddings, and a user-scoped semantic search function for these facts and transaction-derived profile facts. Embedding generation is injected and is not configured in the default mock composition; a remembered goal does not authorize a goal allocation.
 - This does not yet persist learned habits or goals or select a SQLite file path for a deployed runtime.
 
+### Local Persistent Chat Restores Missing-Amount Clarifications
+
+Decision: The local `VICTORIA_MEMORY_MODE=persistent` runtime stores an unanswered avoided-spend amount clarification in PostgreSQL for the same 30-minute window as short-term conversation context.
+
+Implications:
+
+- Clarification state is scoped by both authenticated local user and conversation ID; another user cannot answer or inherit it.
+- The restored state contains the original avoided-spend classification and event. A supplied amount can produce a fresh savings suggestion, which still requires a separate explicit confirmation.
+- This does not persist pending proposals, approvals, savings entries, corrections, goal allocations, or cross-process turn locks. Persistent financial chat remains gated on durable proposal/approval and ledger idempotency.
+
 ### Recorded Amount Corrections Use Linked Adjustment Records
 
 Decision:
@@ -290,6 +300,44 @@ Possible answers:
 Current default:
 
 Use direct language: "I recorded this in your Victoria savings ledger. No real money has moved yet."
+
+### Server-Side Memory Management Controls
+
+Decision: Confirmed on 2026-10-17. Provide authenticated server endpoints to inspect, correct, and forget individual current memories. Keep the controls server-side for now; do not add a memory-management UI or bulk-delete endpoint in this slice.
+
+Why:
+
+Users should be able to inspect and correct personalization while the product is still headless. A forget action must stop future recall, but immutable history and derived records should not be silently presented as erased.
+
+Implications:
+
+- `GET/PATCH /api/memories` lists current memories and appends a linked correction.
+- `POST /api/memories/{memoryId}/forget` appends a linked suppression marker and excludes the memory from future retrieval.
+- Forgetting is retrieval suppression, not physical deletion. Responses must say historical records remain.
+- Supabase Auth verifies bearer tokens. The user ID always comes from the verified token, never from request input.
+- Vercel memory routes use PostgreSQL directly because local SQLite state is not durable shared storage for serverless functions.
+- Bulk deletion, physical deletion/retention policy, and user-facing UI remain future work.
+
+### Vercel And Supabase Memory Runtime
+
+Decision: Confirmed on 2026-10-17. Prepare the production memory API for Vercel with Supabase Postgres and Supabase Auth. Keep the implementation server-side and use a Supabase publishable/anon key only for user-token verification; never use a secret/service-role key for these endpoints.
+
+Implications:
+
+- Database access uses a pooled Postgres connection with one connection per warm function instance.
+- Supabase migrations and live row-level-security/vector verification are deployment gates; they are not performed by the local migration runner.
+- The current production memory API does not make the local mock chat route production-capable. Persistent financial chat remains gated on durable proposal/approval state.
+
+### Separate Supabase Production And Staging Projects
+
+Decision: Confirmed on 2026-10-17. Keep the existing Victoria Supabase project for production and use a separate hosted Supabase project for staging. Local PostgreSQL remains appropriate for local development and automated tests, not for a remote Vercel preview.
+
+Implications:
+
+- Both projects receive the same versioned schema migrations through Supabase CLI.
+- Vercel preview must use the staging Supabase URL and database connection string; production variables must stay scoped to production deployments.
+- Staging was created without an explicit compute size. Verify the organization plan and actual project compute/billing in Supabase before relying on it for continuous availability; free-tier projects may pause after inactivity.
+- Live endpoint tests must use a synthetic staging account and must not write test data to the production project.
 
 ## Decision Process
 

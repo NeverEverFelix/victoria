@@ -1,4 +1,4 @@
-import { getLocalMockVictoriaChatHandler } from "../../../../src/app/http/create-local-mock-victoria-runtime.js";
+import { getLocalMockVictoriaChatHandler } from "../../../../src/app/http/create-local-mock-victoria-runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

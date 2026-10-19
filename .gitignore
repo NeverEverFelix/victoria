@@ -9,6 +9,7 @@ coverage/
 .coverage/
 .nyc_output/
 .playwright-cli/
+supabase/.temp/
 
 # Environment secrets
 .env*

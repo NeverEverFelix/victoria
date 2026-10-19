@@ -13,6 +13,18 @@ The most important rule: never share databases or secrets between local, test, s
 | `staging` | Production-like validation | staging DB | mock by default; Financial Moment or full team opt-in | disabled | `mock_ledger` |
 | `production` | Real users | production DB | mock by default; provider AI opt-in, full team off by default | disabled | `mock_ledger` |
 
+## Local PostgreSQL With pgvector
+
+The local development database uses the `pgvector/pgvector:pg15` container on loopback port 5433. This keeps it separate from a Homebrew PostgreSQL service on port 5432 and provides the vector extension required by migration `0004`. The Compose init script adds only the Supabase role names and `auth.uid()` shim needed to run the same migrations locally. Migrations `0010` through `0014` are local-only: `0010` stores short-lived amount clarifications, `0011` stores pending savings proposals, terminal transitions, and mocked ledger entries, `0012` stores approved goal allocations linked to mocked entries, `0013` stores pending goal-allocation proposals, approvals, and terminal outcomes, and `0014` stores approved savings-entry corrections as signed append-only adjustments. These migrations have not been applied to hosted Supabase projects.
+
+```bash
+npm run db:local:up
+cp .env.example .env.local
+ALLOW_DB_MIGRATE=true npm run db:migrate
+```
+
+`npm run db:local:down` stops the container and preserves the named volume. The database is bound to `127.0.0.1`; do not expose this local-only database on a public interface. Set `VICTORIA_MEMORY_MODE=persistent` in ignored `.env.local` to use this database from the local chat route. The default remains mock memory. The example password is for loopback development only.
+
 ## Required Variables
 
 ```bash
@@ -30,6 +42,8 @@ PLAID_ENV=
 PLAID_TOKEN_ENCRYPTION_KEY=
 MONEY_MOVEMENT_MODE=
 AUTH_SECRET=
+SUPABASE_URL=
+SUPABASE_PUBLISHABLE_KEY=
 ```
 
 ## Money Safety Rules
@@ -37,7 +51,7 @@ AUTH_SECRET=
 - `local`, `test`, and `staging` should default to `MONEY_MOVEMENT_MODE=mock_ledger`.
 - `production` should also use `MONEY_MOVEMENT_MODE=mock_ledger` until real transfers have been fully approved, audited, and tested.
 - `production` cannot use real transfers during the MVP. A future audited release may revisit this boundary.
-- The mounted `/api/victoria/[conversationId]` chat route is enabled only for `APP_ENV=local` with `NODE_ENV=development` and a private random `AUTH_SECRET` of at least 32 bytes. It uses a signed bearer session and process-local mock memory/ledger tools. Contextual extraction and episodic summaries stay disabled by default; they require `OPENAI_MEMORY_EXTRACTION_ENABLED=true`, a provider model, and `OPENAI_API_KEY`. That flag affects only memory extraction and summaries; classification and ledger tools remain mock-backed. No login/session issuer is mounted yet; a trusted login boundary must call the server-side session signer before clients can use this route. The route returns 503 in test, staging, and production.
+- The mounted `/api/victoria/[conversationId]` chat route is enabled only for `APP_ENV=local` with `NODE_ENV=development` and a private random `AUTH_SECRET` of at least 32 bytes. It uses a signed bearer session and mock ledger tools. Memory defaults to process-local mock storage; `VICTORIA_MEMORY_MODE=persistent` opts into PostgreSQL-backed context and durable facts, still using the local signed-session boundary. Contextual extraction and episodic summaries stay disabled by default; they require `OPENAI_MEMORY_EXTRACTION_ENABLED=true`, a provider model, and `OPENAI_API_KEY`. That flag affects only memory extraction and summaries; classification and ledger tools remain mock-backed. No login/session issuer is mounted yet; a trusted login boundary must call the server-side session signer before clients can use this route. The route returns 503 in test, staging, and production. In local persistent mode, `GET /api/memories` reuses the signed local session and exposes only the authenticated user’s current memory facts; local memory correction is available through `PATCH /api/memories`, and single-fact forget is available through `POST /api/memories/{memoryId}/forget`; both append linked records through the same signed session.
 - `OPENAI_MODEL=mock` keeps deterministic specialists active. The single provider-backed Financial Moment remains disabled unless `OPENAI_FINANCIAL_MOMENT_ENABLED=true`. Set `OPENAI_AGENT_TEAM_ENABLED=true` to opt into provider-backed Financial Moment, Savings Reasoning, and Companion Voice specialists. Both flags default to false; the complete-team flag takes precedence if both are set. All provider roles are advisory: deterministic validation, approval, ledger writes, and transfer refusal remain in the core.
 - `OPENAI_MEMORY_EXTRACTION_ENABLED=false` by default. It is accepted only by the local development chat runtime and enables structured memory extraction plus episodic summaries using the configured OpenAI model; it does not enable provider-backed classification, savings tools, or money movement.
 - The Plaid financial-profile runtime is an explicit server-side opt-in and accepts only `PLAID_ENV=sandbox`; it validates Plaid credentials and a base64-encoded 32-byte `PLAID_TOKEN_ENCRYPTION_KEY` before composing adapters. `tokenEncryptionKeyVersion` and `previousTokenEncryptionKeysBase64` are runtime factory options, not parsed environment variables; a deployment wrapper must load them from a secret manager. Prior keys decrypt existing envelopes but new writes use only the active key. Keep prior keys available until the lifecycle rotation operation has re-encrypted and verified every active and queued Item token. Production and development Plaid hosts are rejected. No default application route initializes the runtime.
@@ -65,8 +79,13 @@ The config parser enforces the most important environment boundaries:
 - Production `DATABASE_URL` must not point to `localhost`, `127.0.0.1`, or `0.0.0.0`.
 - Production `DATABASE_URL` must not use example hosts or placeholder passwords.
 - Local, test, staging, and production database names must not be reused across environments.
-- Production `AUTH_SECRET` must be at least 32 characters.
+- `AUTH_SECRET` is used only by the local signed-session mock route. Production and staging API identity comes from Supabase Auth; the route accepts a user's bearer token and verifies it with the Auth server.
 - Production provider credentials must not use obvious local, test, or example placeholder values.
+- Persistent memory-management endpoints are mounted at paginated `GET/PATCH /api/memories` and `POST /api/memories/{memoryId}/forget`. Listing accepts `limit` (up to 100) and an opaque keyset `cursor`. They are enabled only in staging/production when `DATABASE_URL`, `OPENAI_API_KEY`, `SUPABASE_URL`, and `SUPABASE_PUBLISHABLE_KEY` are configured. They use PostgreSQL directly and a one-connection per-instance pool; use Supabase's connection pooler for Vercel deployments. Every memory statement runs in a short transaction after `SET LOCAL ROLE victoria_memory_api` and binds the verified Supabase subject to transaction-local RLS context. This non-login role has SELECT/INSERT access only to memory facts and embeddings; it cannot update or delete historical records.
+- The app uses only Supabase's publishable key to verify bearer access tokens through Supabase Auth. Never put a Supabase secret/service-role key in browser code or use one for user-scoped memory APIs.
+- The local migration runner intentionally refuses remote/production databases; use the Supabase CLI workflow below for remote schema changes.
+- The repository keeps canonical SQL in `db/migrations/`; `supabase/migrations/` contains symlinks to those same files for Supabase CLI. Run `supabase migration list --linked` and `supabase db push --linked --dry-run` before a push. As of 2026-10-18, migrations `0001`–`0008` are applied in both Supabase environments; `0009_memory_api_rls_role.sql` is applied and role privileges/RLS were verified in staging. Production still needs migration `0009` before the new runtime is deployed there. Keep local PostgreSQL for local development and tests; use the hosted staging database for Vercel previews.
+- Forgetting is an append-only suppression action. It hides one fact from future retrieval and retains historical memory and embedding records. Physical deletion and bulk delete are not part of the current controls.
 - `MONEY_MOVEMENT_MODE=real_transfer` is rejected in every environment during the MVP.
 
 ## Suggested Files

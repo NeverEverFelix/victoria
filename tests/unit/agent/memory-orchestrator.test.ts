@@ -31,6 +31,41 @@ describe("MemoryOrchestrator", () => {
     await expect(orchestrator.listConversationalMemories("user-b")).resolves.toEqual([]);
   });
 
+  it("forgets one user fact from current retrieval while preserving linked history", async () => {
+    const storage = new MockMemoryProvider();
+    const first = await storage.rememberConversationalMemory("user-a", {
+      category: "preference", key: "response_style", value: "Prefers concise answers.",
+      evidence: "User said so.", confidence: 0.95, sourceType: "user_statement"
+    });
+    const orchestrator = new MemoryOrchestrator(storage);
+
+    await orchestrator.forgetMemory("user-a", first.id);
+
+    await expect(orchestrator.listConversationalMemories("user-a")).resolves.toEqual([]);
+    const history = await storage.listConversationalMemories("user-a");
+    expect(history).toHaveLength(2);
+    expect(history[1]).toMatchObject({ supersedesId: first.id, sourceMetadata: { memoryStatus: "forgotten" } });
+    await expect(orchestrator.listConversationalMemories("user-b")).resolves.toEqual([]);
+    await expect(orchestrator.forgetMemory("user-a", first.id)).rejects.toThrow("The memory was not found for this user.");
+  });
+
+  it("lets a new explicit fact supersede an earlier forget marker", async () => {
+    const storage = new MockMemoryProvider();
+    const orchestrator = new MemoryOrchestrator(storage);
+    const first = await orchestrator.rememberConversationalMemory("user-a", {
+      category: "preference", key: "response_style", value: "Prefers concise answers.",
+      evidence: "User said so.", confidence: 0.95, sourceType: "user_statement"
+    });
+    await orchestrator.forgetMemory("user-a", first.id);
+    const restored = await orchestrator.rememberConversationalMemory("user-a", {
+      category: "preference", key: "response_style", value: "Prefers concise answers.",
+      evidence: "User stated this preference again.", confidence: 0.95, sourceType: "user_statement"
+    });
+
+    expect(restored.supersedesId).not.toBe(first.id);
+    await expect(orchestrator.listConversationalMemories("user-a")).resolves.toEqual([restored]);
+  });
+
   it("excludes stale transaction profile facts but keeps current user memories", async () => {
     const storage = new MockMemoryProvider();
     await storage.rememberConversationalMemory("user-a", profileMemory({ observedThrough: "2026-05-01" }));

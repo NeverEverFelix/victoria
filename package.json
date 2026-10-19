@@ -5,9 +5,11 @@
   "description": "An agentic financial companion that turns money you almost spent into money you actually save.",
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
+    "db:local:up": "docker compose -f docker-compose.local.yml up -d",
+    "db:local:down": "docker compose -f docker-compose.local.yml down",
     "db:migrate": "node scripts/migrate-database.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

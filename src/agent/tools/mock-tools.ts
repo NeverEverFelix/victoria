@@ -23,7 +23,8 @@ export class MockVictoriaTools implements VictoriaTools {
 
   constructor(
     private readonly habits: UserHabit[] = [],
-    initialSavingsEntries: SavingsEntry[] = []
+    initialSavingsEntries: SavingsEntry[] = [],
+    private readonly idFactory?: (namespace: string) => string
   ) {
     this.savingsEntries.push(...initialSavingsEntries.map((entry) => immutableSnapshot(entry)));
     for (const entry of this.savingsEntries) {
@@ -43,7 +44,7 @@ export class MockVictoriaTools implements VictoriaTools {
   async estimateAvoidedSpend(input: EstimateAvoidedSpendInput): Promise<SavingsSuggestion | null> {
     if (input.userProvidedAmountCents !== undefined) {
       return {
-        id: `suggestion_${Date.now()}`,
+        id: this.idFactory?.("suggestion") ?? `suggestion_${Date.now()}`,
         amountCents: input.userProvidedAmountCents,
         currency: "USD",
         reason: "User provided an explicit avoided-spend amount.",
@@ -63,7 +64,7 @@ export class MockVictoriaTools implements VictoriaTools {
 
     if (typicalAmountCents !== null) {
       return {
-        id: `suggestion_${Date.now()}`,
+        id: this.idFactory?.("suggestion") ?? `suggestion_${Date.now()}`,
         amountCents: typicalAmountCents,
         currency: "USD",
         reason: `Estimated from typical spend at ${input.merchantName}.`,
@@ -75,7 +76,7 @@ export class MockVictoriaTools implements VictoriaTools {
     if (input.rememberedTypicalAmountCents !== undefined &&
         Number.isSafeInteger(input.rememberedTypicalAmountCents) && input.rememberedTypicalAmountCents > 0) {
       return {
-        id: `suggestion_${Date.now()}`,
+        id: this.idFactory?.("suggestion") ?? `suggestion_${Date.now()}`,
         amountCents: input.rememberedTypicalAmountCents,
         currency: "USD",
         reason: `Estimated from your remembered typical spend at ${input.merchantName}.`,
@@ -87,7 +88,7 @@ export class MockVictoriaTools implements VictoriaTools {
     const transactionEstimate = input.transactionHistoryEstimate;
     if (isUsableTransactionHistoryEstimate(transactionEstimate)) {
       return {
-        id: `suggestion_${Date.now()}`,
+        id: this.idFactory?.("suggestion") ?? `suggestion_${Date.now()}`,
         amountCents: transactionEstimate.amountCents,
         currency: "USD",
         reason: `Estimate based on ${transactionEstimate.transactionCount} recent transactions at ${input.merchantName}, observed through ${transactionEstimate.observedThrough}.`,
@@ -121,7 +122,7 @@ export class MockVictoriaTools implements VictoriaTools {
     }
 
     const entry: SavingsEntry = immutableSnapshot({
-      id: `entry_${this.nextSavingsEntryNumber++}`,
+      id: this.idFactory?.("entry") ?? `entry_${this.nextSavingsEntryNumber++}`,
       userId: input.userId,
       eventId: input.eventId,
       proposalId: input.proposalId,
@@ -143,6 +144,21 @@ export class MockVictoriaTools implements VictoriaTools {
 
   async listSavingsEntries(userId: string): Promise<SavingsEntry[]> {
     return this.savingsEntries.filter((entry) => entry.userId === userId);
+  }
+
+  /** Hydrates a durable mocked entry so the existing correction/allocation rules can inspect it. */
+  hydrateSavingsEntry(entry: SavingsEntry): void {
+    const key = this.idempotencyKey(entry.userId, entry.approvedActionId);
+    const existing = this.entriesByApprovedAction.get(key);
+    if (existing) {
+      if (existing.id !== entry.id || existing.amountCents !== entry.amountCents ||
+          existing.approvalId !== entry.approvalId || existing.proposalId !== entry.proposalId) {
+        throw new Error("An approved action cannot be hydrated with a different savings entry.");
+      }
+      return;
+    }
+    this.savingsEntries.push(immutableSnapshot(entry));
+    this.entriesByApprovedAction.set(key, immutableSnapshot(entry));
   }
 
   async createSavingsEntryCorrection(
@@ -194,6 +210,26 @@ export class MockVictoriaTools implements VictoriaTools {
 
   async listSavingsEntryCorrections(userId: string): Promise<SavingsEntryCorrection[]> {
     return this.savingsEntryCorrections.filter((correction) => correction.userId === userId);
+  }
+
+  /** Hydrates a durable correction so inherited totals apply its signed adjustment. */
+  hydrateSavingsEntryCorrection(correction: SavingsEntryCorrection): void {
+    const key = this.idempotencyKey(correction.userId, correction.approvedActionId);
+    const existing = this.correctionsByApprovedAction.get(key);
+    if (existing) {
+      if (existing.id !== correction.id || existing.savingsEntryId !== correction.savingsEntryId ||
+          existing.correctedAmountCents !== correction.correctedAmountCents ||
+          existing.adjustmentCents !== correction.adjustmentCents || existing.approvalId !== correction.approvalId) {
+        throw new Error("An approved action cannot be hydrated with a different savings correction.");
+      }
+      return;
+    }
+    if (!Number.isSafeInteger(correction.correctedAmountCents) || correction.correctedAmountCents <= 0 ||
+        !Number.isSafeInteger(correction.adjustmentCents) || correction.adjustmentCents === 0) {
+      throw new Error("A durable savings correction must contain valid positive cents and a non-zero adjustment.");
+    }
+    this.savingsEntryCorrections.push(immutableSnapshot(correction));
+    this.correctionsByApprovedAction.set(key, immutableSnapshot(correction));
   }
 
   async getEffectiveSavingsEntryAmount(userId: string, savingsEntryId: string): Promise<number | null> {

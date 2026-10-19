@@ -1,0 +1,1 @@
+../../db/migrations/0012_local_savings_goal_allocations.sql

@@ -46,6 +46,9 @@ import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } f
 import { isRealMoneyMovementRequest } from "./money-movement-intent.js";
 import { isExplicitUserEvidence, validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
 import { isUsableEpisodicSummary, validateEpisodicSummary, type EpisodicMemorySummarizer } from "./memory/episodic-summary.js";
+import type { PendingAmountClarification, PendingAmountClarificationStore } from "./pending-amount-clarification-store.js";
+import type { PendingSavingsActionStore } from "./pending-savings-action-store.js";
+import type { PendingGoalAllocationActionStore } from "./pending-goal-allocation-store.js";
 
 export interface VictoriaAgentDependencies {
   llm: LlmAdapter;
@@ -57,6 +60,10 @@ export interface VictoriaAgentDependencies {
   /** Optional model-backed extractor for stable contextual memories from ordinary conversation. */
   conversationalMemoryExtractor?: ConversationalMemoryExtractor;
   episodicMemorySummarizer?: EpisodicMemorySummarizer;
+  pendingAmountClarifications?: PendingAmountClarificationStore;
+  pendingSavingsActions?: PendingSavingsActionStore;
+  pendingGoalAllocationActions?: PendingGoalAllocationActionStore;
+  idFactory?: () => string;
 }
 
 interface TeamAdvice {
@@ -102,11 +109,17 @@ export class VictoriaAgent {
 
   async respond(request: AgentRequest): Promise<AgentResponse> {
     const conversationId = request.conversationId ?? "default";
+    await this.restorePendingSavingsAction(request);
+    await this.restorePendingGoalAllocationAction(request);
+    const conversationKey = this.conversationKey(request);
+    const priorPendingGoalActionId = this.pendingGoalAllocationIdsByConversation.get(conversationKey);
     const priorContext = await this.dependencies.memory.getConversationContext(request.userId, conversationId);
     await this.summarizeOverflowingConversation(request.userId, priorContext);
     const withUserMessage = [...priorContext, request.message].slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT);
     await this.dependencies.memory.setConversationContext(request.userId, conversationId, withUserMessage);
     const response = immutableSnapshot(await this.respondTurn(request, priorContext));
+    await this.persistPendingSavingsAction(request, response.decision);
+    await this.persistPendingGoalAllocationAction(request, response.decision, priorPendingGoalActionId);
     await this.dependencies.memory.setConversationContext(request.userId, conversationId,
       [...withUserMessage, `Victoria: ${response.message}`].slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT));
     return response;
@@ -234,7 +247,7 @@ export class VictoriaAgent {
         let proposalTransitions = pendingAction.decision.proposalTransitions ?? [];
         if (actionId && proposal?.status === "pending") {
           const transition = transitionSavingsProposal(proposal, {
-            id: `proposal_transition_${this.nextProposalTransitionNumber++}`,
+            id: this.nextId("proposal_transition", this.nextProposalTransitionNumber++),
             userId: request.userId,
             actionId,
             createdAt: new Date().toISOString(),
@@ -605,10 +618,10 @@ export class VictoriaAgent {
       }
     }
 
-    const pendingClarification = this.pendingAmountClarifications.get(this.conversationKey(request));
+    const pendingClarification = await this.getPendingAmountClarification(request);
     let resolvedSavingsEvent: SavingsEvent | undefined;
     const resolvedClassification =
-      pendingClarification?.userId === request.userId &&
+      pendingClarification !== undefined &&
       classification.amountCents !== undefined &&
       classification.type === "unclear"
         ? {
@@ -620,13 +633,13 @@ export class VictoriaAgent {
 
     if (resolvedClassification !== classification) {
       resolvedSavingsEvent = pendingClarification?.savingsEvent;
-      this.pendingAmountClarifications.delete(this.conversationKey(request));
+      await this.clearPendingAmountClarification(request);
       const merchantName = pendingClarification?.classification.merchantName;
       if (merchantName && classification.amountCents !== undefined) {
         await this.rememberMerchantSpendAnswer(request.userId, merchantName, classification.amountCents, request.message);
       }
     } else if (pendingClarification && classification.type !== "unclear") {
-      this.pendingAmountClarifications.delete(this.conversationKey(request));
+      await this.clearPendingAmountClarification(request);
     }
 
     let decision = await this.decide(request, resolvedClassification, resolvedSavingsEvent, teamAdvice);
@@ -881,8 +894,7 @@ export class VictoriaAgent {
     });
 
     if (!suggestion || !validateSavingsSuggestion(suggestion)) {
-      this.pendingAmountClarifications.set(this.conversationKey(request), {
-        userId: request.userId,
+      await this.setPendingAmountClarification(request, {
         classification,
         savingsEvent
       });
@@ -912,8 +924,7 @@ export class VictoriaAgent {
       const agreesWithDeterministicEstimate = assessment.outcome === "suggest" &&
         assessment.amountCents === suggestion.amountCents && assessment.source === expectedSource;
       if (!agreesWithDeterministicEstimate) {
-        this.pendingAmountClarifications.set(this.conversationKey(request), {
-          userId: request.userId,
+        await this.setPendingAmountClarification(request, {
           classification,
           savingsEvent
         });
@@ -1002,12 +1013,12 @@ export class VictoriaAgent {
       };
     }
 
-    const nextActionId = `savings_action_${this.nextActionNumber++}`;
+    const nextActionId = this.nextId("savings_action", this.nextActionNumber++);
     const amountCents = pendingDecision.suggestion?.amountCents ?? proposal.suggestion.amountCents;
     const message = `I can record ${formatUsd(amountCents)} in your mocked Victoria savings ledger toward ${goalName}. Please confirm: should I record it? No real money has moved yet.`;
     const updatedProposal: SavingsProposal = {
       ...proposal,
-      id: `proposal_${this.nextProposalNumber++}`,
+      id: this.nextId("proposal", this.nextProposalNumber++),
       actionId: nextActionId,
       supersedesProposalId: proposal.id,
       goalName,
@@ -1021,7 +1032,7 @@ export class VictoriaAgent {
       proposalTransitions: [
         ...(pendingDecision.proposalTransitions ?? []),
         transitionSavingsProposal(proposal, {
-          id: `proposal_transition_${this.nextProposalTransitionNumber++}`,
+          id: this.nextId("proposal_transition", this.nextProposalTransitionNumber++),
           userId: request.userId,
           actionId: previousActionId,
           createdAt: new Date().toISOString(),
@@ -1071,7 +1082,7 @@ export class VictoriaAgent {
 
     const suggestion: SavingsSuggestion = {
       ...currentSuggestion,
-      id: `suggestion_${this.nextProposalNumber}`,
+      id: this.nextId("suggestion", this.nextProposalNumber),
       ...(classification.amountCents !== undefined
         ? { amountCents: classification.amountCents, source: "user_provided" as const }
         : {}),
@@ -1094,7 +1105,7 @@ export class VictoriaAgent {
       ...(previousProposal.goalName ? { goalName: previousProposal.goalName } : {})
     };
     const superseded = transitionSavingsProposal(previousProposal, {
-      id: `proposal_transition_${this.nextProposalTransitionNumber++}`,
+      id: this.nextId("proposal_transition", this.nextProposalTransitionNumber++),
       userId: request.userId,
       actionId: previousActionId,
       createdAt: new Date().toISOString(),
@@ -1143,9 +1154,10 @@ export class VictoriaAgent {
       const message = "I couldn't verify the current amount for that saved entry, so I haven't linked it to a goal.";
       return { message, decision: { action: "ask_follow_up", classification, userFacingMessage: message } };
     }
-    const actionId = `goal_allocation_action_${this.nextGoalAllocationNumber++}`;
+    const actionSequence = this.nextGoalAllocationNumber++;
+    const actionId = this.nextId("goal_allocation_action", actionSequence);
     const goalAllocation: PendingSavingsGoalAllocation = {
-      id: `goal_allocation_proposal_${this.nextGoalAllocationNumber - 1}`,
+      id: this.nextId("goal_allocation_proposal", actionSequence),
       userId: request.userId,
       savingsEntryId: entry.id,
       amountCents: effectiveAmountCents,
@@ -1188,9 +1200,9 @@ export class VictoriaAgent {
     suggestion: SavingsSuggestion
   ): AgentDecision {
     const dollars = formatUsd(suggestion.amountCents);
-    const actionId = `savings_action_${this.nextActionNumber++}`;
+    const actionId = this.nextId("savings_action", this.nextActionNumber++);
     const proposal: SavingsProposal = {
-      id: `proposal_${this.nextProposalNumber++}`,
+      id: this.nextId("proposal", this.nextProposalNumber++),
       eventId: savingsEvent.id,
       userId: savingsEvent.userId,
       actionId,
@@ -1242,7 +1254,7 @@ export class VictoriaAgent {
     classification: ClassifiedMessage
   ): SavingsEvent {
     return {
-      id: `event_${this.nextEventNumber++}`,
+      id: this.nextId("event", this.nextEventNumber++),
       userId: request.userId,
       type: "avoided_spend",
       summary: classification.summary,
@@ -1327,7 +1339,9 @@ export class VictoriaAgent {
     }
 
     const approval = pendingAction?.approval ?? {
-      id: `approval_${this.nextApprovalNumber++}`,
+      id: this.dependencies.pendingSavingsActions
+        ? `approval_${approvedActionIdForEntry}`
+        : this.nextId("approval", this.nextApprovalNumber++),
       proposalId: trustedProposal.id,
       userId: request.userId,
       actionId: approvedActionIdForEntry,
@@ -1382,7 +1396,7 @@ export class VictoriaAgent {
     }
     const message = `Done. I recorded ${formatUsd(entry.amountCents)}${goalText} in your Victoria savings ledger.${weeklyProgress} No real money has moved yet.`;
     const recorded = transitionSavingsProposal(trustedProposal, {
-      id: `proposal_transition_${this.nextProposalTransitionNumber++}`,
+      id: this.nextId("proposal_transition", this.nextProposalTransitionNumber++),
       userId: request.userId,
       actionId: approvedActionIdForEntry,
       createdAt: entry.createdAt,
@@ -1502,10 +1516,11 @@ export class VictoriaAgent {
       };
     }
     if (currentEffectiveAmount !== allocation.amountCents) {
-      const replacementActionId = `goal_allocation_action_${this.nextGoalAllocationNumber++}`;
+      const replacementSequence = this.nextGoalAllocationNumber++;
+      const replacementActionId = this.nextId("goal_allocation_action", replacementSequence);
       const replacementAllocation: PendingSavingsGoalAllocation = {
         ...allocation,
-        id: `goal_allocation_proposal_${this.nextGoalAllocationNumber - 1}`,
+        id: this.nextId("goal_allocation_proposal", replacementSequence),
         amountCents: currentEffectiveAmount,
         createdAt: new Date().toISOString()
       };
@@ -1532,7 +1547,7 @@ export class VictoriaAgent {
     }
 
     const approval = pendingAction.approval ?? {
-      id: `goal_approval_${this.nextGoalApprovalNumber++}`,
+      id: this.nextId("goal_approval", this.nextGoalApprovalNumber++),
       actionId,
       approvedAt: new Date().toISOString(),
       source: "user_message" as const
@@ -1595,6 +1610,124 @@ export class VictoriaAgent {
   private conversationKey(request: AgentRequest): string {
     return `${request.userId}:${request.conversationId ?? "default"}`;
   }
+
+  private async getPendingAmountClarification(request: AgentRequest): Promise<PendingAmountClarification | undefined> {
+    const store = this.dependencies.pendingAmountClarifications;
+    if (store) return await store.get(request.userId, request.conversationId ?? "default") ?? undefined;
+    const local = this.pendingAmountClarifications.get(this.conversationKey(request));
+    return local?.userId === request.userId
+      ? { classification: local.classification, savingsEvent: local.savingsEvent }
+      : undefined;
+  }
+
+  private async setPendingAmountClarification(
+    request: AgentRequest,
+    value: PendingAmountClarification
+  ): Promise<void> {
+    const store = this.dependencies.pendingAmountClarifications;
+    if (store) {
+      await store.set(request.userId, request.conversationId ?? "default", value);
+      return;
+    }
+    this.pendingAmountClarifications.set(this.conversationKey(request), { userId: request.userId, ...value });
+  }
+
+  private async clearPendingAmountClarification(request: AgentRequest): Promise<void> {
+    const store = this.dependencies.pendingAmountClarifications;
+    if (store) {
+      await store.clear(request.userId, request.conversationId ?? "default");
+      return;
+    }
+    this.pendingAmountClarifications.delete(this.conversationKey(request));
+  }
+
+  private async restorePendingSavingsAction(request: AgentRequest): Promise<void> {
+    const store = this.dependencies.pendingSavingsActions;
+    if (!store) return;
+    const pending = await store.getPending(request.userId, request.conversationId ?? "default");
+    if (!pending) return;
+    const conversationKey = this.conversationKey(request);
+    this.pendingSavingsActions.set(pending.actionId, {
+      userId: request.userId,
+      conversationKey,
+      decision: pending.decision
+    });
+    this.pendingActionIdsByConversation.set(conversationKey, pending.actionId);
+  }
+
+  private async restorePendingGoalAllocationAction(request: AgentRequest): Promise<void> {
+    const store = this.dependencies.pendingGoalAllocationActions;
+    if (!store) return;
+    const pending = await store.getPending(request.userId, request.conversationId ?? "default");
+    if (!pending) return;
+    const conversationKey = this.conversationKey(request);
+    this.pendingGoalAllocationActions.set(pending.actionId, {
+      userId: request.userId,
+      conversationKey,
+      decision: pending.decision,
+      ...(pending.approval ? { approval: pending.approval } : {})
+    });
+    this.pendingGoalAllocationIdsByConversation.set(conversationKey, pending.actionId);
+  }
+
+  private async persistPendingSavingsAction(request: AgentRequest, responseDecision: AgentDecision): Promise<void> {
+    const store = this.dependencies.pendingSavingsActions;
+    if (!store) return;
+    const conversationKey = this.conversationKey(request);
+    const actionId = this.pendingActionIdsByConversation.get(conversationKey);
+    const pending = actionId ? this.pendingSavingsActions.get(actionId) : undefined;
+    await store.commit({
+      userId: request.userId,
+      conversationId: request.conversationId ?? "default",
+      ...(pending ? { pendingAction: { actionId: actionId!, decision: pending.decision } } : {}),
+      responseDecision
+    });
+  }
+
+  private async persistPendingGoalAllocationAction(
+    request: AgentRequest,
+    responseDecision: AgentDecision,
+    priorActionId?: string
+  ): Promise<void> {
+    const store = this.dependencies.pendingGoalAllocationActions;
+    if (!store) return;
+    const conversationKey = this.conversationKey(request);
+    const actionId = this.pendingGoalAllocationIdsByConversation.get(conversationKey);
+    const pending = actionId ? this.pendingGoalAllocationActions.get(actionId) : undefined;
+    let terminalAction: { actionId: string; status: "recorded" | "declined" | "superseded" } | undefined;
+    if (responseDecision.action === "record_goal_allocation") {
+      const recordedActionId = responseDecision.goalAllocation?.status === "recorded"
+        ? responseDecision.goalAllocation.approvedActionId
+        : priorActionId;
+      if (recordedActionId) terminalAction = { actionId: recordedActionId, status: "recorded" };
+    } else if (pending && priorActionId && priorActionId !== actionId) {
+      terminalAction = { actionId: priorActionId, status: "superseded" };
+    } else if (!pending && priorActionId && responseDecision.action === "reflect") {
+      terminalAction = { actionId: priorActionId, status: "declined" };
+    }
+    await store.commit({
+      userId: request.userId,
+      conversationId: request.conversationId ?? "default",
+      ...(responseDecision.goalAllocation?.status === "recorded" ? {
+        approvalAction: {
+          actionId: responseDecision.goalAllocation.approvedActionId,
+          approval: responseDecision.goalAllocation.approval
+        }
+      } : {}),
+      ...(pending && actionId ? {
+        pendingAction: {
+          actionId,
+          decision: pending.decision,
+          ...(pending.approval ? { approval: pending.approval } : {})
+        }
+      } : {}),
+      ...(terminalAction ? { terminalAction } : {})
+    });
+  }
+
+  private nextId(namespace: string, sequence: number): string {
+    return this.dependencies.idFactory ? `${namespace}_${this.dependencies.idFactory()}` : `${namespace}_${sequence}`;
+  }
 }
 
 function personalizeOrdinaryFinancialReply(
@@ -1628,7 +1761,10 @@ function personalizeOrdinaryFinancialReply(
       ? preference.key.slice("preference:".length).replace(/_/g, " ").replace(/[^a-z0-9 '$.,&-]/gi, "").trim().slice(0, 60)
       : preference.evidence.match(/\bi\s+(?:would\s+|’d\s+)?prefer\s+(?:a\s+|an\s+|the\s+)?([^.!?]+)/i)?.[1]
         ?? preference.evidence.match(/\b([a-z][^,.!?]{1,50}?)\s+(?:is|are)\s+easier\s+for\s+me\b/i)?.[1]
-          ?.replace(/^.*\bso\s+/i, "");
+          ?.replace(/^.*\bso\s+/i, "")
+        ?? (preference.sourceType === "user_correction"
+          ? preference.value.match(/^prefers?\s+(?:a\s+|an\s+|the\s+)?([^.!?]+)/i)?.[1]
+          : undefined);
     const safePreferredApproach = preferredApproach
       ?.replace(/[^a-z0-9 '$.,&-]/gi, "").trim().slice(0, 60);
     if (safePreferredApproach) {

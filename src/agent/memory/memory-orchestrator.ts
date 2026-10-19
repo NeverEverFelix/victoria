@@ -1,6 +1,6 @@
 import type { AgentMemory, FinancialDecision, SavingsGoal, UserHabit } from "../types.js";
 import type { TransactionFinancialProfile } from "../../domain/financial-profile.js";
-import type { ConversationalMemory, MemoryProvider } from "./types.js";
+import type { ConversationalMemory, ConversationalMemoryPage, MemoryProvider } from "./types.js";
 
 export interface FinancialProfileMemoryWriter {
   rememberFinancialProfile(profile: TransactionFinancialProfile): Promise<readonly ConversationalMemory[]>;
@@ -37,7 +37,7 @@ export class MemoryOrchestrator implements MemoryProvider {
   async getMemoryForUser(userId: string, query?: string): Promise<AgentMemory> {
     const memory = await this.storage.getMemoryForUser(userId, query);
     const candidates = memory.conversationalMemories ?? [];
-    const current = await this.currentMemoryIds(userId);
+    const current = await this.currentMemoryIds(userId, candidates.map((memory) => memory.id));
     return Object.freeze({
       ...memory,
       conversationalMemories: Object.freeze(this.selectCurrent(candidates, current))
@@ -49,8 +49,8 @@ export class MemoryOrchestrator implements MemoryProvider {
     memory: Omit<ConversationalMemory, "id" | "createdAt">
   ): Promise<ConversationalMemory> {
     if (!userId.trim()) throw new Error("A user ID is required to remember a fact.");
-    const all = await this.storage.listConversationalMemories(userId);
-    const active = this.selectVisibleCurrent(all);
+    const all = await this.listCurrentMemoryRecords(userId);
+    const active = this.selectCurrentRecords(all);
     const prior = [...active].reverse().find((item) => item.category === memory.category && item.key === memory.key);
     if (prior && prior.value === memory.value && prior.evidence === memory.evidence &&
         (prior.sourceType ?? "user_statement") === (memory.sourceType ?? "user_statement") &&
@@ -78,6 +78,23 @@ export class MemoryOrchestrator implements MemoryProvider {
     });
     await this.invalidateCachedMemory(userId);
     return corrected;
+  }
+
+  /** Suppresses one current memory from future retrieval while preserving append-only history. */
+  async forgetMemory(userId: string, memoryId: string): Promise<void> {
+    const target = (await this.listCurrentStoredMemories(userId)).find((memory) => memory.id === memoryId);
+    if (!target) throw new MemoryNotFoundError();
+    await this.rememberConversationalMemory(userId, {
+      category: target.category,
+      key: target.key,
+      value: "This memory was forgotten at the user's request.",
+      evidence: "The user asked Victoria to forget this memory.",
+      confidence: 1,
+      sourceType: "user_correction",
+      sourceMetadata: { memoryStatus: "forgotten" },
+      supersedesId: target.id
+    });
+    await this.invalidateCachedMemory(userId);
   }
 
   async rememberTransactionCorrection(input: {
@@ -122,16 +139,17 @@ export class MemoryOrchestrator implements MemoryProvider {
     return saved;
   }
 
-  async listConversationalMemories(userId: string): Promise<readonly ConversationalMemory[]> {
-    return Object.freeze(await this.listCurrentStoredMemories(userId));
+  async listConversationalMemories(userId: string, page?: ConversationalMemoryPage): Promise<readonly ConversationalMemory[]> {
+    const candidates = this.storage.listCurrentConversationalMemories
+      ? await this.storage.listCurrentConversationalMemories(userId, false, page)
+      : await this.storage.listConversationalMemories(userId);
+    return Object.freeze(this.selectVisibleCurrent(candidates));
   }
 
   async searchConversationalMemories(userId: string, query: string, limit = this.maxMemoriesPerTurn): Promise<readonly ConversationalMemory[]> {
     if (!userId.trim() || !query.trim()) return [];
-    const [candidates, current] = await Promise.all([
-      this.storage.searchConversationalMemories(userId, query, Math.max(limit, this.maxMemoriesPerTurn)),
-      this.currentMemoryIds(userId)
-    ]);
+    const candidates = await this.storage.searchConversationalMemories(userId, query, Math.max(limit, this.maxMemoriesPerTurn));
+    const current = await this.currentMemoryIds(userId, candidates.map((memory) => memory.id));
     return Object.freeze(this.selectCurrent(candidates, current, limit));
   }
 
@@ -148,11 +166,23 @@ export class MemoryOrchestrator implements MemoryProvider {
   }
 
   private async listCurrentStoredMemories(userId: string): Promise<ConversationalMemory[]> {
+    const current = await this.listCurrentMemoryRecords(userId);
+    return this.selectVisibleCurrent(current);
+  }
+
+  private async listCurrentMemoryRecords(userId: string): Promise<ConversationalMemory[]> {
+    if (this.storage.listCurrentConversationalMemories) {
+      return [...await this.storage.listCurrentConversationalMemories(userId, true)];
+    }
     const memories = await this.storage.listConversationalMemories(userId);
-    return this.selectVisibleCurrent(memories);
+    return this.selectCurrentRecords(memories);
   }
 
   private selectVisibleCurrent(memories: readonly ConversationalMemory[]): ConversationalMemory[] {
+    return this.selectCurrentRecords(memories).filter((memory) => memory.sourceMetadata?.memoryStatus !== "forgotten");
+  }
+
+  private selectCurrentRecords(memories: readonly ConversationalMemory[]): ConversationalMemory[] {
     const superseded = new Set(memories.flatMap((memory) => memory.supersedesId ? [memory.supersedesId] : []));
     const current = memories.filter((memory) => !superseded.has(memory.id) && this.isFresh(memory));
     const selected = new Map<string, ConversationalMemory>();
@@ -167,8 +197,13 @@ export class MemoryOrchestrator implements MemoryProvider {
     return [...selected.values()];
   }
 
-  private async currentMemoryIds(userId: string): Promise<ReadonlySet<string>> {
-    return new Set((await this.listCurrentStoredMemories(userId)).map((memory) => memory.id));
+  private async currentMemoryIds(userId: string, candidateIds: readonly string[]): Promise<ReadonlySet<string>> {
+    if (this.storage.filterCurrentConversationalMemoryIds) {
+      return this.storage.filterCurrentConversationalMemoryIds(userId, candidateIds);
+    }
+    const all = await this.storage.listConversationalMemories(userId);
+    const current = new Set(this.selectVisibleCurrent(all).map((memory) => memory.id));
+    return new Set(candidateIds.filter((id) => current.has(id)));
   }
 
   private selectCurrent(

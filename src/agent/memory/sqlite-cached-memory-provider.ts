@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import type { AgentMemory, FinancialDecision, SavingsGoal, UserHabit } from "../types.js";
-import type { ConversationalMemory, MemoryProvider } from "./types.js";
+import type { ConversationalMemory, ConversationalMemoryPage, MemoryProvider } from "./types.js";
 import { DEFAULT_CONVERSATION_CONTEXT_LIMIT } from "./types.js";
 import { PostgresMemoryRepository } from "./postgres-memory-repository.js";
 
@@ -47,6 +47,18 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
 
   async listConversationalMemories(userId: string): Promise<readonly ConversationalMemory[]> {
     return (await this.getMemoryForUser(userId)).conversationalMemories ?? [];
+  }
+
+  listCurrentConversationalMemories(
+    userId: string,
+    includeForgottenMarkers = false,
+    page?: ConversationalMemoryPage
+  ): Promise<readonly ConversationalMemory[]> {
+    return this.durable.listCurrentConversationalMemories(userId, includeForgottenMarkers, page);
+  }
+
+  filterCurrentConversationalMemoryIds(userId: string, candidateIds: readonly string[]): Promise<ReadonlySet<string>> {
+    return this.durable.filterCurrentConversationalMemoryIds(userId, candidateIds);
   }
 
   searchConversationalMemories(userId: string, query: string, limit = 20): Promise<readonly ConversationalMemory[]> {

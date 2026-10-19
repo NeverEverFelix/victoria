@@ -62,6 +62,17 @@ describe("Victoria chat HTTP boundary", () => {
     expect(getLocalMockVictoriaChatHandler({ APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: "short" })).toBeNull();
   });
 
+  it("keeps persistent memory opt-in and fails closed when its local database configuration is missing", () => {
+    expect(getLocalMockVictoriaRuntime({
+      APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: `${secret}-persistent-missing`,
+      VICTORIA_MEMORY_MODE: "persistent"
+    })).toBeNull();
+    expect(getLocalMockVictoriaRuntime({
+      APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: `${secret}-persistent-invalid`,
+      VICTORIA_MEMORY_MODE: "typo"
+    })).toBeNull();
+  });
+
   it("feeds a refreshed user-scoped financial profile into the running local chat route", async () => {
     const userId = "local-profile-user";
     const localRuntime = getLocalMockVictoriaRuntime({

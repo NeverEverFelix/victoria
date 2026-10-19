@@ -1,0 +1,1 @@
+../../db/migrations/0004_semantic_user_memory.sql

@@ -35,9 +35,13 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
   // Both provider paths default off; when both are on, the complete agent team takes precedence.
   const openAiFinancialMomentEnabled = parseOptionalBoolean(source.OPENAI_FINANCIAL_MOMENT_ENABLED, "OPENAI_FINANCIAL_MOMENT_ENABLED");
   const openAiAgentTeamEnabled = parseOptionalBoolean(source.OPENAI_AGENT_TEAM_ENABLED, "OPENAI_AGENT_TEAM_ENABLED");
-  const plaidClientId = requireEnv(source, "PLAID_CLIENT_ID");
-  const plaidSecret = requireEnv(source, "PLAID_SECRET");
-  const authSecret = requireEnv(source, "AUTH_SECRET");
+  // Plaid and the local HMAC session signer are optional capabilities. Their
+  // dedicated runtime factories validate credentials before use.
+  const plaidClientId = source.PLAID_CLIENT_ID?.trim() ?? "";
+  const plaidSecret = source.PLAID_SECRET?.trim() ?? "";
+  const authSecret = source.AUTH_SECRET?.trim() ?? "";
+
+  if (appEnv === "local" && !authSecret) throw new Error("AUTH_SECRET is required.");
 
   assertNodeEnvMatchesAppEnv(appEnv, nodeEnv);
   assertDatabaseUrlIsAllowed(appEnv, databaseUrl);
@@ -177,7 +181,7 @@ function assertDatabaseUrlIsAllowed(appEnv: AppEnv, databaseUrl: string): void {
 }
 
 function assertAuthSecretIsAllowed(appEnv: AppEnv, authSecret: string): void {
-  if (appEnv === "production" && authSecret.length < 32) {
+  if (appEnv === "production" && authSecret && authSecret.length < 32) {
     throw new Error("Production AUTH_SECRET must be at least 32 characters.");
   }
 }
@@ -193,7 +197,7 @@ function assertProviderCredentialsAreAllowed(
   }
 
   const providerValues = [openAiApiKey, plaidClientId, plaidSecret];
-  const hasPlaceholderValue = providerValues.some((value) => {
+  const hasPlaceholderValue = providerValues.filter(Boolean).some((value) => {
     const normalizedValue = value.toLowerCase();
 
     return (
