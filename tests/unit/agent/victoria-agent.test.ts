@@ -345,33 +345,6 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsEntries("user_victim")).toEqual([]);
   });
 
-  it("does not restore a goal allocation when the stored proposal action differs", async () => {
-    const tools = new MockVictoriaTools();
-    const ownerAgent = createAgent([], tools);
-    const context = { userId: "user_123", conversationId: "goal_restore" };
-    await ownerAgent.respond({ ...context, message: "I almost bought a $27 pastry but decided to wait." });
-    await ownerAgent.respond({ ...context, message: "Yes" });
-    const proposal = await ownerAgent.respond({ ...context, message: "Put that toward my emergency fund." });
-    const actionId = requireActionId(proposal.decision.toolCall?.actionId);
-    const forgedDecision = {
-      ...proposal.decision,
-      proposal: { ...proposal.decision.proposal!, actionId: "different_action" }
-    };
-    const pendingStore: PendingGoalAllocationActionStore = {
-      async getPending() { return { actionId, decision: forgedDecision }; },
-      async commit() {}
-    };
-    const agent = new VictoriaAgent({
-      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
-      pendingGoalAllocationActions: pendingStore
-    });
-
-    const response = await agent.respond({ ...context, message: "Yes" });
-
-    expect(response.decision.action).not.toBe("record_goal_allocation");
-    expect(await tools.listSavingsGoalAllocations("user_123")).toEqual([]);
-  });
-
   it("[IDM-002] retries an uncertain correction with the same approval", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);

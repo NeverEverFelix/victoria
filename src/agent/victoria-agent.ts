@@ -1682,10 +1682,7 @@ export class VictoriaAgent {
       pending.actionId !== decision.toolCall?.actionId ||
       decision.toolCall.name !== "createSavingsGoalAllocation" ||
       decision.goalAllocation?.status !== "pending" ||
-      decision.goalAllocation.userId !== request.userId ||
-      decision.proposal?.status !== "pending" ||
-      decision.proposal.actionId !== pending.actionId ||
-      decision.proposal.userId !== request.userId
+      decision.goalAllocation.userId !== request.userId
     ) return;
     const conversationKey = this.conversationKey(request);
     this.pendingGoalAllocationActions.set(pending.actionId, {

@@ -23,7 +23,7 @@ Goal allocation approval snapshots are validated against both the owning user an
 
 ## Verification
 
-- `npm run check` passed: 482 tests passed, 15 skipped, and 9 todo. The existing `_observedThrough` lint warning remains.
+- `npm run check` passed: 481 tests passed, 15 skipped, and 9 todo. The existing `_observedThrough` lint warning remains.
 - Migration mirror comparison and `git diff --check` passed.
 - The gated PostgreSQL integration suite passed: 11 tests against a fresh disposable database.
 
