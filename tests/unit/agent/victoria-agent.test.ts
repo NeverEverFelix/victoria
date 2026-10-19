@@ -9,6 +9,7 @@ import {
 import type { AgentTeamSpecialists } from "../../../src/agent/index.js";
 import type { UserHabit } from "../../../src/agent/types.js";
 import type { SavingsEntry } from "../../../src/domain/savings/types.js";
+import type { PendingGoalAllocationActionStore, PersistedPendingGoalAllocationAction } from "../../../src/agent/pending-goal-allocation-store.js";
 
 describe("VictoriaAgent", () => {
   afterEach(() => vi.useRealTimers());
@@ -71,11 +72,11 @@ describe("VictoriaAgent", () => {
     vi.setSystemTime(new Date("2026-10-07T15:00:00.000Z"));
     const tools = new MockVictoriaTools([], [
       savingsEntry({ id: "entry_this_week", userId: "user_123", amountCents: 2750,
-        createdAt: "2026-10-05T10:00:00.000Z" }),
+        approvedActionId: "action_this_week", createdAt: "2026-10-05T10:00:00.000Z" }),
       savingsEntry({ id: "entry_prior_week", userId: "user_123", amountCents: 9000,
-        createdAt: "2026-10-04T23:59:59.999Z" }),
+        approvedActionId: "action_prior_week", createdAt: "2026-10-04T23:59:59.999Z" }),
       savingsEntry({ id: "entry_other_user", userId: "user_other", amountCents: 8000,
-        createdAt: "2026-10-06T10:00:00.000Z" })
+        approvedActionId: "action_other_user", createdAt: "2026-10-06T10:00:00.000Z" })
     ]);
     const agent = createAgent([], tools);
 
@@ -238,6 +239,38 @@ describe("VictoriaAgent", () => {
     const recorded = await agent.respond({ ...context, message: "Yes" });
     expect(recorded.decision.goalAllocation).toMatchObject({ status: "recorded", amountCents: 2400 });
     expect(await tools.listSavingsGoalAllocations("user_123")).toHaveLength(1);
+  });
+
+  it("persists a goal decline only after an explicit no to the exact pending action", async () => {
+    const tools = new MockVictoriaTools();
+    let pending: PersistedPendingGoalAllocationAction | null = null;
+    const terminalStatuses: string[] = [];
+    const pendingStore: PendingGoalAllocationActionStore = {
+      async getPending() { return pending; },
+      async commit(input) {
+        if (input.pendingAction) pending = input.pendingAction;
+        if (input.terminalAction) {
+          terminalStatuses.push(input.terminalAction.status);
+          pending = null;
+        }
+      }
+    };
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      pendingGoalAllocationActions: pendingStore
+    });
+    const context = { userId: "user_123", conversationId: "goal_decline" };
+    await agent.respond({ ...context, message: "I almost bought a $27 pastry but decided to wait." });
+    await agent.respond({ ...context, message: "Yes" });
+    await agent.respond({ ...context, message: "Put that toward my emergency fund." });
+
+    const ambiguous = await agent.respond({ ...context, message: "Maybe later" });
+    expect(ambiguous.decision.action).toBe("ask_follow_up");
+    expect(terminalStatuses).toEqual([]);
+
+    const declined = await agent.respond({ ...context, message: "No" });
+    expect(declined.decision.action).toBe("reflect");
+    expect(terminalStatuses).toEqual(["declined"]);
   });
 
   it("[IDM-002] retries an uncertain correction with the same approval", async () => {

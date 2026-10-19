@@ -1,7 +1,10 @@
 import { Pool } from "pg";
 import { PostgresTurnRepository } from "./postgres-turn-repository.js";
 
-/** Creates the shared PostgreSQL pool used by a server process. Call pool.end() at shutdown. */
+/**
+ * Creates the shared PostgreSQL pool used by a server process. Call pool.end() at shutdown.
+ * `maxPoolSize` may be set from 1 through 20 (default 5); serverless runtimes should use a small value.
+ */
 export function createPostgresTurnStore(databaseUrl: string, options: { maxPoolSize?: number } = {}): {
   pool: Pool;
   turns: PostgresTurnRepository;

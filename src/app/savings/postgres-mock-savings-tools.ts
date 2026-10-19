@@ -128,6 +128,11 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
     }
     if (!input.reason.trim()) throw new Error("A correction reason is required.");
 
+    // Hydrate the linked immutable history before applying this new adjustment
+    // to the in-memory safety view.
+    await this.listSavingsEntries(input.userId);
+    await this.listSavingsEntryCorrections(input.userId);
+
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
@@ -242,6 +247,25 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
         await client.query("COMMIT");
         return immutableSnapshot(allocation);
       }
+
+      const proposal = await client.query(
+        "SELECT 1 FROM victoria_local_goal_allocation_proposals WHERE user_id = $1 AND action_id = $2",
+        [input.userId, input.approvedActionId]
+      );
+      if (!proposal.rowCount) throw new Error("A goal allocation approval requires its persisted proposal.");
+      await client.query(
+        `INSERT INTO victoria_local_goal_allocation_action_approvals
+          (approval_id, user_id, action_id, approval, created_at)
+         VALUES ($1, $2, $3, $4::jsonb, $5)
+         ON CONFLICT (user_id, action_id) DO NOTHING`,
+        [input.approval.id, input.userId, input.approvedActionId, JSON.stringify(input.approval), input.approval.approvedAt]
+      );
+      const savedApproval = await client.query<{ same: boolean }>(
+        `SELECT approval = $3::jsonb AS same FROM victoria_local_goal_allocation_action_approvals
+         WHERE user_id = $1 AND action_id = $2`,
+        [input.userId, input.approvedActionId, JSON.stringify(input.approval)]
+      );
+      if (!savedApproval.rows[0]?.same) throw new Error("The approved action already has a different saved approval.");
 
       const entryResult = await client.query<{ entry_id: string; amount_cents: string; movement_mode: string; status: string }>(
         `SELECT e.entry_id, e.amount_cents::text, e.movement_mode, e.status
@@ -381,7 +405,7 @@ interface CorrectionRow {
 }
 
 function rowToCorrection(row: CorrectionRow): SavingsEntryCorrection {
-  return immutableSnapshot({
+  const correction = {
     id: row.id,
     userId: row.userId,
     savingsEntryId: row.savingsEntryId,
@@ -391,21 +415,28 @@ function rowToCorrection(row: CorrectionRow): SavingsEntryCorrection {
     approvalId: row.approvalId,
     approvedActionId: row.approvedActionId,
     createdAt: new Date(row.createdAt).toISOString()
-  });
+  };
+  assertSafeCents(correction.correctedAmountCents, "corrected amount");
+  if (!Number.isSafeInteger(correction.adjustmentCents) || correction.adjustmentCents === 0) {
+    throw new Error("Stored correction adjustment is outside the safe integer range.");
+  }
+  return immutableSnapshot(correction);
 }
 
 function sameCorrection(correction: SavingsEntryCorrection, input: CreateSavingsEntryCorrectionInput): boolean {
   return correction.savingsEntryId === input.savingsEntryId &&
     correction.correctedAmountCents === input.correctedAmountCents && correction.reason === input.reason &&
-    correction.approvalId === input.approvalId;
+    correction.approvalId === input.approvalId && correction.approvedActionId === input.approvedActionId;
 }
 
 function rowToGoalAllocation(row: GoalAllocationRow): SavingsGoalAllocation {
+  const amountCents = Number(row.amountCents);
+  assertSafeCents(amountCents, "goal allocation amount");
   return {
     id: row.id,
     userId: row.userId,
     savingsEntryId: row.savingsEntryId,
-    amountCents: Number(row.amountCents),
+    amountCents,
     goalName: row.goalName,
     status: "recorded",
     approvedActionId: row.approvedActionId,
@@ -427,6 +458,8 @@ function sameGoalAllocation(allocation: SavingsGoalAllocation, input: CreateSavi
 }
 
 function rowToEntry(row: EntryRow): SavingsEntry {
+  const amountCents = Number(row.amountCents);
+  assertSafeCents(amountCents, "savings entry amount");
   return immutableSnapshot({
     id: row.id,
     userId: row.userId,
@@ -434,7 +467,7 @@ function rowToEntry(row: EntryRow): SavingsEntry {
     proposalId: row.proposalId,
     approvalId: row.approvalId,
     approvedActionId: row.approvedActionId,
-    amountCents: Number(row.amountCents),
+    amountCents,
     currency: row.currency,
     reason: row.reason,
     ...(row.goalName ? { goalName: row.goalName } : {}),
@@ -446,7 +479,14 @@ function rowToEntry(row: EntryRow): SavingsEntry {
 
 function sameEntry(entry: SavingsEntry, input: CreateSavingsEntryInput): boolean {
   return entry.eventId === input.eventId && entry.proposalId === input.proposalId &&
-    entry.approvalId === input.approvalId && entry.amountCents === input.amountCents &&
+    entry.approvalId === input.approvalId && entry.approvedActionId === input.approvedActionId &&
+    entry.amountCents === input.amountCents &&
     entry.reason === input.reason && entry.goalName === input.goalName &&
     entry.movementMode === input.movementMode && entry.currency === "USD" && entry.status === "completed";
+}
+
+function assertSafeCents(value: number, label: string): void {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`Stored ${label} is outside the positive safe integer cents range.`);
+  }
 }

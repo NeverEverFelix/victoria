@@ -140,9 +140,12 @@ export class MemoryOrchestrator implements MemoryProvider {
   }
 
   async listConversationalMemories(userId: string, page?: ConversationalMemoryPage): Promise<readonly ConversationalMemory[]> {
-    const candidates = this.storage.listCurrentConversationalMemories
-      ? await this.storage.listCurrentConversationalMemories(userId, false, page)
-      : await this.storage.listConversationalMemories(userId);
+    if (this.storage.listCurrentConversationalMemories) {
+      // This adapter already applies lifecycle filtering before keyset pagination.
+      // Re-filtering its page can drop valid results at page boundaries.
+      return Object.freeze([...(await this.storage.listCurrentConversationalMemories(userId, false, page))]);
+    }
+    const candidates = await this.storage.listConversationalMemories(userId);
     return Object.freeze(this.selectVisibleCurrent(candidates));
   }
 
@@ -179,7 +182,11 @@ export class MemoryOrchestrator implements MemoryProvider {
   }
 
   private selectVisibleCurrent(memories: readonly ConversationalMemory[]): ConversationalMemory[] {
-    return this.selectCurrentRecords(memories).filter((memory) => memory.sourceMetadata?.memoryStatus !== "forgotten");
+    const superseded = new Set(memories.flatMap((memory) => memory.supersedesId ? [memory.supersedesId] : []));
+    const forgottenKeys = new Set(memories.filter((memory) => !superseded.has(memory.id) &&
+      memory.sourceMetadata?.memoryStatus === "forgotten").map((memory) => `${memory.category}\u0000${memory.key}`));
+    return this.selectCurrentRecords(memories).filter((memory) =>
+      memory.sourceMetadata?.memoryStatus !== "forgotten" && !forgottenKeys.has(`${memory.category}\u0000${memory.key}`));
   }
 
   private selectCurrentRecords(memories: readonly ConversationalMemory[]): ConversationalMemory[] {

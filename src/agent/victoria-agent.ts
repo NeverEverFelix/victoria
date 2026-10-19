@@ -113,13 +113,16 @@ export class VictoriaAgent {
     await this.restorePendingGoalAllocationAction(request);
     const conversationKey = this.conversationKey(request);
     const priorPendingGoalActionId = this.pendingGoalAllocationIdsByConversation.get(conversationKey);
+    const priorPendingGoalDecision = priorPendingGoalActionId
+      ? this.pendingGoalAllocationActions.get(priorPendingGoalActionId)?.decision
+      : undefined;
     const priorContext = await this.dependencies.memory.getConversationContext(request.userId, conversationId);
     await this.summarizeOverflowingConversation(request.userId, priorContext);
     const withUserMessage = [...priorContext, request.message].slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT);
     await this.dependencies.memory.setConversationContext(request.userId, conversationId, withUserMessage);
     const response = immutableSnapshot(await this.respondTurn(request, priorContext));
     await this.persistPendingSavingsAction(request, response.decision);
-    await this.persistPendingGoalAllocationAction(request, response.decision, priorPendingGoalActionId);
+    await this.persistPendingGoalAllocationAction(request, response.decision, priorPendingGoalActionId, priorPendingGoalDecision);
     await this.dependencies.memory.setConversationContext(request.userId, conversationId,
       [...withUserMessage, `Victoria: ${response.message}`].slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT));
     return response;
@@ -1687,7 +1690,8 @@ export class VictoriaAgent {
   private async persistPendingGoalAllocationAction(
     request: AgentRequest,
     responseDecision: AgentDecision,
-    priorActionId?: string
+    priorActionId?: string,
+    priorDecision?: AgentDecision
   ): Promise<void> {
     const store = this.dependencies.pendingGoalAllocationActions;
     if (!store) return;
@@ -1696,13 +1700,13 @@ export class VictoriaAgent {
     const pending = actionId ? this.pendingGoalAllocationActions.get(actionId) : undefined;
     let terminalAction: { actionId: string; status: "recorded" | "declined" | "superseded" } | undefined;
     if (responseDecision.action === "record_goal_allocation") {
-      const recordedActionId = responseDecision.goalAllocation?.status === "recorded"
-        ? responseDecision.goalAllocation.approvedActionId
-        : priorActionId;
-      if (recordedActionId) terminalAction = { actionId: recordedActionId, status: "recorded" };
+      if (responseDecision.goalAllocation?.status === "recorded") {
+        terminalAction = { actionId: responseDecision.goalAllocation.approvedActionId, status: "recorded" };
+      }
     } else if (pending && priorActionId && priorActionId !== actionId) {
       terminalAction = { actionId: priorActionId, status: "superseded" };
-    } else if (!pending && priorActionId && responseDecision.action === "reflect") {
+    } else if (priorActionId && priorDecision?.goalAllocation &&
+      interpretApprovalResponse(request.message, priorDecision.goalAllocation.amountCents) === "explicit_decline") {
       terminalAction = { actionId: priorActionId, status: "declined" };
     }
     await store.commit({

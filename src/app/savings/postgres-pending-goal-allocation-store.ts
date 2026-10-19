@@ -6,6 +6,7 @@ import type {
 } from "../../agent/pending-goal-allocation-store.js";
 import type { SavingsGoalAllocation } from "../../domain/savings/types.js";
 import type { PostgresPool } from "../shared/postgres-types.js";
+import { immutableSnapshot } from "../../domain/immutable.js";
 
 /** Append-only goal-allocation proposal snapshots and terminal outcomes for local persistent chat. */
 export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllocationActionStore {
@@ -31,12 +32,12 @@ export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllo
       [userId, conversationId]
     );
     const row = result.rows[0];
-    if (!row || !isPendingDecision(row.decision, userId, conversationId, row.action_id)) return null;
+    if (!row || !isPendingDecision(row.decision, userId, row.action_id)) return null;
     const approval = row.approval;
     if (approval !== null && !isApproval(approval, row.action_id)) return null;
     return Object.freeze({
       actionId: row.action_id,
-      decision: row.decision,
+      decision: immutableSnapshot(row.decision),
       ...(approval ? { approval } : {})
     });
   }
@@ -54,6 +55,9 @@ export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllo
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
+      if (input.terminalAction && !["recorded", "declined", "superseded"].includes(input.terminalAction.status)) {
+        throw new Error("A goal allocation transition must be terminal.");
+      }
       if (input.terminalAction) {
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))", [
           input.userId, input.terminalAction.actionId
@@ -61,7 +65,7 @@ export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllo
       }
       if (input.pendingAction) {
         const pending = input.pendingAction;
-        if (!isPendingDecision(pending.decision, input.userId, input.conversationId, pending.actionId) ||
+        if (!input.conversationId.trim() || !isPendingDecision(pending.decision, input.userId, pending.actionId) ||
             (pending.approval && !isApproval(pending.approval, pending.actionId))) {
           throw new Error("Only a valid pending goal allocation with matching approval can be persisted.");
         }
@@ -167,7 +171,7 @@ export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllo
   }
 }
 
-function isPendingDecision(value: unknown, userId: string, conversationId: string, actionId: string): value is AgentDecision {
+function isPendingDecision(value: unknown, userId: string, actionId: string): value is AgentDecision {
   if (!isRecord(value) || !isRecord(value.goalAllocation) || !isRecord(value.toolCall)) return false;
   const allocation = value.goalAllocation;
   const toolCall = value.toolCall;
@@ -181,8 +185,7 @@ function isPendingDecision(value: unknown, userId: string, conversationId: strin
     toolCall.name === "createSavingsGoalAllocation" && toolCall.actionId === actionId &&
     toolCall.requiresApproval === true && value.action === "update_goal" &&
     args.userId === userId && args.savingsEntryId === allocation.savingsEntryId &&
-    args.amountCents === allocation.amountCents && args.goalName === allocation.goalName &&
-    typeof conversationId === "string";
+    args.amountCents === allocation.amountCents && args.goalName === allocation.goalName;
 }
 
 function isApproval(value: unknown, actionId: string): value is SavingsGoalAllocation["approval"] {

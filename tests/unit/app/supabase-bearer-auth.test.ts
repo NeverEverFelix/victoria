@@ -47,4 +47,18 @@ describe("Supabase bearer authentication", () => {
       publishableKey: "sb_publishable_example-key"
     })).toThrow("SUPABASE_URL must use HTTPS outside localhost.");
   });
+
+  it("accepts IPv6 loopback for local development and rejects non-base64url token characters", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ id: userId })));
+    const authenticate = createSupabaseBearerAuthenticator({
+      supabaseUrl: "http://[::1]:54321",
+      publishableKey: "sb_publishable_local-key",
+      fetcher
+    });
+
+    await expect(authenticate(new Request("http://localhost/api/memories", {
+      headers: { Authorization: "Bearer token+with/slashes=" }
+    }))).resolves.toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
 });

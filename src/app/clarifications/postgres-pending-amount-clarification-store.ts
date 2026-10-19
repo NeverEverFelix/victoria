@@ -37,14 +37,14 @@ export class PostgresPendingAmountClarificationStore implements PendingAmountCla
     await this.db.query(
       `INSERT INTO victoria_pending_amount_clarifications
         (user_id, conversation_id, classification, savings_event, updated_at, expires_at)
-       VALUES ($1, $2, $3::jsonb, $4::jsonb, now(), $5)
+       VALUES ($1, $2, $3::jsonb, $4::jsonb, now(), now() + ($5::int * interval '1 millisecond'))
        ON CONFLICT (user_id, conversation_id) DO UPDATE SET
          classification = EXCLUDED.classification,
          savings_event = EXCLUDED.savings_event,
          updated_at = EXCLUDED.updated_at,
          expires_at = EXCLUDED.expires_at`,
       [userId, conversationId, JSON.stringify(value.classification), JSON.stringify(value.savingsEvent),
-        new Date(Date.now() + this.ttlMs).toISOString()]
+        this.ttlMs]
     );
   }
 

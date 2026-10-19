@@ -109,7 +109,7 @@ Implications:
 
 ### SQLite Owns Short-Term Context; PostgreSQL Backs It Up
 
-Decision: Confirmed on 2026-10-13. Store short-lived current-conversation clarification context in SQLite first, with a local outbox retrying its PostgreSQL backup. Store durable remembered conversational decisions in PostgreSQL and cache reads in SQLite.
+Decision: Confirmed on 2026-10-13 for the default mock-backed runtime. Store short-lived current-conversation clarification context in SQLite first, with a local outbox retrying its PostgreSQL backup. Store durable remembered conversational decisions in PostgreSQL and cache reads in SQLite.
 
 Implications:
 
@@ -123,9 +123,11 @@ Implications:
 - The extractor also supports direct general preferences, recurring habit statements, and explicit goal statements. Migration `0004_semantic_user_memory.sql` adds Supabase RLS, versioned pgvector embeddings, and a user-scoped semantic search function for these facts and transaction-derived profile facts. Embedding generation is injected and is not configured in the default mock composition; a remembered goal does not authorize a goal allocation.
 - This does not yet persist learned habits or goals or select a SQLite file path for a deployed runtime.
 
+The opt-in local `VICTORIA_MEMORY_MODE=persistent` development runtime is a deliberate exception: PostgreSQL is authoritative for both short-term continuation state and durable memories so they survive process restarts. SQLite remains authoritative in the default mock-backed runtime. The local persistent exception does not change the eventual deployed-runtime decision; production context ownership and outage behavior require a separate design decision.
+
 ### Local Persistent Chat Restores Missing-Amount Clarifications
 
-Decision: The local `VICTORIA_MEMORY_MODE=persistent` runtime stores an unanswered avoided-spend amount clarification in PostgreSQL for the same 30-minute window as short-term conversation context.
+Decision: The local `VICTORIA_MEMORY_MODE=persistent` runtime stores an unanswered avoided-spend amount clarification in PostgreSQL for the same 30-minute window as its PostgreSQL-backed short-term conversation context.
 
 Implications:
 

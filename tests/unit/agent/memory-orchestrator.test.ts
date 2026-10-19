@@ -15,6 +15,20 @@ const profileMemory = (overrides: Partial<Omit<ConversationalMemory, "id" | "cre
 });
 
 describe("MemoryOrchestrator", () => {
+  it("preserves a paginated current-memory page returned by storage", async () => {
+    const storage = new MockMemoryProvider();
+    const row = {
+      id: "older-current-row", category: "preference" as const, key: "reply_style", value: "Concise.",
+      evidence: "Direct statement.", confidence: 1, createdAt: "2025-01-01T00:00:00.000Z"
+    };
+    const listCurrent = vi.spyOn(storage, "listCurrentConversationalMemories").mockResolvedValue([row]);
+    const orchestrator = new MemoryOrchestrator(storage, { now: () => new Date("2026-10-19T12:00:00.000Z") });
+    const page = { limit: 1, before: { createdAt: "2025-01-02T00:00:00.000Z", id: "cursor" } };
+
+    await expect(orchestrator.listConversationalMemories("user-a", page)).resolves.toEqual([row]);
+    expect(listCurrent).toHaveBeenCalledWith("user-a", false, page);
+  });
+
   it("versions repeated learned facts and retrieves only the current fact", async () => {
     const orchestrator = new MemoryOrchestrator(new MockMemoryProvider(), { now: () => new Date("2026-10-13T12:00:00Z") });
     const first = await orchestrator.rememberConversationalMemory("user-a", {

@@ -399,21 +399,14 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
       await expect(restartedTools.createSavingsEntryCorrection({ ...input, correctedAmountCents: 3500 }))
         .rejects.toThrow("An approved action cannot be reused for a different savings correction.");
 
-      const goalActionId = `goal-action-${randomUUID()}`;
-      const allocation = await restartedTools.createSavingsGoalAllocation({
-        userId: correctionUserId,
-        savingsEntryId: entryId,
-        amountCents: 3000,
-        goalName: "Emergency fund",
-        approval: {
-          id: `goal-approval-${randomUUID()}`,
-          actionId: goalActionId,
-          approvedAt: new Date().toISOString(),
-          source: "user_message"
-        },
-        approvedActionId: goalActionId
-      });
-      expect(allocation.amountCents).toBe(3000);
+      const goalProposal = await runtime!.handler(chatRequest(token, conversationId,
+        "Put that toward my emergency fund."), { conversationId });
+      expect((await goalProposal.json() as { decision: { action: string } }).decision.action).toBe("update_goal");
+      const goalRecorded = await runtime!.handler(chatRequest(token, conversationId, "Yes"), { conversationId });
+      expect((await goalRecorded.json() as { decision: { action: string } }).decision.action).toBe("record_goal_allocation");
+      expect(await restartedTools.listSavingsGoalAllocations(correctionUserId)).toMatchObject([
+        { savingsEntryId: entryId, amountCents: 3000, goalName: "Emergency fund" }
+      ]);
 
       const original = await store.pool.query<{ amount_cents: string }>(
         "SELECT amount_cents::text FROM victoria_local_savings_entries WHERE user_id = $1 AND entry_id = $2",

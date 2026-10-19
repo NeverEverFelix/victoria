@@ -12,7 +12,7 @@ export function createSupabaseBearerAuthenticator(options: SupabaseBearerAuthent
   const baseUrl = options.supabaseUrl.trim().replace(/\/+$/, "");
   const publishableKey = options.publishableKey.trim();
   const url = new URL(baseUrl);
-  if (url.protocol !== "https:" && url.hostname !== "localhost" && url.hostname !== "127.0.0.1") {
+    if (url.protocol !== "https:" && url.hostname !== "localhost" && url.hostname !== "127.0.0.1" && url.hostname !== "[::1]") {
     throw new Error("SUPABASE_URL must use HTTPS outside localhost.");
   }
   if (!isPublishableKey(publishableKey)) throw new Error("A Supabase publishable or anon key is required.");
@@ -20,21 +20,24 @@ export function createSupabaseBearerAuthenticator(options: SupabaseBearerAuthent
 
   return async function authenticate(request: Request): Promise<{ readonly userId: string } | null> {
     const authorization = request.headers.get("authorization");
-    const match = authorization?.match(/^Bearer ([A-Za-z0-9._~+\/-]+=*)$/);
+    const match = authorization?.match(/^Bearer ([A-Za-z0-9._~-]+)$/);
     const token = match?.[1];
     if (!token || token.length > MAX_ACCESS_TOKEN_LENGTH) return null;
 
     let response: Response;
+    const timeout = requestTimeoutSignal(5_000);
     try {
       response = await fetcher(`${baseUrl}/auth/v1/user`, {
         method: "GET",
         headers: { apikey: publishableKey, Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(5_000),
+        signal: timeout.signal,
         cache: "no-store",
         redirect: "error"
       });
     } catch {
       throw new Error("Supabase Auth is unavailable.");
+    } finally {
+      timeout.dispose();
     }
     if (response.status === 401 || response.status === 403) return null;
     if (!response.ok) throw new Error("Supabase Auth verification failed.");
@@ -56,6 +59,12 @@ export function createSupabaseBearerAuthenticator(options: SupabaseBearerAuthent
     }
     return Object.freeze({ userId });
   };
+}
+
+function requestTimeoutSignal(timeoutMs: number): { readonly signal: AbortSignal; dispose(): void } {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return { signal: controller.signal, dispose: () => clearTimeout(timeout) };
 }
 
 function isPublishableKey(key: string): boolean {

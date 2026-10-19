@@ -279,3 +279,11 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Corrections are append-only and target only the authenticated user's current fact; unknown and foreign IDs return the same not-found result.
 - Forgetting appends a non-embedded marker that suppresses the fact from list and retrieval; source records and embeddings remain retained, and the API states this clearly.
 - No bulk-delete endpoint is present. Memory-management routes use Postgres directly and do not depend on Vercel local filesystem persistence.
+
+## Durable local memory and savings integrity follow-up
+
+- A paginated current-memory page is returned as produced by storage; the orchestration layer must not apply another lifecycle filter that removes records or shifts a cursor.
+- Hydrated durable savings entries and corrections must satisfy the same safe cents, mock-only, approval identity, ownership, and completed-entry checks as newly created records.
+- Persisted goal-allocation approval and terminal records must be detached/frozen and limited to valid terminal states. Only an explicit decline of the exact pending action may persist a declined transition.
+- PostgreSQL migrations enforce safe-integer cents, user-consistent entry references, goal approval references, and a matching recorded transition for each inserted savings entry.
+- Conversation lock contention must stop with a clear timeout instead of waiting indefinitely; clarification expiry is calculated from the database clock.
