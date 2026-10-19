@@ -1551,6 +1551,7 @@ export class VictoriaAgent {
 
     const approval = pendingAction.approval ?? {
       id: this.nextId("goal_approval", this.nextGoalApprovalNumber++),
+      userId: request.userId,
       actionId,
       approvedAt: new Date().toISOString(),
       source: "user_message" as const

@@ -37,6 +37,18 @@ describe("Supabase bearer authentication", () => {
     await expect(authenticate(request())).rejects.toThrow("Supabase Auth is unavailable.");
   });
 
+  it("accepts the bearer authentication scheme case-insensitively", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ id: userId })));
+    const authenticate = createSupabaseBearerAuthenticator({
+      supabaseUrl: "https://victoria.supabase.co",
+      publishableKey: "sb_publishable_example-key",
+      fetcher
+    });
+    await expect(authenticate(new Request("https://victoria.example/api/memories", {
+      headers: { Authorization: "bearer user-access-token" }
+    }))).resolves.toEqual({ userId });
+  });
+
   it("rejects service-role keys and non-HTTPS Supabase endpoints", () => {
     expect(() => createSupabaseBearerAuthenticator({
       supabaseUrl: "https://victoria.supabase.co",

@@ -223,8 +223,8 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
     if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) {
       throw new Error("Goal allocation amount must be a positive safe integer number of cents.");
     }
-    if (input.approval.actionId !== input.approvedActionId) {
-      throw new Error("A goal allocation approval must match its approved action.");
+    if (input.approval.userId !== input.userId || input.approval.actionId !== input.approvedActionId) {
+      throw new Error("A goal allocation approval must match its user and approved action.");
     }
 
     const client = await this.db.connect();
@@ -442,6 +442,7 @@ function rowToGoalAllocation(row: GoalAllocationRow): SavingsGoalAllocation {
     approvedActionId: row.approvedActionId,
     approval: {
       id: row.approvalId,
+      userId: row.userId,
       actionId: row.approvedActionId,
       approvedAt: new Date(row.approvedAt).toISOString(),
       source: "user_message"

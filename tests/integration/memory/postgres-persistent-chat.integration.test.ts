@@ -387,6 +387,14 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
         userId: allocationUserId,
         savingsEntryId: allocation.savingsEntryId,
         amountCents: allocation.amountCents,
+        goalName: allocation.goalName,
+        approval: { ...allocation.approval, userId: "another-user" },
+        approvedActionId: allocation.approvedActionId
+      })).rejects.toThrow("match its user and approved action");
+      await expect(tools.createSavingsGoalAllocation({
+        userId: allocationUserId,
+        savingsEntryId: allocation.savingsEntryId,
+        amountCents: allocation.amountCents,
         goalName: "Vacation",
         approval: allocation.approval,
         approvedActionId: allocation.approvedActionId
@@ -473,6 +481,7 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
     // Simulate the ledger write succeeding while the response/terminal transition is lost.
     const recoveredApproval = {
       id: `goal-approval-${randomUUID()}`,
+      userId: allocationUserId,
       actionId: "",
       approvedAt: new Date().toISOString(),
       source: "user_message" as const

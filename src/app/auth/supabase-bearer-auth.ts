@@ -20,7 +20,7 @@ export function createSupabaseBearerAuthenticator(options: SupabaseBearerAuthent
 
   return async function authenticate(request: Request): Promise<{ readonly userId: string } | null> {
     const authorization = request.headers.get("authorization");
-    const match = authorization?.match(/^Bearer ([A-Za-z0-9._~-]+)$/);
+    const match = authorization?.match(/^Bearer ([A-Za-z0-9._~-]+)$/i);
     const token = match?.[1];
     if (!token || token.length > MAX_ACCESS_TOKEN_LENGTH) return null;
 
