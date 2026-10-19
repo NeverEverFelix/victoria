@@ -14,9 +14,9 @@ export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllo
 
   async getPending(userId: string, conversationId: string): Promise<PersistedPendingGoalAllocationAction | null> {
     const result = await this.db.query<{ action_id: string; decision: unknown; approval: unknown }>(
-      `SELECT p.action_id, p.decision,
+      `SELECT p.action_id, p.user_id, p.decision,
          COALESCE(a.approval, CASE WHEN g.approved_action_id IS NOT NULL THEN
-           jsonb_build_object('id', g.approval_id, 'actionId', g.approved_action_id,
+           jsonb_build_object('id', g.approval_id, 'userId', p.user_id, 'actionId', g.approved_action_id,
              'approvedAt', g.approved_at, 'source', 'user_message') END) AS approval
        FROM victoria_local_goal_allocation_proposals p
        LEFT JOIN victoria_local_goal_allocation_action_approvals a
@@ -34,7 +34,7 @@ export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllo
     const row = result.rows[0];
     if (!row || !isPendingDecision(row.decision, userId, row.action_id)) return null;
     const approval = row.approval;
-    if (approval !== null && !isApproval(approval, row.action_id)) return null;
+    if (approval !== null && !isApproval(approval, row.action_id, userId)) return null;
     return Object.freeze({
       actionId: row.action_id,
       decision: immutableSnapshot(row.decision),
@@ -66,7 +66,7 @@ export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllo
       if (input.pendingAction) {
         const pending = input.pendingAction;
         if (!input.conversationId.trim() || !isPendingDecision(pending.decision, input.userId, pending.actionId) ||
-            (pending.approval && !isApproval(pending.approval, pending.actionId))) {
+            (pending.approval && !isApproval(pending.approval, pending.actionId, input.userId))) {
           throw new Error("Only a valid pending goal allocation with matching approval can be persisted.");
         }
         const allocation = pending.decision.goalAllocation!;
@@ -89,8 +89,8 @@ export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllo
         ? { actionId: input.pendingAction.actionId, approval: input.pendingAction.approval }
         : undefined);
       if (approvalAction) {
-        if (!isApproval(approvalAction.approval, approvalAction.actionId)) {
-          throw new Error("A goal allocation approval must match its exact action.");
+        if (!isApproval(approvalAction.approval, approvalAction.actionId, input.userId)) {
+          throw new Error("A goal allocation approval must match its exact user and action.");
         }
         const proposal = await client.query(
           "SELECT 1 FROM victoria_local_goal_allocation_proposals WHERE user_id = $1 AND action_id = $2",
@@ -188,9 +188,9 @@ function isPendingDecision(value: unknown, userId: string, actionId: string): va
     args.amountCents === allocation.amountCents && args.goalName === allocation.goalName;
 }
 
-function isApproval(value: unknown, actionId: string): value is SavingsGoalAllocation["approval"] {
+function isApproval(value: unknown, actionId: string, userId: string): value is SavingsGoalAllocation["approval"] {
   if (!isRecord(value)) return false;
-  return typeof value.id === "string" && value.id.length > 0 && value.actionId === actionId &&
+  return typeof value.id === "string" && value.id.length > 0 && value.userId === userId && value.actionId === actionId &&
     typeof value.approvedAt === "string" && Number.isFinite(Date.parse(value.approvedAt)) &&
     value.source === "user_message";
 }

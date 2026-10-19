@@ -494,6 +494,15 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
       const goal = pending?.decision.goalAllocation;
       expect(goal?.status).toBe("pending");
       if (!pending || !goal || goal.status !== "pending") throw new Error("Expected a durable pending goal action.");
+      const pendingStore = new PostgresPendingGoalAllocationActionStore(recoveryStore.pool);
+      await expect(pendingStore.commit({
+        userId: allocationUserId,
+        conversationId: approvalConversationId,
+        approvalAction: {
+          actionId: pending.actionId,
+          approval: { ...recoveredApproval, userId: "another-user", actionId: pending.actionId }
+        }
+      })).rejects.toThrow("match its exact user and action");
       const approval = { ...recoveredApproval, actionId: pending.actionId };
       await new PostgresMockSavingsTools(recoveryStore.pool).createSavingsGoalAllocation({
         userId: allocationUserId,
