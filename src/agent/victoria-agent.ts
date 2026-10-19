@@ -1654,6 +1654,15 @@ export class VictoriaAgent {
     if (!store) return;
     const pending = await store.getPending(request.userId, request.conversationId ?? "default");
     if (!pending) return;
+    const { decision } = pending;
+    if (
+      pending.actionId !== decision.toolCall?.actionId ||
+      decision.toolCall.name !== "createSavingsEntry" ||
+      decision.proposal?.status !== "pending" ||
+      decision.proposal.actionId !== pending.actionId ||
+      decision.proposal.userId !== request.userId ||
+      decision.savingsEvent?.userId !== request.userId
+    ) return;
     const conversationKey = this.conversationKey(request);
     this.pendingSavingsActions.set(pending.actionId, {
       userId: request.userId,
@@ -1668,6 +1677,13 @@ export class VictoriaAgent {
     if (!store) return;
     const pending = await store.getPending(request.userId, request.conversationId ?? "default");
     if (!pending) return;
+    const { decision } = pending;
+    if (
+      pending.actionId !== decision.toolCall?.actionId ||
+      decision.toolCall.name !== "createSavingsGoalAllocation" ||
+      decision.goalAllocation?.status !== "pending" ||
+      decision.goalAllocation.userId !== request.userId
+    ) return;
     const conversationKey = this.conversationKey(request);
     this.pendingGoalAllocationActions.set(pending.actionId, {
       userId: request.userId,

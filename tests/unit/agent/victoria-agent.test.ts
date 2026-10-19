@@ -11,6 +11,7 @@ import type { UserHabit } from "../../../src/agent/types.js";
 import type { SavingsEntry } from "../../../src/domain/savings/types.js";
 import type { PendingGoalAllocationActionStore, PersistedPendingGoalAllocationAction } from "../../../src/agent/pending-goal-allocation-store.js";
 import type { PendingAmountClarificationStore } from "../../../src/agent/pending-amount-clarification-store.js";
+import type { PendingSavingsActionStore } from "../../../src/agent/pending-savings-action-store.js";
 
 describe("VictoriaAgent", () => {
   afterEach(() => vi.useRealTimers());
@@ -312,6 +313,36 @@ describe("VictoriaAgent", () => {
     const declined = await agent.respond({ ...context, message: "No" });
     expect(declined.decision.action).toBe("reflect");
     expect(terminalStatuses).toEqual(["declined"]);
+  });
+
+  it("does not restore a pending savings action whose stored decision belongs to another user", async () => {
+    const tools = new MockVictoriaTools();
+    const ownerAgent = createAgent([], tools);
+    const ownerDecision = await ownerAgent.respond({
+      userId: "user_owner",
+      conversationId: "shared_conversation",
+      message: "I almost bought a $27 pastry but decided to wait."
+    });
+    const actionId = requireActionId(ownerDecision.decision.toolCall?.actionId);
+    const pendingStore: PendingSavingsActionStore = {
+      async getPending() { return { actionId, decision: ownerDecision.decision }; },
+      async commit() {}
+    };
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(),
+      memory: new MockMemoryProvider(),
+      tools,
+      pendingSavingsActions: pendingStore
+    });
+
+    const response = await agent.respond({
+      userId: "user_victim",
+      conversationId: "shared_conversation",
+      message: "Yes"
+    });
+
+    expect(response.decision.action).not.toBe("record_savings_entry");
+    expect(await tools.listSavingsEntries("user_victim")).toEqual([]);
   });
 
   it("[IDM-002] retries an uncertain correction with the same approval", async () => {
