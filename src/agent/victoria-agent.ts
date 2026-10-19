@@ -1616,7 +1616,11 @@ export class VictoriaAgent {
 
   private async getPendingAmountClarification(request: AgentRequest): Promise<PendingAmountClarification | undefined> {
     const store = this.dependencies.pendingAmountClarifications;
-    if (store) return await store.get(request.userId, request.conversationId ?? "default") ?? undefined;
+    if (store) {
+      const pending = await store.get(request.userId, request.conversationId ?? "default");
+      return pending?.classification.type === "avoided_spend" && pending.savingsEvent.type === "avoided_spend" &&
+        pending.savingsEvent.userId === request.userId ? pending : undefined;
+    }
     const local = this.pendingAmountClarifications.get(this.conversationKey(request));
     return local?.userId === request.userId
       ? { classification: local.classification, savingsEvent: local.savingsEvent }
@@ -1730,7 +1734,9 @@ export class VictoriaAgent {
   }
 
   private nextId(namespace: string, sequence: number): string {
-    return this.dependencies.idFactory ? `${namespace}_${this.dependencies.idFactory()}` : `${namespace}_${sequence}`;
+    return this.dependencies.idFactory
+      ? `${namespace}_${this.dependencies.idFactory()}_${sequence}`
+      : `${namespace}_${sequence}`;
   }
 }
 

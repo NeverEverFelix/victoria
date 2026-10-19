@@ -20,6 +20,25 @@ function correction(overrides: Partial<SavingsEntryCorrection> = {}): SavingsEnt
 }
 
 describe("mock savings hydration", () => {
+  it("adds monotonic identity to constant ID-factory outputs", async () => {
+    const tools = new MockVictoriaTools([], [], () => "same-id");
+    const first = await tools.createSavingsEntry({
+      userId: "user-a", eventId: "event-a", proposalId: "proposal-a", approvalId: "approval-a",
+      suggestionId: "suggestion-a", amountCents: 500, reason: "Skipped coffee", movementMode: "mock_ledger",
+      approvedActionId: "action-a"
+    });
+    const second = await tools.createSavingsEntry({
+      userId: "user-a", eventId: "event-b", proposalId: "proposal-b", approvalId: "approval-b",
+      suggestionId: "suggestion-b", amountCents: 700, reason: "Skipped lunch", movementMode: "mock_ledger",
+      approvedActionId: "action-b"
+    });
+
+    expect(first.id).not.toBe(second.id);
+    const firstSuggestion = await tools.estimateAvoidedSpend({ userId: "user-a", userProvidedAmountCents: 500 });
+    const secondSuggestion = await tools.estimateAvoidedSpend({ userId: "user-a", userProvidedAmountCents: 700 });
+    expect(firstSuggestion?.id).not.toBe(secondSuggestion?.id);
+  });
+
   it("rejects durable entries that do not satisfy the mocked approved-ledger contract", () => {
     const tools = new MockVictoriaTools();
     expect(() => tools.hydrateSavingsEntry(entry({ amountCents: Number.MAX_SAFE_INTEGER + 1 })))

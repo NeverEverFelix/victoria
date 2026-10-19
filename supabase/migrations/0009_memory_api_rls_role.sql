@@ -19,13 +19,19 @@ GRANT EXECUTE ON FUNCTION victoria_search_conversational_memories(text, extensio
   TO victoria_memory_api;
 
 DROP POLICY IF EXISTS victoria_conversational_memories_api_owner_policy ON victoria_conversational_memories;
-CREATE POLICY victoria_conversational_memories_api_owner_policy ON victoria_conversational_memories
-  FOR ALL TO victoria_memory_api
-  USING (user_id = NULLIF(current_setting('request.jwt.claim.sub', true), ''))
+CREATE POLICY victoria_conversational_memories_api_select_policy ON victoria_conversational_memories
+  FOR SELECT TO victoria_memory_api
+  USING (user_id = NULLIF(current_setting('request.jwt.claim.sub', true), ''));
+DROP POLICY IF EXISTS victoria_conversational_memories_api_insert_policy ON victoria_conversational_memories;
+CREATE POLICY victoria_conversational_memories_api_insert_policy ON victoria_conversational_memories
+  FOR INSERT TO victoria_memory_api
   WITH CHECK (user_id = NULLIF(current_setting('request.jwt.claim.sub', true), ''));
 
 DROP POLICY IF EXISTS victoria_memory_embeddings_api_owner_policy ON victoria_memory_embeddings;
-CREATE POLICY victoria_memory_embeddings_api_owner_policy ON victoria_memory_embeddings
-  FOR ALL TO victoria_memory_api
-  USING (user_id = NULLIF(current_setting('request.jwt.claim.sub', true), ''))
+CREATE POLICY victoria_memory_embeddings_api_select_policy ON victoria_memory_embeddings
+  FOR SELECT TO victoria_memory_api
+  USING (user_id = NULLIF(current_setting('request.jwt.claim.sub', true), ''));
+DROP POLICY IF EXISTS victoria_memory_embeddings_api_insert_policy ON victoria_memory_embeddings;
+CREATE POLICY victoria_memory_embeddings_api_insert_policy ON victoria_memory_embeddings
+  FOR INSERT TO victoria_memory_api
   WITH CHECK (user_id = NULLIF(current_setting('request.jwt.claim.sub', true), ''));

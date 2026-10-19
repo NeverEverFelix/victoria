@@ -10,6 +10,7 @@ import type { AgentTeamSpecialists } from "../../../src/agent/index.js";
 import type { UserHabit } from "../../../src/agent/types.js";
 import type { SavingsEntry } from "../../../src/domain/savings/types.js";
 import type { PendingGoalAllocationActionStore, PersistedPendingGoalAllocationAction } from "../../../src/agent/pending-goal-allocation-store.js";
+import type { PendingAmountClarificationStore } from "../../../src/agent/pending-amount-clarification-store.js";
 
 describe("VictoriaAgent", () => {
   afterEach(() => vi.useRealTimers());
@@ -35,6 +36,46 @@ describe("VictoriaAgent", () => {
 
     expect(contexts.some((context) => context.includes("I almost bought a $9 book but decided to wait."))).toBe(true);
     expect(contexts.some((context) => context.some((message) => message.startsWith("Victoria: ")))).toBe(true);
+  });
+
+  it("keeps generated IDs unique when the injected ID factory repeats a value", async () => {
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools: new MockVictoriaTools(),
+      idFactory: () => "same"
+    });
+    const first = await agent.respond({ userId: "user_ids", conversationId: "chat-a", message: "I almost bought a $9 book but decided to wait." });
+    const second = await agent.respond({ userId: "user_ids", conversationId: "chat-b", message: "I almost bought a $12 book but decided to wait." });
+
+    expect(first.decision.proposal?.id).toBeDefined();
+    expect(second.decision.proposal?.id).toBeDefined();
+    expect(first.decision.proposal?.id).not.toBe(second.decision.proposal?.id);
+    expect(first.decision.toolCall?.actionId).not.toBe(second.decision.toolCall?.actionId);
+  });
+
+  it("ignores a pending amount clarification returned for another user", async () => {
+    const tools = new MockVictoriaTools();
+    const store: PendingAmountClarificationStore = {
+      async get() {
+        return {
+          classification: {
+            type: "avoided_spend", confidence: 1, summary: "Skipped a purchase.", needsClarification: true
+          },
+          savingsEvent: {
+            id: "other-user-event", userId: "user_other", type: "avoided_spend", summary: "Skipped a purchase.",
+            classificationConfidence: 1, createdAt: "2026-10-19T12:00:00.000Z"
+          }
+        };
+      },
+      async set() {},
+      async clear() {}
+    };
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      pendingAmountClarifications: store });
+
+    const response = await agent.respond({ userId: "user_a", conversationId: "amount_scope", message: "$30" });
+
+    expect(response.decision.savingsEvent?.id).not.toBe("other-user-event");
+    expect(await tools.listSavingsEntries("user_a")).toEqual([]);
   });
 
   it("[COR-001] returns frozen financial history snapshots that cannot rewrite an approved proposal or entry", async () => {

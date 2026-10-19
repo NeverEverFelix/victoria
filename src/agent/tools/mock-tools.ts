@@ -19,6 +19,7 @@ export class MockVictoriaTools implements VictoriaTools {
   private readonly entriesByApprovedAction = new Map<string, SavingsEntry>();
   private readonly goalAllocationsByApprovedAction = new Map<string, SavingsGoalAllocation>();
   private readonly correctionsByApprovedAction = new Map<string, SavingsEntryCorrection>();
+  private nextSuggestionNumber = 1;
   private nextSavingsEntryNumber = 1;
   private nextSavingsCorrectionNumber = 1;
 
@@ -42,7 +43,7 @@ export class MockVictoriaTools implements VictoriaTools {
   async estimateAvoidedSpend(input: EstimateAvoidedSpendInput): Promise<SavingsSuggestion | null> {
     if (input.userProvidedAmountCents !== undefined) {
       return {
-        id: this.idFactory?.("suggestion") ?? `suggestion_${Date.now()}`,
+        id: this.nextSuggestionId(),
         amountCents: input.userProvidedAmountCents,
         currency: "USD",
         reason: "User provided an explicit avoided-spend amount.",
@@ -62,7 +63,7 @@ export class MockVictoriaTools implements VictoriaTools {
 
     if (typicalAmountCents !== null) {
       return {
-        id: this.idFactory?.("suggestion") ?? `suggestion_${Date.now()}`,
+        id: this.nextSuggestionId(),
         amountCents: typicalAmountCents,
         currency: "USD",
         reason: `Estimated from typical spend at ${input.merchantName}.`,
@@ -74,7 +75,7 @@ export class MockVictoriaTools implements VictoriaTools {
     if (input.rememberedTypicalAmountCents !== undefined &&
         Number.isSafeInteger(input.rememberedTypicalAmountCents) && input.rememberedTypicalAmountCents > 0) {
       return {
-        id: this.idFactory?.("suggestion") ?? `suggestion_${Date.now()}`,
+        id: this.nextSuggestionId(),
         amountCents: input.rememberedTypicalAmountCents,
         currency: "USD",
         reason: `Estimated from your remembered typical spend at ${input.merchantName}.`,
@@ -86,7 +87,7 @@ export class MockVictoriaTools implements VictoriaTools {
     const transactionEstimate = input.transactionHistoryEstimate;
     if (isUsableTransactionHistoryEstimate(transactionEstimate)) {
       return {
-        id: this.idFactory?.("suggestion") ?? `suggestion_${Date.now()}`,
+        id: this.nextSuggestionId(),
         amountCents: transactionEstimate.amountCents,
         currency: "USD",
         reason: `Estimate based on ${transactionEstimate.transactionCount} recent transactions at ${input.merchantName}, observed through ${transactionEstimate.observedThrough}.`,
@@ -119,8 +120,9 @@ export class MockVictoriaTools implements VictoriaTools {
       return existingEntry;
     }
 
+    const entryNumber = this.nextSavingsEntryNumber++;
     const entry: SavingsEntry = immutableSnapshot({
-      id: this.idFactory?.("entry") ?? `entry_${this.nextSavingsEntryNumber++}`,
+      id: this.idFactory ? `${this.idFactory("entry")}_${entryNumber}` : `entry_${entryNumber}`,
       userId: input.userId,
       eventId: input.eventId,
       proposalId: input.proposalId,
@@ -337,5 +339,10 @@ export class MockVictoriaTools implements VictoriaTools {
 
   private idempotencyKey(userId: string, approvedActionId: string): string {
     return JSON.stringify([userId, approvedActionId]);
+  }
+
+  private nextSuggestionId(): string {
+    const sequence = this.nextSuggestionNumber++;
+    return this.idFactory ? `${this.idFactory("suggestion")}_${sequence}` : `suggestion_${Date.now()}_${sequence}`;
   }
 }

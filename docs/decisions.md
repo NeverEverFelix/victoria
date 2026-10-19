@@ -322,7 +322,7 @@ Implications:
 
 ### Vercel And Supabase Memory Runtime
 
-Decision: Confirmed on 2026-10-17. Prepare the production memory API for Vercel with Supabase Postgres and Supabase Auth. Keep the implementation server-side and use a Supabase publishable/anon key only for user-token verification; never use a secret/service-role key for these endpoints.
+Decision: Confirmed on 2026-10-17. Prepare the production memory API for Vercel with Supabase Postgres and Supabase Auth. Keep the implementation server-side. Send the user's bearer token to Supabase Auth's user endpoint with the project's publishable/anon API key; Supabase Auth validates the bearer token and provides the verified user ID. The publishable/anon key is not itself a token verifier. Never use a secret/service-role key for these endpoints.
 
 Implications:
 

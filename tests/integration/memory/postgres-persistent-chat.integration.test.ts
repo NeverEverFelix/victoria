@@ -34,6 +34,45 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
     await closeLocalPersistentMemoryPools();
   });
 
+  it("keeps turn and Plaid consent tables server-only", async () => {
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    try {
+      const access = await store.pool.query<{
+        relname: string;
+        rls: boolean;
+        anon_select: boolean;
+        authenticated_select: boolean;
+        service_select: boolean;
+      }>(
+        `SELECT c.relname, c.relrowsecurity AS rls,
+           has_table_privilege('anon', c.oid, 'SELECT') AS anon_select,
+           has_table_privilege('authenticated', c.oid, 'SELECT') AS authenticated_select,
+           has_table_privilege('service_role', c.oid, 'SELECT') AS service_select
+         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public' AND c.relname = ANY($1::text[])
+         ORDER BY c.relname`,
+        [["victoria_plaid_consent_events", "victoria_turns"]]
+      );
+      expect(access.rows).toHaveLength(2);
+      expect(access.rows.every((row) => row.rls && !row.anon_select && !row.authenticated_select && row.service_select))
+        .toBe(true);
+
+      const memoryPolicies = await store.pool.query<{ tablename: string; cmd: string }>(
+        `SELECT tablename, cmd FROM pg_policies
+         WHERE schemaname = 'public' AND roles @> ARRAY['victoria_memory_api']::name[]
+         ORDER BY tablename, cmd`
+      );
+      expect(memoryPolicies.rows).toEqual([
+        { tablename: "victoria_conversational_memories", cmd: "INSERT" },
+        { tablename: "victoria_conversational_memories", cmd: "SELECT" },
+        { tablename: "victoria_memory_embeddings", cmd: "INSERT" },
+        { tablename: "victoria_memory_embeddings", cmd: "SELECT" }
+      ]);
+    } finally {
+      await store.pool.end();
+    }
+  });
+
   it("recalls a user's explicit preference after a fresh agent runtime without sharing it with another user", async () => {
     const firstRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: firstSecret });
     expect(firstRuntime).not.toBeNull();
