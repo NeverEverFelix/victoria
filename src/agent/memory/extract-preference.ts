@@ -1,4 +1,9 @@
 import { parseExplicitDollarAmount } from "../../domain/financial-events/parse-explicit-amount.js";
+import {
+  isExplicitInterestCorrectionEvidence,
+  isExplicitUserEvidence,
+  isNeverStoreMemoryEvidence
+} from "./conversational-memory-extractor.js";
 import type { ConversationalMemory } from "./types.js";
 
 export interface SavingsAmountPreference {
@@ -43,6 +48,19 @@ export function extractSavingsAmountPreference(message: string): SavingsAmountPr
 
 /** Extract a narrow set of direct preferences, recurring habits, and stated goals. */
 export function extractConversationalMemory(message: string): ExtractedConversationalMemory | null {
+  if (!isSafeDirectMemoryEvidence(message)) return null;
+
+  const savingsPreference = extractSavingsAmountPreference(message);
+  if (savingsPreference) {
+    return {
+      category: "preference",
+      key: "savings_contribution_amount",
+      value: `Prefers saving ${formatAmount(savingsPreference.preferredAmountCents)} rather than ${formatAmount(savingsPreference.comparisonAmountCents)} at a time.`,
+      evidence: message,
+      confidence: 1
+    };
+  }
+
   const activityMapping = extractActivitySpendMapping(message);
   if (activityMapping) return activityMapping;
   const interestSpend = extractInterestSpendMemories(message)[0] ?? extractInterestSpend(message);
@@ -61,16 +79,6 @@ export function extractConversationalMemory(message: string): ExtractedConversat
   if (isUncertain(message)) return null;
   const interest = extractExplicitInterest(message);
   if (interest) return interest;
-  const savingsPreference = extractSavingsAmountPreference(message);
-  if (savingsPreference) {
-    return {
-      category: "preference",
-      key: "savings_contribution_amount",
-      value: `Prefers saving ${formatAmount(savingsPreference.preferredAmountCents)} rather than ${formatAmount(savingsPreference.comparisonAmountCents)} at a time.`,
-      evidence: message,
-      confidence: 1
-    };
-  }
   if (/\$\s*\d[\d,.]*.*\b(?:rather than|instead of|over)\b.*\$\s*\d[\d,.]*/i.test(message)) return null;
 
   const preference = /^\s*(?:actually,?\s*)?(?:i prefer|i'd prefer|i would prefer)\s+(?:a\s+|an\s+|the\s+)?(.+?)[.!?]*\s*$/i.exec(message);
@@ -148,6 +156,11 @@ function extractActivitySpendMapping(message: string): ExtractedConversationalMe
 /** Extract independently addressable memories from a direct interest list. */
 export function extractConversationalMemories(message: string): readonly ExtractedConversationalMemory[] {
   const primary = extractConversationalMemory(message);
+  if (primary?.key === "savings_contribution_amount") {
+    const activityFacts = extractInterestSpendMemories(message);
+    if (activityFacts.length > 0) return [primary, ...activityFacts].slice(0, 9);
+    return [primary];
+  }
   if (primary?.category === "financial_pattern" && primary.key.startsWith("interest_spend:")) {
     const activitySpends = extractInterestSpendMemories(message);
     if (activitySpends.length > 1) return activitySpends.map((fact) => ({ ...fact, evidence: message }));
@@ -211,7 +224,7 @@ function extractInterestSpend(message: string): ExtractedConversationalMemory | 
 
 /** Extract independently addressable recurring spend facts when a turn states several. */
 function extractInterestSpendMemories(message: string): ExtractedConversationalMemory[] {
-  const clauses = message.split(/\s*(?:[,;]|\band\b)\s*(?=(?:i\s+)?(?:(?:usually|typically|often|regularly)\s+)?(?:spend\b|\$))/i)
+  const clauses = message.split(/\s*(?:[,;]|\.(?=\s+(?:i\s+)?(?:(?:usually|typically|often|regularly)\s+)?spend\b)|\band\b)\s*(?=(?:i\s+)?(?:(?:usually|typically|often|regularly)\s+)?(?:spend\b|\$))/i)
     .map((clause) => clause.trim())
     .filter(Boolean)
     .map((clause) => /^\$/.test(clause) ? `I spend ${clause}` : /^spend\b/i.test(clause) ? `I ${clause}` : clause);
@@ -288,6 +301,12 @@ export function extractMerchantSpendClaim(message: string): MerchantSpendClaim |
 
 function isUncertain(message: string): boolean {
   return /\b(?:maybe|might|possibly|not sure|unsure|i guess|could|should i|someday|eventually|thinking about|considering)\b/i.test(message);
+}
+
+function isSafeDirectMemoryEvidence(message: string): boolean {
+  if (!message.trim() || isUncertain(message) || isNeverStoreMemoryEvidence(message) ||
+      /^\s*["“'‘].*["”'’]\s*$/s.test(message)) return false;
+  return isExplicitUserEvidence(message, message) || isExplicitInterestCorrectionEvidence(message, message);
 }
 
 function preferenceKey(subject: string): string {

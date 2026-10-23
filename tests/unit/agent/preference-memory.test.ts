@@ -6,6 +6,36 @@ import { MockTransactionHistoryProvider } from "../../fixtures/mock-transaction-
 import { extractConversationalMemories } from "../../../src/agent/memory/extract-preference.js";
 
 describe("explicit savings preference memory", () => {
+  it("keeps the savings amount preference when the same turn also mentions activity spend", async () => {
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
+
+    await agent.respond({
+      userId: "user_savings_preference_and_activity",
+      message: "I prefer saving $20 rather than $50 at a time. I usually spend $35 per month on hiking."
+    });
+
+    expect(await memory.listConversationalMemories("user_savings_preference_and_activity"))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: "savings_contribution_amount" }),
+        expect.objectContaining({ key: "interest_spend:hiking" })
+      ]));
+  });
+
+  it.each([
+    "I love my church community.",
+    "I enjoy discussing political campaigns.",
+    "My friend said, 'I love hiking.'",
+    "‘I love hiking.’"
+  ])("does not persist sensitive, quoted, or third-party deterministic memory: %s", async (message) => {
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
+
+    await agent.respond({ userId: "user_deterministic_memory_safety", message });
+
+    expect(await memory.listConversationalMemories("user_deterministic_memory_safety")).toEqual([]);
+  });
+
   it("does not persist direct-extractor evidence containing contact details", async () => {
     const memory = new MockMemoryProvider();
     const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });

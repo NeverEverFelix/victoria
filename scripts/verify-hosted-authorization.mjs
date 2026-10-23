@@ -7,6 +7,10 @@ const required = [
   "SUPABASE_PUBLISHABLE_KEY"
 ];
 
+if (process.env.CI || process.env.GITHUB_ACTIONS) {
+  throw new Error("Hosted authorization smoke checks must be run manually against the intended staging project.");
+}
+
 for (const name of required) {
   if (!process.env[name]?.trim()) throw new Error(`Missing required environment variable: ${name}`);
 }

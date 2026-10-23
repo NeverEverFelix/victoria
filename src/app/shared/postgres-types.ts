@@ -13,5 +13,5 @@ export interface PostgresPool extends PostgresQueryable {
 }
 
 export interface PostgresClient extends PostgresQueryable {
-  release(error?: Error | boolean): void;
+  release(error?: Error): void;
 }

@@ -27,7 +27,7 @@ export class PostgresConversationCoordinator implements ConversationCoordinator 
           if (result.rows[0]?.acquired) client = candidate;
           else candidate.release();
         } catch (error) {
-          candidate.release(error instanceof Error ? error : true);
+          candidate.release(error instanceof Error ? error : new Error("Conversation lock acquisition failed."));
           throw error;
         }
         if (!client) {
@@ -50,7 +50,7 @@ export class PostgresConversationCoordinator implements ConversationCoordinator 
       );
       if (!unlocked.rows[0]?.released) throw new Error("The conversation lock was not held during release.");
     } catch (error) {
-      client.release(error instanceof Error ? error : true);
+      client.release(error instanceof Error ? error : new Error("Conversation lock release failed."));
       if (operationError !== undefined) throw operationError;
       throw error;
     }

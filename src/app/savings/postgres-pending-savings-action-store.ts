@@ -36,6 +36,7 @@ export class PostgresPendingSavingsActionStore implements PendingSavingsActionSt
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '30s'");
       const pending = input.pendingAction;
       if (pending) {
         if (!isPendingDecision(pending.decision, input.userId, pending.actionId)) {

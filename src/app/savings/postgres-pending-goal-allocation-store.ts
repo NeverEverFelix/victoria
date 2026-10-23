@@ -55,6 +55,7 @@ export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllo
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '30s'");
       if (input.terminalAction && !["recorded", "declined", "superseded"].includes(input.terminalAction.status)) {
         throw new Error("A goal allocation transition must be terminal.");
       }
@@ -93,8 +94,8 @@ export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllo
           throw new Error("A goal allocation approval must match its exact user and action.");
         }
         const proposal = await client.query(
-          "SELECT 1 FROM victoria_local_goal_allocation_proposals WHERE user_id = $1 AND action_id = $2",
-          [input.userId, approvalAction.actionId]
+          "SELECT 1 FROM victoria_local_goal_allocation_proposals WHERE user_id = $1 AND conversation_id = $2 AND action_id = $3",
+          [input.userId, input.conversationId, approvalAction.actionId]
         );
         if (!proposal.rowCount) throw new Error("A goal allocation approval requires its persisted proposal.");
         await client.query(

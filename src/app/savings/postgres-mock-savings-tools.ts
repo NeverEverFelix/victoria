@@ -27,6 +27,7 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '30s'");
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))", [input.userId, input.approvedActionId]);
       const prior = await client.query<{ to_status: string }>(
         "SELECT to_status FROM victoria_local_savings_proposal_transitions WHERE user_id = $1 AND proposal_id = $2",
@@ -136,6 +137,7 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '30s'");
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))", [input.userId, input.approvedActionId]);
       const existingResult = await client.query<CorrectionRow>(
         `SELECT correction_id AS id, user_id AS "userId", savings_entry_id AS "savingsEntryId",
@@ -175,6 +177,36 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
       if (!Number.isSafeInteger(currentAmount) || currentAmount <= 0 ||
           !Number.isSafeInteger(adjustmentCents) || adjustmentCents === 0) {
         throw new Error("A correction must change the current amount by a non-zero safe integer number of cents.");
+      }
+
+      const approvedAt = new Date().toISOString();
+      const approval = {
+        id: input.approvalId,
+        userId: input.userId,
+        actionId: input.approvedActionId,
+        source: "user_message" as const,
+        approvedAt,
+        savingsEntryId: input.savingsEntryId,
+        correctedAmountCents: input.correctedAmountCents,
+        reason: input.reason
+      };
+      await client.query(
+        `INSERT INTO victoria_local_savings_entry_correction_approvals
+          (approval_id, user_id, approved_action_id, savings_entry_id, corrected_amount_cents,
+           reason, approval, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+         ON CONFLICT (user_id, approved_action_id) DO NOTHING`,
+        [approval.id, approval.userId, approval.actionId, input.savingsEntryId,
+          input.correctedAmountCents, input.reason, JSON.stringify(approval), approvedAt]
+      );
+      const savedApproval = await client.query<{ same: boolean }>(
+        `SELECT approval = $3::jsonb AS same
+         FROM victoria_local_savings_entry_correction_approvals
+         WHERE user_id = $1 AND approved_action_id = $2`,
+        [input.userId, input.approvedActionId, JSON.stringify(approval)]
+      );
+      if (!savedApproval.rows[0]?.same) {
+        throw new Error("An approved action cannot be reused for a different savings correction.");
       }
 
       const inserted = await client.query<CorrectionRow>(
@@ -230,6 +262,7 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '30s'");
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))", [input.userId, input.approvedActionId]);
       const existingResult = await client.query<GoalAllocationRow>(
         `SELECT allocation_id AS id, user_id AS "userId", savings_entry_id AS "savingsEntryId",
@@ -405,6 +438,7 @@ interface CorrectionRow {
 }
 
 function rowToCorrection(row: CorrectionRow): SavingsEntryCorrection {
+  const priorAmountCents = Number(row.priorAmountCents);
   const correction = {
     id: row.id,
     userId: row.userId,
@@ -416,15 +450,17 @@ function rowToCorrection(row: CorrectionRow): SavingsEntryCorrection {
     approvedActionId: row.approvedActionId,
     createdAt: new Date(row.createdAt).toISOString()
   };
+  assertSafeCents(priorAmountCents, "prior correction amount");
   assertSafeCents(correction.correctedAmountCents, "corrected amount");
-  if (!Number.isSafeInteger(correction.adjustmentCents) || correction.adjustmentCents === 0) {
+  if (!Number.isSafeInteger(correction.adjustmentCents) || correction.adjustmentCents === 0 ||
+      priorAmountCents + correction.adjustmentCents !== correction.correctedAmountCents) {
     throw new Error("Stored correction adjustment is outside the safe integer range.");
   }
   return immutableSnapshot(correction);
 }
 
 function sameCorrection(correction: SavingsEntryCorrection, input: CreateSavingsEntryCorrectionInput): boolean {
-  return correction.savingsEntryId === input.savingsEntryId &&
+  return correction.userId === input.userId && correction.savingsEntryId === input.savingsEntryId &&
     correction.correctedAmountCents === input.correctedAmountCents && correction.reason === input.reason &&
     correction.approvalId === input.approvalId && correction.approvedActionId === input.approvedActionId;
 }
@@ -452,7 +488,8 @@ function rowToGoalAllocation(row: GoalAllocationRow): SavingsGoalAllocation {
 }
 
 function sameGoalAllocation(allocation: SavingsGoalAllocation, input: CreateSavingsGoalAllocationInput): boolean {
-  return allocation.savingsEntryId === input.savingsEntryId && allocation.amountCents === input.amountCents &&
+  return allocation.userId === input.userId && allocation.approval.userId === input.approval.userId &&
+    allocation.savingsEntryId === input.savingsEntryId && allocation.amountCents === input.amountCents &&
     allocation.goalName === input.goalName && allocation.approval.id === input.approval.id &&
     allocation.approval.actionId === input.approval.actionId &&
     allocation.approval.approvedAt === new Date(input.approval.approvedAt).toISOString();
@@ -479,7 +516,7 @@ function rowToEntry(row: EntryRow): SavingsEntry {
 }
 
 function sameEntry(entry: SavingsEntry, input: CreateSavingsEntryInput): boolean {
-  return entry.eventId === input.eventId && entry.proposalId === input.proposalId &&
+  return entry.userId === input.userId && entry.eventId === input.eventId && entry.proposalId === input.proposalId &&
     entry.approvalId === input.approvalId && entry.approvedActionId === input.approvedActionId &&
     entry.amountCents === input.amountCents &&
     entry.reason === input.reason && entry.goalName === input.goalName &&

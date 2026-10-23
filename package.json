@@ -25,7 +25,7 @@
     "eval:provider:comparison": "RUN_PROVIDER_COMPARISON=1 vitest run tests/evaluation/provider-comparison-live.test.ts",
     "eval:memory:relevance": "node scripts/evaluate-memory-relevance.mjs",
     "agent:smoke:provider-team": "RUN_PROVIDER_AGENT_TEAM_SMOKE=1 vitest run tests/evaluation/provider-agent-team-live.test.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json"
   },
   "devDependencies": {

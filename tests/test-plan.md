@@ -321,7 +321,7 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Hydrated durable savings entries and corrections must satisfy the same safe cents, mock-only, approval identity, ownership, and completed-entry checks as newly created records.
 - Persisted goal-allocation approval and terminal records must be detached/frozen and limited to valid terminal states. Only an explicit decline of the exact pending action may persist a declined transition.
 - Persisted goal-allocation approval snapshots must match both their user and action ID, and restored pending decisions must match their stored owner/action keys.
-- PostgreSQL migrations enforce safe-integer cents, user-consistent entry references, goal approval references, and a matching recorded transition for each inserted savings entry.
+- PostgreSQL migrations enforce safe-integer cents, user-consistent entry references, goal approval references, a matching recorded transition for each inserted savings entry, and a persisted matching approval for each savings-entry correction.
 - Conversation lock contention must stop with a clear timeout instead of waiting indefinitely; clarification expiry is calculated from the database clock.
 - Supabase turn and Plaid consent tables must have RLS enabled, no anon/authenticated SELECT grants, and server-role access only.
 - A caller-provided deterministic ID factory must not produce duplicate proposal, suggestion, or savings-entry IDs within one agent/tool instance.

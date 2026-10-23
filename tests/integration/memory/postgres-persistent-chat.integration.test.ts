@@ -437,6 +437,22 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
       };
       const correction = await firstTools.createSavingsEntryCorrection(input);
       expect(correction).toMatchObject({ correctedAmountCents: 3000, adjustmentCents: -1500 });
+      const approval = await store.pool.query<{ approval: { userId: string; actionId: string; savingsEntryId: string; correctedAmountCents: number } }>(
+        `SELECT approval FROM victoria_local_savings_entry_correction_approvals
+         WHERE user_id = $1 AND approved_action_id = $2`,
+        [correctionUserId, input.approvedActionId]
+      );
+      expect(approval.rows[0]?.approval).toMatchObject({
+        userId: correctionUserId, actionId: input.approvedActionId,
+        savingsEntryId: entryId, correctedAmountCents: 3000
+      });
+      await expect(store.pool.query(
+        `INSERT INTO victoria_local_savings_entry_corrections
+          (correction_id, user_id, savings_entry_id, prior_amount_cents, corrected_amount_cents,
+           adjustment_cents, reason, approval_id, approved_action_id, created_at)
+         VALUES ($1, $2, $3, 4500, 2000, -2500, 'Missing approval', 'approval_missing', 'action_missing', now())`,
+        [`unapproved-correction-${randomUUID()}`, correctionUserId, entryId]
+      )).rejects.toThrow();
 
       const restartedTools = new PostgresMockSavingsTools(store.pool);
       expect(await restartedTools.getEffectiveSavingsEntryAmount(correctionUserId, entryId)).toBe(3000);
