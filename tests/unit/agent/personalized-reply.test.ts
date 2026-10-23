@@ -16,6 +16,13 @@ describe("personalized ordinary replies", () => {
     }, input)).toMatchObject({ usedMemoryIds: ["memory_style"] });
   });
 
+  it("allows ordinary non-financial uses of the word saved", () => {
+    expect(validatePersonalizedReply({
+      message: "I saved this note for next time. What feels most useful to start with?",
+      usedMemoryIds: ["memory_style"]
+    }, input)).not.toBeNull();
+  });
+
   it.each([
     { message: "I recorded $80 for you. What next?", usedMemoryIds: ["memory_style"] },
     { message: "You're irresponsible with spending.", usedMemoryIds: ["memory_style"] },

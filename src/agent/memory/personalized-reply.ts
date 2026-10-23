@@ -56,7 +56,7 @@ function containsEquivalentAmount(text: string, amount: string): boolean {
 }
 
 function claimsActionCompleted(message: string): boolean {
-  return /\b(?:i|we|you|victoria)\s+(?:have\s+)?(?:recorded|transferred|moved|deposited|saved)\b|\b(?:money|funds)\s+(?:has|have)\s+moved\b/i.test(message);
+  return /\b(?:i|we|you|victoria)\s+(?:have\s+)?(?:recorded|transferred|moved|deposited)\b|\b(?:i|we|you|victoria)\s+(?:have\s+)?saved\s+(?:(?:the|some)\s+)?(?:money|funds|savings|amount)\b|\b(?:money|funds)\s+(?:has|have)\s+moved\b/i.test(message);
 }
 
 function claimsMoneyMoved(message: string): boolean {

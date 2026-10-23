@@ -270,14 +270,14 @@ describe("explicit savings preference memory", () => {
 });
 
 describe("general conversational memory extraction", () => {
-  it("accepts up to eight distinct eligible facts from a single turn", () => {
-    const evidence = Array.from({ length: 5 }, (_, index) => `I prefer option ${index + 1}.`);
+  it("accepts eight distinct eligible facts and enforces the per-turn ceiling", () => {
+    const evidence = Array.from({ length: 9 }, (_, index) => `I prefer option ${index + 1}.`);
     const candidates = evidence.map((quote, index) => ({
       category: "preference", key: `preference_${index + 1}`, value: `Prefers option ${index + 1}.`, evidence: quote,
       confidence: 0.95, subject: "user", assertion: "affirmed", stability: "stable", sensitivity: "ordinary"
     }));
 
-    expect(validateMemoryCandidates(candidates, evidence.join(" "))).toHaveLength(5);
+    expect(validateMemoryCandidates(candidates, evidence.join(" "))).toHaveLength(8);
   });
 
   it("learns a model-validated preference from a natural pattern reflection without replacing its reply", async () => {
