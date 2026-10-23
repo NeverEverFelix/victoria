@@ -13,7 +13,7 @@ describe("environment example files", () => {
     expect(env.moneyMovementMode).toBe("mock_ledger");
     const example = readEnvExample(".env.example");
     expect(example.OPENAI_MEMORY_EXTRACTION_ENABLED).toBe("true");
-    expect(example.OPENAI_EPISODIC_SUMMARIES_ENABLED).toBe("false");
+    expect(example.OPENAI_EPISODIC_SUMMARIES_ENABLED).toBe("true");
   });
 
   it("keeps the test example parseable for automated tests", () => {

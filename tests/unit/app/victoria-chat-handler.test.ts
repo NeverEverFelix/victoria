@@ -73,6 +73,58 @@ describe("Victoria chat HTTP boundary", () => {
     })).toBeNull();
   });
 
+  it("enables episode summaries by default with a real provider and honors the explicit opt-out", async () => {
+    const episodeRequests: string[] = [];
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      const requestBody = JSON.parse(String(init?.body)) as { text?: { format?: { name?: string } } };
+      const format = requestBody.text?.format?.name;
+      episodeRequests.push(format ?? "unknown");
+      const result = format === "episodic_memory_summary_v1"
+        ? {
+            summary: "The user enjoys hiking and wants to spend more time outdoors on weekends.",
+            evidenceQuotes: ["I love hiking."], confidence: 0.94, sensitivity: "ordinary"
+          }
+        : { candidates: [] };
+      return new Response(JSON.stringify({
+        output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(result) }] }]
+      }));
+    });
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      const baseEnv = {
+        APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: `${secret}-episode-default`,
+        OPENAI_API_KEY: "sk-test-provider-key", OPENAI_MODEL: "gpt-5-mini",
+        OPENAI_MEMORY_EXTRACTION_ENABLED: "false", OPENAI_PERSONALIZED_REPLIES_ENABLED: "false"
+      };
+      const runtime = getLocalMockVictoriaRuntime(baseEnv);
+      expect(runtime).not.toBeNull();
+      const token = signVictoriaSession({ userId: "episode-default-user", secret: baseEnv.AUTH_SECRET });
+      for (const message of ["I love hiking.", "I want to spend more time outdoors on weekends."]) {
+        const response = await runtime!.handler(chatRequest(token, "episode-default", message), { conversationId: "episode-default" });
+        expect(response.status).toBe(200);
+      }
+      const finished = await runtime!.finishHandler(finishRequest(token), "episode-default");
+      expect(await finished.json()).toEqual({ saved: true });
+      expect(episodeRequests).toEqual(["episodic_memory_summary_v1"]);
+
+      episodeRequests.length = 0;
+      const disabledEnv = {
+        ...baseEnv, AUTH_SECRET: `${secret}-episode-optout`, OPENAI_EPISODIC_SUMMARIES_ENABLED: "false"
+      };
+      const disabledRuntime = getLocalMockVictoriaRuntime(disabledEnv);
+      expect(disabledRuntime).not.toBeNull();
+      const disabledToken = signVictoriaSession({ userId: "episode-optout-user", secret: disabledEnv.AUTH_SECRET });
+      for (const message of ["I love hiking.", "I want to spend more time outdoors on weekends."]) {
+        await disabledRuntime!.handler(chatRequest(disabledToken, "episode-optout", message), { conversationId: "episode-optout" });
+      }
+      const notSaved = await disabledRuntime!.finishHandler(finishRequest(disabledToken), "episode-optout");
+      expect(await notSaved.json()).toEqual({ saved: false });
+      expect(episodeRequests).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("feeds a refreshed user-scoped financial profile into the running local chat route", async () => {
     const userId = "local-profile-user";
     const localRuntime = getLocalMockVictoriaRuntime({
@@ -236,5 +288,11 @@ function chatRequest(token: string, conversationId: string, message: string): Re
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ message })
+  });
+}
+
+function finishRequest(token: string): Request {
+  return new Request("https://victoria.local/api/victoria/conversation/finish", {
+    method: "POST", headers: { authorization: `Bearer ${token}` }
   });
 }

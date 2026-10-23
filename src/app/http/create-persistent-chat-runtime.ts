@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { OpenAiEmbeddingProvider } from "../../agent/memory/openai-embedding-provider.js";
 import { OpenAiConversationalMemoryExtractor } from "../../agent/memory/openai-conversational-memory-extractor.js";
+import { OpenAiPersonalizedReply } from "../../agent/memory/openai-personalized-reply.js";
 import { OpenAiEpisodicMemorySummarizer } from "../../agent/memory/openai-episodic-memory-summarizer.js";
 import { PostgresMemoryRepository } from "../../agent/memory/postgres-memory-repository.js";
 import { MemoryOrchestrator } from "../../agent/memory/memory-orchestrator.js";
@@ -31,13 +32,20 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
   try {
     const env = parseVictoriaEnv(source);
     if (env.usesRealMoneyMovement) return null;
+    const personalizedRepliesEnabled = source.OPENAI_PERSONALIZED_REPLIES_ENABLED !== "false" &&
+      env.openAiModel !== "mock" && Boolean(env.openAiApiKey.trim()) &&
+      !/(?:local-openai|replace|example|placeholder|changeme)/i.test(env.openAiApiKey);
+    const episodicSummariesEnabled = source.OPENAI_EPISODIC_SUMMARIES_ENABLED !== "false" &&
+      env.openAiModel !== "mock" && Boolean(env.openAiApiKey.trim()) &&
+      !/(?:local-openai|replace|example|placeholder|changeme)/i.test(env.openAiApiKey);
     const supabaseUrl = source.SUPABASE_URL?.trim();
     const publishableKey = source.SUPABASE_PUBLISHABLE_KEY?.trim();
     if (!supabaseUrl || !publishableKey) return null;
     const key = createHash("sha256").update(env.databaseUrl).update("\0").update(env.openAiApiKey)
       .update("\0").update(env.openAiModel)
       .update("\0").update(source.OPENAI_MEMORY_EXTRACTION_ENABLED === "false" ? "memory-off" : "memory-on")
-      .update("\0").update(source.OPENAI_EPISODIC_SUMMARIES_ENABLED === "true" ? "episodes-on" : "episodes-off")
+      .update("\0").update(episodicSummariesEnabled ? "episodes-on" : "episodes-off")
+      .update("\0").update(personalizedRepliesEnabled ? "personalized-replies-on" : "personalized-replies-off")
       .update("\0").update(supabaseUrl).update("\0").update(publishableKey).digest("hex");
     if (cached?.key === key) return cached.runtime;
 
@@ -57,8 +65,18 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
           apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})
         })
       } : {}),
-      ...(source.OPENAI_EPISODIC_SUMMARIES_ENABLED === "true" ? {
+      ...(source.OPENAI_MEMORY_EXTRACTION_ENABLED !== "false" ? {
+        onConversationalMemoryExtractionFailure: (errorName: string) => {
+          console.warn("Victoria conversational memory extraction failed; continuing without provider-derived memories.", { errorName });
+        }
+      } : {}),
+      ...(episodicSummariesEnabled ? {
         episodicMemorySummarizer: new OpenAiEpisodicMemorySummarizer({
+          apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})
+        })
+      } : {}),
+      ...(personalizedRepliesEnabled ? {
+        personalizedReplyPersonalizer: new OpenAiPersonalizedReply({
           apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})
         })
       } : {}),

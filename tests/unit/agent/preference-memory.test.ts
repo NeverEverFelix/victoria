@@ -4,6 +4,7 @@ import { buildTransactionFinancialProfile } from "../../../src/domain/financial-
 import { MockProfileTransactionHistoryProvider } from "../../../src/app/financial-profile/mock-profile-transaction-history-provider.js";
 import { MockTransactionHistoryProvider } from "../../fixtures/mock-transaction-history-provider.js";
 import { extractConversationalMemories } from "../../../src/agent/memory/extract-preference.js";
+import { validateMemoryCandidates } from "../../../src/agent/memory/conversational-memory-extractor.js";
 
 describe("explicit savings preference memory", () => {
   it("keeps the savings amount preference when the same turn also mentions activity spend", async () => {
@@ -269,6 +270,16 @@ describe("explicit savings preference memory", () => {
 });
 
 describe("general conversational memory extraction", () => {
+  it("accepts up to eight distinct eligible facts from a single turn", () => {
+    const evidence = Array.from({ length: 5 }, (_, index) => `I prefer option ${index + 1}.`);
+    const candidates = evidence.map((quote, index) => ({
+      category: "preference", key: `preference_${index + 1}`, value: `Prefers option ${index + 1}.`, evidence: quote,
+      confidence: 0.95, subject: "user", assertion: "affirmed", stability: "stable", sensitivity: "ordinary"
+    }));
+
+    expect(validateMemoryCandidates(candidates, evidence.join(" "))).toHaveLength(5);
+  });
+
   it("learns a model-validated preference from a natural pattern reflection without replacing its reply", async () => {
     const memory = new MockMemoryProvider();
     const evidence = "The way I reset after a long shift is taking a quiet walk.";
@@ -331,6 +342,54 @@ describe("general conversational memory extraction", () => {
     expect(await memory.listConversationalMemories("user_unclear_personal")).toMatchObject([{
       key: "thinking_routine", evidence
     }]);
+  });
+
+  it("runs guarded extraction on an avoided-spend turn without changing the financial decision", async () => {
+    const memory = new MockMemoryProvider();
+    const evidence = "I prefer cooking at home on weeknights.";
+    const agent = new VictoriaAgent({
+      llm: {
+        async classifyMessage() {
+          return { type: "avoided_spend", confidence: 0.9, summary: "Skipped takeout", amountCents: 2400, needsClarification: false };
+        },
+        async draftResponse() { return ""; }
+      },
+      memory,
+      tools: new MockVictoriaTools(),
+      conversationalMemoryExtractor: {
+        async extract() {
+          return [{ category: "preference", key: "weeknight_meals", value: "Prefers cooking at home on weeknights.",
+            evidence, confidence: 0.95, subject: "user", assertion: "affirmed", stability: "stable", sensitivity: "ordinary" }];
+        }
+      }
+    });
+
+    const response = await agent.respond({ userId: "user_learning_avoided", message: `I almost bought a $30 book but decided to wait. ${evidence}` });
+
+    expect(response.decision.action).toBe("suggest_savings");
+    expect(await memory.listConversationalMemories("user_learning_avoided")).toMatchObject([{ key: "weeknight_meals" }]);
+  });
+
+  it("reports provider extraction failures without replacing the normal response", async () => {
+    const memory = new MockMemoryProvider();
+    const failures: string[] = [];
+    const agent = new VictoriaAgent({
+      llm: {
+        async classifyMessage() {
+          return { type: "general_finance", confidence: 0.9, summary: "Personal preference", needsClarification: false };
+        },
+        async draftResponse() { return "A calm weekly review sounds practical."; }
+      }, memory, tools: new MockVictoriaTools(),
+      conversationalMemoryExtractor: { async extract() { throw new Error("provider unavailable"); } },
+      onConversationalMemoryExtractionFailure(errorName) { failures.push(errorName); }
+    });
+
+    const response = await agent.respond({ userId: "user_learning_failure", message: "The way I recharge is having a quiet morning to myself." });
+
+    expect(response.decision.action).toBe("reflect");
+    expect(response.message).not.toContain("keep that in mind");
+    expect(failures).toEqual(["provider_or_validation_error"]);
+    expect(await memory.listConversationalMemories("user_learning_failure")).toEqual([]);
   });
 
   it("retrieves relevant remembered financial profile facts for the current user turn", async () => {
@@ -818,6 +877,58 @@ describe("general conversational memory extraction", () => {
     expect(otherUserReply.message).not.toContain("Japan");
     expect(await tools.listSavingsEntries(userId)).toEqual([]);
     expect(await tools.listSavingsGoalAllocations(userId)).toEqual([]);
+  });
+
+  it("adapts an ordinary reply to a remembered communication preference without changing its action", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const personalizedReplyPersonalizer = {
+      personalize: async ({ memories }: { memories: readonly { id: string }[] }) => ({
+        message: "Let's keep it practical and start with one small step. What would help most right now?",
+        usedMemoryIds: [memories[0]!.id]
+      })
+    };
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools, personalizedReplyPersonalizer });
+    const userId = "user_reply_style_personalization";
+
+    await agent.respond({ userId, conversationId: "style", message: "I prefer concise, practical replies." });
+    const response = await agent.respond({
+      userId, conversationId: "ordinary-question", message: "I'm feeling stuck. What is a practical next step?"
+    });
+
+    expect(response.decision.action).toBe("reflect");
+    expect(response.message).toContain("Let's keep it practical");
+    expect(response.decision.suggestion).toBeUndefined();
+    expect(await tools.listSavingsEntries(userId)).toEqual([]);
+    expect(await tools.listSavingsGoalAllocations(userId)).toEqual([]);
+  });
+
+  it("keeps the deterministic ordinary reply when personalized wording fails validation", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools,
+      personalizedReplyPersonalizer: {
+        personalize: async ({ memories }) => ({
+          message: "I recorded $80 for you. What next?", usedMemoryIds: [memories[0]!.id]
+        })
+      }
+    });
+    const userId = "user_reply_style_fallback";
+    await memory.rememberConversationalMemory(userId, {
+      category: "preference", key: "response_style", value: "Prefers practical replies.",
+      evidence: "I prefer practical replies.", confidence: 0.95, sourceType: "user_statement"
+    });
+
+    const response = await agent.respond({
+      userId, message: "I'm feeling stuck and need practical help with savings."
+    });
+
+    expect(response.decision.action).toBe("reflect");
+    expect(response.message).not.toContain("I recorded");
+    expect(response.message).toContain("preference for practical replies");
+    expect(response.message).toContain("What would be most helpful right now?");
+    expect(await tools.listSavingsEntries(userId)).toEqual([]);
   });
 
   it("uses a relevant remembered merchant routine without estimating or shaming", async () => {

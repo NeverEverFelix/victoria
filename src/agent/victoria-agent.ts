@@ -47,6 +47,7 @@ import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } f
 import { isRealMoneyMovementRequest } from "./money-movement-intent.js";
 import { isExplicitInterestCorrectionEvidence, isExplicitUserEvidence, validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
 import { isUsableEpisodicSummary, SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY, validateEpisodicSummary, type EpisodicMemorySummarizer } from "./memory/episodic-summary.js";
+import { validatePersonalizedReply, type ConversationalReplyPersonalizer } from "./memory/personalized-reply.js";
 import type { PendingAmountClarification, PendingAmountClarificationStore } from "./pending-amount-clarification-store.js";
 import type { PendingSavingsActionStore } from "./pending-savings-action-store.js";
 import type { PendingGoalAllocationActionStore } from "./pending-goal-allocation-store.js";
@@ -60,6 +61,10 @@ export interface VictoriaAgentDependencies {
   transactionHistory?: TransactionHistoryProvider;
   /** Optional model-backed extractor for stable contextual memories from ordinary conversation. */
   conversationalMemoryExtractor?: ConversationalMemoryExtractor;
+  /** Receives a provider failure name only; the current turn continues without provider-derived memories. */
+  onConversationalMemoryExtractionFailure?: (errorName: string) => void;
+  /** Optional wording layer for ordinary reflections; deterministic policy keeps action authority. */
+  personalizedReplyPersonalizer?: ConversationalReplyPersonalizer;
   episodicMemorySummarizer?: EpisodicMemorySummarizer;
   pendingAmountClarifications?: PendingAmountClarificationStore;
   pendingSavingsActions?: PendingSavingsActionStore;
@@ -453,6 +458,7 @@ export class VictoriaAgent {
     );
     let memoryAcknowledgement: string | undefined;
     const memoryLearningTurn = classification.type === "general_finance" || classification.type === "pattern_reflection" ||
+      classification.type === "avoided_spend" || classification.type === "regretful_spend" ||
       (classification.type === "unclear" && classification.uncertainIntent === undefined);
     if (memoryLearningTurn && this.dependencies.conversationalMemoryExtractor &&
         !pendingCorrection && !pendingGoalAction && !pendingAction) {
@@ -473,7 +479,12 @@ export class VictoriaAgent {
           }
         }
       } catch {
-        // Optional extraction cannot block an ordinary turn or financial safety checks.
+        try {
+          this.dependencies.onConversationalMemoryExtractionFailure?.("provider_or_validation_error");
+        } catch {
+          // Failure reporting is best-effort and cannot block the current turn.
+        }
+        // Optional extraction cannot block the current turn or financial safety checks.
       }
     }
     if (["avoided_spend", "regretful_spend", "pattern_reflection"].includes(classification.type)) {
@@ -729,6 +740,32 @@ export class VictoriaAgent {
     if (memoryAcknowledgement && (decision.action === "reflect" || decision.action === "ask_follow_up")) {
       userFacingMessage = `${userFacingMessage} ${memoryAcknowledgement}`;
       decision = { ...decision, userFacingMessage };
+    }
+
+    if (decision.action === "reflect" &&
+        (resolvedClassification.type === "general_finance" || resolvedClassification.type === "pattern_reflection") &&
+        !isSpendingQuestion(request.message) &&
+        this.dependencies.personalizedReplyPersonalizer) {
+      const personalizationMemories = selectPersonalizationMemories(memory.conversationalMemories ?? [], request.message, conversationContext);
+      if (personalizationMemories.length > 0) {
+        try {
+          const personalized = validatePersonalizedReply(await this.dependencies.personalizedReplyPersonalizer.personalize({
+            userMessage: request.message,
+            baselineReply: userFacingMessage,
+            memories: personalizationMemories
+          }), {
+            userMessage: request.message,
+            baselineReply: userFacingMessage,
+            memories: personalizationMemories
+          });
+          if (personalized) {
+            userFacingMessage = personalized.message;
+            decision = { ...decision, userFacingMessage };
+          }
+        } catch {
+          // Personalized wording is optional; retain the deterministic baseline on provider failure.
+        }
+      }
     }
 
     return {
@@ -2057,6 +2094,31 @@ function isRelevantRecurringRoutine(
     return matchingTerms.length >= 2;
   }
   return false;
+}
+
+function selectPersonalizationMemories(
+  memories: readonly ConversationalMemory[],
+  userMessage: string,
+  conversationContext: readonly string[]
+): readonly Pick<ConversationalMemory, "id" | "category" | "key" | "value">[] {
+  const context = `${userMessage} ${conversationContext.slice(-6).join(" ")}`.toLocaleLowerCase("en-US");
+  return memories.filter((memory) => {
+    if (memory.sourceType !== undefined && memory.sourceType !== "user_statement" && memory.sourceType !== "user_correction") return false;
+    if (memory.category !== "preference" && memory.category !== "goal" && memory.category !== "habit" &&
+        !(memory.category === "other" && memory.key.startsWith("interest:"))) return false;
+    if (memory.sourceMetadata?.interestStatus === "inactive") return false;
+    if (isCommunicationStylePreference(memory)) return true;
+    if (isStrongSemanticMatch(memory.semanticSimilarity)) return true;
+    const terms = `${memory.key.replace(/[:_-]/g, " ")} ${memory.value}`.toLocaleLowerCase("en-US")
+      .match(/[a-z]{4,}/g)?.map(normalizeRoutineTerm).filter((term) => !ROUTINE_STOP_WORDS.has(term)) ?? [];
+    return terms.some((term) => context.includes(term));
+  }).slice(0, 6).map(({ id, category, key, value }) => ({ id, category, key, value }));
+}
+
+function isCommunicationStylePreference(memory: ConversationalMemory): boolean {
+  const text = `${memory.key} ${memory.value} ${memory.evidence}`.toLocaleLowerCase("en-US");
+  return memory.category === "preference" &&
+    /\b(?:reply|replies|response|responses|answer|answers|explanation|explanations|tone|detail|detailed|brief|briefly|concise|short|step by step|one question|practical|direct|gentle|encouraging|no emojis)\b/i.test(text);
 }
 
 function sanitizeMemoryEvidence(value: string): string {

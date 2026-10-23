@@ -3,6 +3,7 @@ import { MockMemoryProvider } from "../../agent/memory/mock-memory.js";
 import { MockVictoriaTools } from "../../agent/tools/mock-tools.js";
 import { VictoriaAgent } from "../../agent/victoria-agent.js";
 import { OpenAiConversationalMemoryExtractor } from "../../agent/memory/openai-conversational-memory-extractor.js";
+import { OpenAiPersonalizedReply } from "../../agent/memory/openai-personalized-reply.js";
 import { OpenAiEpisodicMemorySummarizer } from "../../agent/memory/openai-episodic-memory-summarizer.js";
 import { MockProfileTransactionHistoryProvider } from "../financial-profile/mock-profile-transaction-history-provider.js";
 import type { TransactionFinancialProfile } from "../../domain/financial-profile.js";
@@ -87,12 +88,15 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
     }
   }
   // Learning from explicit user turns is enabled when a real provider is configured.
-  // Episodic summaries remain a separate, explicit opt-in because they persist a
-  // synthesized account of conversation context for longer-term retrieval.
+  // Episode summaries are enabled with real provider credentials by default;
+  // the mock/placeholder example configuration still makes no provider calls.
   const memoryExtractorEnabled = env.OPENAI_MEMORY_EXTRACTION_ENABLED !== "false" &&
     Boolean(openAiKey) && !/(?:local-openai|replace|example|placeholder|changeme)/i.test(openAiKey ?? "") &&
     Boolean(env.OPENAI_MODEL?.trim()) && env.OPENAI_MODEL !== "mock";
-  const episodicSummariesEnabled = env.OPENAI_EPISODIC_SUMMARIES_ENABLED === "true" &&
+  const personalizedRepliesEnabled = env.OPENAI_PERSONALIZED_REPLIES_ENABLED !== "false" &&
+    Boolean(openAiKey) && !/(?:local-openai|replace|example|placeholder|changeme)/i.test(openAiKey ?? "") &&
+    Boolean(env.OPENAI_MODEL?.trim()) && env.OPENAI_MODEL !== "mock";
+  const episodicSummariesEnabled = env.OPENAI_EPISODIC_SUMMARIES_ENABLED !== "false" &&
     Boolean(openAiKey) && !/(?:local-openai|replace|example|placeholder|changeme)/i.test(openAiKey ?? "") &&
     Boolean(env.OPENAI_MODEL?.trim()) && env.OPENAI_MODEL !== "mock";
   const cacheKey = createHash("sha256")
@@ -101,6 +105,7 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
     .update("\0").update(env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small")
     .update("\0").update(memoryExtractorEnabled ? openAiKey! : "mock")
     .update("\0").update(env.OPENAI_MODEL ?? "mock")
+    .update("\0").update(personalizedRepliesEnabled ? "personalized-replies-on" : "personalized-replies-off")
     .update("\0").update(episodicSummariesEnabled ? "episodes-on" : "episodes-off").digest("hex");
   if (cachedRuntime?.cacheKey === cacheKey) return cachedRuntime.runtime;
   const transactionHistory = new MockProfileTransactionHistoryProvider();
@@ -116,6 +121,14 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
       conversationalMemoryExtractor: new OpenAiConversationalMemoryExtractor({
         apiKey: openAiKey!, model: env.OPENAI_MODEL!
       })
+    } : {}),
+    ...(memoryExtractorEnabled ? {
+      onConversationalMemoryExtractionFailure: (errorName: string) => {
+        console.warn("Victoria conversational memory extraction failed; continuing without provider-derived memories.", { errorName });
+      }
+    } : {}),
+    ...(personalizedRepliesEnabled ? {
+      personalizedReplyPersonalizer: new OpenAiPersonalizedReply({ apiKey: openAiKey!, model: env.OPENAI_MODEL! })
     } : {}),
     ...(episodicSummariesEnabled ? {
       episodicMemorySummarizer: new OpenAiEpisodicMemorySummarizer({
