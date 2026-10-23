@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FinancialDecision, SavingsGoal, UserHabit, AgentMemory } from "../types.js";
 import type { PostgresQueryable } from "../../app/shared/postgres-types.js";
-import { DEFAULT_CONVERSATION_CONTEXT_LIMIT, type ConversationalMemory, type MemoryProvider } from "./types.js";
+import { DEFAULT_CONVERSATION_CONTEXT_LIMIT, type ConversationalMemory, type ConversationalMemoryPage, type MemoryProvider } from "./types.js";
 import { toPgVectorLiteral, validateSemanticEmbedding, type SemanticEmbeddingProvider } from "./semantic-embedding.js";
 import type { TransactionFinancialProfile } from "../../domain/financial-profile.js";
 import { formatUsd } from "../../domain/money.js";
@@ -71,6 +71,68 @@ export class PostgresMemoryRepository implements MemoryProvider {
     return result.rows.map((row) => Object.freeze(row));
   }
 
+  async listCurrentConversationalMemories(
+    userId: string,
+    includeForgottenMarkers = false,
+    page?: ConversationalMemoryPage
+  ): Promise<readonly ConversationalMemory[]> {
+    if (!userId.trim()) return [];
+    const limit = page ? Math.max(1, Math.min(Number.isSafeInteger(page.limit) ? page.limit : 25, 100)) : 100;
+    const result = await this.db.query<ConversationalMemory>(
+      `WITH selected_memories AS (
+       SELECT DISTINCT ON (m.category, m.memory_key)
+        m.id, m.category, m.memory_key AS "key", m.value, m.evidence, m.confidence,
+        m.created_at AS "createdAt", m.supersedes_id AS "supersedesId", m.source_type AS "sourceType",
+        m.observed_from::text AS "observedFrom", m.observed_through::text AS "observedThrough",
+        m.source_record_count AS "sourceRecordCount", m.source_metadata AS "sourceMetadata"
+       FROM victoria_conversational_memories m WHERE m.user_id = $1
+         AND (m.source_type <> 'plaid_transaction_profile' OR m.observed_through >= current_date - 90)
+         AND (m.source_type = 'plaid_transaction_profile' OR m.created_at >= now() - interval '24 months')
+         AND NOT EXISTS (SELECT 1 FROM victoria_conversational_memories newer
+           WHERE newer.user_id = m.user_id AND newer.supersedes_id = m.id)
+         AND ($2::boolean OR (
+           m.source_metadata->>'memoryStatus' IS DISTINCT FROM 'forgotten'
+           AND NOT EXISTS (SELECT 1 FROM victoria_conversational_memories forgotten
+             WHERE forgotten.user_id = m.user_id AND forgotten.category = m.category
+               AND forgotten.memory_key = m.memory_key
+               AND forgotten.source_metadata->>'memoryStatus' = 'forgotten'
+               AND NOT EXISTS (SELECT 1 FROM victoria_conversational_memories restored
+                 WHERE restored.user_id = forgotten.user_id AND restored.supersedes_id = forgotten.id))
+         ))
+       ORDER BY m.category, m.memory_key,
+         CASE m.source_type WHEN 'user_correction' THEN 4 WHEN 'user_statement' THEN 3
+           WHEN 'plaid_transaction_profile' THEN 2 WHEN 'system_inference' THEN 1 ELSE 3 END DESC,
+         m.created_at DESC, m.id DESC
+      )
+       SELECT * FROM selected_memories
+       WHERE ($3::timestamptz IS NULL OR ("createdAt", id) < ($3::timestamptz, $4::text))
+       ORDER BY "createdAt" DESC, id DESC LIMIT $5`, [userId, includeForgottenMarkers,
+        page?.before?.createdAt ?? null, page?.before?.id ?? null, limit]
+    );
+    return result.rows.map((row) => Object.freeze(row));
+  }
+
+  async filterCurrentConversationalMemoryIds(userId: string, candidateIds: readonly string[]): Promise<ReadonlySet<string>> {
+    if (!userId.trim() || candidateIds.length === 0) return new Set();
+    const result = await this.db.query<{ id: string }>(
+      `SELECT m.id FROM victoria_conversational_memories m
+       WHERE m.user_id = $1 AND m.id = ANY($2::text[])
+         AND (m.source_type <> 'plaid_transaction_profile' OR m.observed_through >= current_date - 90)
+         AND (m.source_type = 'plaid_transaction_profile' OR m.created_at >= now() - interval '24 months')
+         AND m.source_metadata->>'memoryStatus' IS DISTINCT FROM 'forgotten'
+         AND NOT EXISTS (SELECT 1 FROM victoria_conversational_memories newer
+           WHERE newer.user_id = m.user_id AND newer.supersedes_id = m.id)
+         AND NOT EXISTS (SELECT 1 FROM victoria_conversational_memories forgotten
+           WHERE forgotten.user_id = m.user_id AND forgotten.category = m.category
+             AND forgotten.memory_key = m.memory_key
+             AND forgotten.source_metadata->>'memoryStatus' = 'forgotten'
+             AND NOT EXISTS (SELECT 1 FROM victoria_conversational_memories restored
+               WHERE restored.user_id = forgotten.user_id AND restored.supersedes_id = forgotten.id))`,
+      [userId, [...new Set(candidateIds)]]
+    );
+    return new Set(result.rows.map((row) => row.id));
+  }
+
   async searchConversationalMemories(userId: string, query: string, limit = 20): Promise<readonly ConversationalMemory[]> {
     if (!userId.trim() || !query.trim()) return [];
     const boundedLimit = Math.max(1, Math.min(Number.isSafeInteger(limit) ? limit : 20, 50));
@@ -82,10 +144,16 @@ export class PostgresMemoryRepository implements MemoryProvider {
         `SELECT id, category, key, value, evidence, confidence, created_at AS "createdAt",
           supersedes_id AS "supersedesId", source_type AS "sourceType",
           observed_from::text AS "observedFrom", observed_through::text AS "observedThrough",
+          similarity AS "semanticSimilarity",
           source_record_count AS "sourceRecordCount", source_metadata AS "sourceMetadata"
-         FROM victoria_search_conversational_memories($1, $2::extensions.vector(1536), $3, $4)`,
+        FROM victoria_search_conversational_memories($1, $2::extensions.vector(1536), $3, $4)`,
         [userId, toPgVectorLiteral(vector), this.embeddings.modelId, boundedLimit]
       );
+      if (result.rows.length === 0) {
+        // A durable fact may exist even when its embedding write previously failed.
+        // Keep it available through bounded recent recall until it is indexed.
+        return (await this.listCurrentMemories(userId)).slice(0, boundedLimit);
+      }
       return result.rows.map((row) => Object.freeze(row));
     } catch {
       // The durable recent-memory path remains available if embedding or vector search is unavailable.
@@ -94,18 +162,7 @@ export class PostgresMemoryRepository implements MemoryProvider {
   }
 
   private async listCurrentMemories(userId: string): Promise<readonly ConversationalMemory[]> {
-    const result = await this.db.query<ConversationalMemory>(
-      `SELECT m.id, m.category, m.memory_key AS "key", m.value, m.evidence, m.confidence,
-        m.created_at AS "createdAt", m.supersedes_id AS "supersedesId", m.source_type AS "sourceType",
-        m.observed_from::text AS "observedFrom", m.observed_through::text AS "observedThrough",
-        m.source_record_count AS "sourceRecordCount", m.source_metadata AS "sourceMetadata"
-       FROM victoria_conversational_memories m WHERE m.user_id = $1
-         AND (m.source_type <> 'plaid_transaction_profile' OR m.observed_through >= current_date - 90)
-         AND NOT EXISTS (SELECT 1 FROM victoria_conversational_memories newer
-           WHERE newer.user_id = m.user_id AND newer.supersedes_id = m.id)
-       ORDER BY m.created_at DESC LIMIT 100`, [userId]
-    );
-    return result.rows.map((row) => Object.freeze(row));
+    return this.listCurrentConversationalMemories(userId);
   }
 
   async rememberConversationalMemory(
@@ -134,11 +191,11 @@ export class PostgresMemoryRepository implements MemoryProvider {
          source_record_count AS "sourceRecordCount", source_metadata AS "sourceMetadata"`,
       [id, userId, memory.category, memory.key, memory.value, memory.evidence, memory.confidence,
         memory.supersedesId ?? null, sourceType, memory.observedFrom ?? null, memory.observedThrough ?? null,
-        memory.sourceRecordCount ?? null, memory.sourceMetadata === undefined ? null : JSON.stringify(memory.sourceMetadata)]
+        memory.sourceRecordCount ?? null, JSON.stringify(memory.sourceMetadata ?? {})]
     );
     const saved = result.rows[0];
     if (!saved) throw new Error("PostgreSQL did not return the stored conversational memory.");
-    if (memory.sourceMetadata?.profileStatus !== "absent") {
+    if (memory.sourceMetadata?.profileStatus !== "absent" && memory.sourceMetadata?.memoryStatus !== "forgotten") {
       await this.storeEmbedding(userId, saved.id, `${saved.category}: ${saved.key}. ${saved.value}`);
     }
     return Object.freeze(saved);

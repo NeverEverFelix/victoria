@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
-import { EPISODIC_MEMORY_MAX_AGE_MS, isUsableEpisodicSummary, validateEpisodicSummary } from "../../../src/agent/memory/episodic-summary.js";
+import { EPISODIC_MEMORY_MAX_AGE_MS, isUsableEpisodicSummary, SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY, validateEpisodicSummary } from "../../../src/agent/memory/episodic-summary.js";
 
 describe("episodic memory summaries", () => {
   it("summarizes context before the short-term window rolls over and retrieves the episode later", async () => {
@@ -72,6 +72,37 @@ describe("episodic memory summaries", () => {
     expect(validateEpisodicSummary({ ...valid, confidence: 0.6 }, messages)).toBeNull();
   });
 
+  it("stores a grounded episode when an authenticated caller explicitly finishes a conversation", async () => {
+    const memory = new MockMemoryProvider();
+    await memory.setConversationContext("user_finish", "finished", [
+      "I want to stop ordering lunch when work gets stressful.",
+      "Victoria: We can look for a simple lunch plan that fits your week.",
+      "I would like to pack lunch on office days and save for a trip."
+    ]);
+    let calls = 0;
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools(),
+      episodicMemorySummarizer: {
+        async summarize({ userMessages }) {
+          calls += 1;
+          return {
+            summary: "The user wants to pack lunch on office days and save for a trip.",
+            evidenceQuotes: [userMessages[1]!], confidence: 0.93, sensitivity: "ordinary"
+          };
+        }
+      }
+    });
+
+    await expect(agent.finishConversation("user_finish", "finished")).resolves.toBe(true);
+    await expect(agent.finishConversation("user_finish", "finished")).resolves.toBe(true);
+    expect(calls).toBe(1);
+    expect(await memory.listConversationalMemories("user_finish")).toMatchObject([{
+      category: "other", key: expect.stringMatching(/^episode:/),
+      value: "The user wants to pack lunch on office days and save for a trip."
+    }]);
+    await expect(agent.finishConversation("other_user", "finished")).resolves.toBe(false);
+  });
+
   it("only retrieves relevant, well-formed episode summaries within the freshness window", () => {
     const now = new Date("2026-10-15T14:00:00.000Z");
     const validated = validateEpisodicSummary({
@@ -85,6 +116,10 @@ describe("episodic memory summaries", () => {
       ...validated!, id: "episode-test", createdAt: new Date(now.getTime() - 10_000).toISOString()
     };
     expect(isUsableEpisodicSummary(memory, "I want a steady weekend savings routine.", now)).toBe(true);
+    expect(isUsableEpisodicSummary({ ...memory, semanticSimilarity: SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY + 0.03 },
+      "Can you help me make Saturday saving plans easier to keep?", now)).toBe(true);
+    expect(isUsableEpisodicSummary({ ...memory, semanticSimilarity: SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY - 0.03 },
+      "Can you help me make Saturday saving plans easier to keep?", now)).toBe(false);
     expect(isUsableEpisodicSummary(memory, "I'm thinking about a new project at work.", now)).toBe(false);
     expect(isUsableEpisodicSummary({
       ...memory, createdAt: new Date(now.getTime() - EPISODIC_MEMORY_MAX_AGE_MS - 1).toISOString()

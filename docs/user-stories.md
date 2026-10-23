@@ -299,12 +299,18 @@ Acceptance criteria:
 
 As a user, I want Victoria to use financial information I have authorized it to access so that its support can reflect my financial context.
 
-The first profile is limited to transaction history. This story does not include balances, identity data, account metadata, or other Plaid products. The server-side sync, encrypted token storage, profile refresh, semantic persistence, and explicit runtime adapters exist; deployment route mounting and live provider/database configuration are still intentionally outstanding.
+The first profile is limited to transaction history. This story does not include balances, identity data, account metadata, or other Plaid products. A client sign-in and consent-to-Link journey is implemented for the explicitly enabled staging sandbox runtime. Hosted end-to-end verification remains outstanding; production Plaid remains disabled.
 
 Expected behavior:
 
 - Victoria explains the data purpose and asks the user to connect/authorize before accessing Plaid data.
+- The client supports Supabase email/password sign-in and account creation, then loads the signed-in user's consent notice and connection status.
+- Plaid Link does not open until the signed-in user acknowledges the current Transactions notice and the consent and Link-token routes succeed; the client fails closed if the notice includes another product, balance access, or transfers.
+- After Link returns, the client exchanges the public token through the authenticated API and displays only user-scoped aggregate profile summaries. Disconnect requires a separate confirmation and requests local data deletion.
+- `GET /api/plaid/consent` returns the fixed data-use notice and current connection status; `POST /api/plaid/consent` records an append-only grant only after the user confirms that exact notice version.
 - The connection requests Plaid Transactions only.
+- `POST /api/plaid/link-token` requires active consent, and `POST /api/plaid/token-exchange` stores the token encrypted and starts the initial profile sync.
+- `POST /api/plaid/profile/refresh` refreshes only the authenticated user's profile; `POST /api/plaid/disconnect` supports user-scoped disconnection and deletion.
 - The profile records source, observation time, freshness, and uncertainty for derived facts, and distinguishes observed facts from estimates or inferences.
 - Victoria uses relevant profile context without exposing unnecessary raw transaction or account details.
 - For an avoided-spend estimate, relevant user memory is preferred; if it is absent, Victoria may choose an available connected transaction-history source without asking for each lookup. The provider must use the user's existing bank-link authorization and return no result if the connection is unavailable or revoked.
@@ -381,7 +387,7 @@ Expected behavior:
 - Victoria appends the user's correction as evidence and links it to the prior fact where available; prior history is not rewritten.
 - If multiple facts could be the target, Victoria asks which purchase or day the user means and stores nothing until clear.
 - The correction only changes conversational understanding. It does not update bank history, propose savings, or create a ledger entry.
-- Victoria does not expose a memory-review or memory-edit interface.
+- Victoria does not expose a memory-management UI. Server-side memory endpoints are specified in Story 16.
 
 Acceptance criteria:
 
@@ -396,15 +402,16 @@ As a user, I want Victoria to retain a small amount of useful context from ordin
 
 Expected behavior:
 
-- When the optional memory extraction provider is enabled, Victoria may retain up to three stable, useful facts explicitly stated by the user in the current turn.
+- When a real provider model and API key are configured, Victoria may retain up to three stable, useful facts explicitly stated by the user in the current turn. `OPENAI_MEMORY_EXTRACTION_ENABLED=false` disables this provider extraction.
+- The provider path is available for ordinary personal statements and pattern reflections even when the wording does not match a deterministic phrase pattern. It may also consider an unclear turn only when no uncertain financial intent was detected. Capturing a fact does not replace or interrupt the ordinary response or a needed follow-up.
 - Victoria retains only candidates with exact supporting evidence, high confidence, user attribution, affirmed statements, and ordinary sensitivity.
 - Quoted or third-party claims, negations, hypotheticals, temporary states, transaction details, and sensitive personal information are not retained through this path.
 - When short-term conversation context reaches its 20-message limit, an optional summarizer may append a compact episode summary from bounded user-authored context. It must include supporting excerpts and pass the same user-attribution and sensitivity checks.
 - Victoria may refer to a retrieved episode in an ordinary reflection only when it is no more than 90 days old and clearly matches the current topic; old, future-dated, malformed, or unrelated episodes are ignored.
-- Memory learning and summaries are internal. Victoria does not expose a memory-review or memory-edit interface; users correct relevant details naturally in conversation.
+- Memory learning and summaries are internal. Authenticated server endpoints let users inspect, correct, or forget individual current facts; no UI or bulk-delete endpoint is included in this slice.
 - On an ordinary financial reflection, Victoria may use a relevant user-stated preference or goal from prior conversations to make its reply more personal, while keeping the language factual and brief.
 - When an ordinary reflection matches a remembered recurring coffee, takeout, or merchant routine, Victoria may refer to that routine and ask what would feel manageable, without inferring a spend amount or treating the routine as approval.
-- Both provider features are disabled by default and are currently opt-in only in local development. No provider calls are made by default.
+- Structured extraction runs when a real provider is configured; episodic summaries remain separately opt-in through `OPENAI_EPISODIC_SUMMARIES_ENABLED=true`. No provider call is made when the model is `mock` or no usable API key is configured.
 
 Acceptance criteria:
 
@@ -415,6 +422,33 @@ Acceptance criteria:
 - Given the short-term context reaches its limit, a supported episode summary is appended; unsupported or sensitive summaries are discarded.
 - Given a fresh, relevant episode summary is retrieved during a later ordinary reflection, Victoria may briefly reconnect to that prior topic and invite correction; unrelated or more-than-90-day-old episodes are not surfaced.
 - Given the user corrects a learned fact later, the correction is handled through the existing conversational correction flow and history remains append-only.
+
+## Story 16: Manage Remembered Facts Through Authenticated Server Endpoints
+
+As a user, I want to inspect, correct, or forget a remembered fact so I can keep Victoria's personalization accurate and under my control.
+
+Expected behavior:
+
+- `GET /api/memories` returns a page of the authenticated user's current, fresh memories and bounded provenance fields; its allowlisted `details` identify user-reported activity spend, user-confirmed activity mappings, or linked transaction aggregates without exposing arbitrary internal metadata. `limit` is capped at 100 and `cursor` continues the stable keyset page.
+- `PATCH /api/memories` accepts exactly one current `memoryId` and a non-empty corrected value; it appends a linked correction and preserves the original record. Corrections to interests, recurring activity spend, and activity mappings must be clear first-person statements so their structured meaning can be updated; transaction-derived profile aggregates are read-only and can be forgotten or addressed through a corrected mapping.
+- `POST /api/memories/{memoryId}/forget` appends a linked suppression marker so the fact is excluded from future retrieval.
+- The API verifies the Supabase Auth bearer token server-side and never accepts a user ID from the request body or URL.
+- In local persistent development only, inspection, correction, and single-fact forgetting may use the existing signed local chat session; this adds no sign-in or session-issuing flow.
+- Forgetting suppresses conversational recall immediately. The linked conversational memory and embeddings are physically removed after a 30-day recovery window; transaction-provider source rows follow their separate 90-day lifecycle.
+- There is no bulk-delete endpoint in this slice.
+- Memory controls are server-side only; no user-facing page or component is added.
+- The Vercel runtime uses PostgreSQL directly for durable memory/context and does not rely on local filesystem state.
+
+Acceptance criteria:
+
+- An unauthenticated or invalid-token request cannot inspect or mutate memories.
+- A valid user can list only their current memories; another user's facts never appear.
+- A valid correction appends a linked user-correction fact and the prior fact remains in history.
+- A valid forget request removes the selected fact from subsequent retrieval immediately; a scheduled retention run physically deletes its linked lineage and embeddings after 30 days.
+- Repeated forget requests and unknown/foreign memory IDs do not create extra mutations or reveal whether another user owns an ID.
+- Memory-list cursors are validated, stable across new inserts, and remain scoped to the authenticated user.
+- Malformed, oversized, or extra-field correction bodies are rejected without writing memory.
+- No route accepts a user ID parameter, and no bulk deletion route exists.
 
 ## Priority Order
 
@@ -427,3 +461,119 @@ The first implementation should focus on:
 5. Regretful spend.
 
 This order proves the core safety and conversation loop before adding richer memory, progress summaries, or goals.
+
+
+## Story 17: Continue Chat With The Same Trusted Identity
+
+As a signed-in user, I want chat, relevant memories, and memory controls to share one verified identity so Victoria can continue helping me across sessions without exposing another user's context.
+
+Expected behavior:
+
+- Staging and production chat verify the bearer access token with Supabase Auth and derive user identity only from its verified subject.
+- Chat context, durable memory, pending actions, and mocked savings state are persisted in PostgreSQL and scoped to that subject.
+- Memory inspect, correction, and individual forget use the same Supabase Auth boundary and subject.
+- Missing or invalid credentials and unavailable runtime configuration fail closed.
+- The chat runtime does not use ephemeral local filesystem state and cannot move real money.
+
+Acceptance criteria:
+
+- The same authenticated subject can retrieve relevant memories in a later conversation and manage those memories through the server endpoints.
+- A different subject cannot retrieve chat context, memories, pending approvals, or ledger state.
+- Authorization is owner based in the MVP: a verified user may act only on resources scoped to that subject. There are no administrative or cross-user support roles.
+- Unauthenticated requests cannot access chat or memory controls.
+
+## Story 18: Learn Only Predictable, Useful Context
+
+As a user, I want Victoria to remember clear, useful preferences without silently retaining sensitive or uncertain personal details.
+
+Expected behavior:
+
+- Automatically remember only clear first-person, affirmed, stable, ordinary preferences, recurring habits, stated savings goals, and clear answers to a typical-spend question.
+- Ask or wait for clarity when the user's statement is tentative, hypothetical, ambiguous, or only inferred; do not store it until the user gives a clear stable statement.
+- Never store credentials or account/card/routing identifiers, sensitive health/political/religious/sexuality/race/ethnicity/immigration details, third-party statements, or temporary circumstances as conversational memory.
+- Preserve exact supporting evidence, provenance, user scope, and linked append-only updates.
+- Keep transaction-profile facts separate with their existing authorization and freshness rules.
+- Keep deterministic direct learning independent of provider availability; provider extraction must pass the same privacy and evidence validation before storage.
+
+Acceptance criteria:
+
+- Clear supported direct statements are acknowledged and stored without a separate confirmation prompt.
+- Tentative, ambiguous, hypothetical, sensitive, credential-bearing, and third-party content is not stored.
+- Provider-generated candidates pass the same explicit-evidence and privacy gate before storage.
+- Memory learning never acts as approval for a savings action.
+
+
+## Story 19: Retain And Clean Up Personal Context Safely
+
+As a user, I want Victoria to stop using expired or forgotten context and remove it from primary storage on a defined schedule.
+
+Expected behavior:
+
+- Transaction source data and derived profile memories expire after 90 days.
+- Unrefreshed conversational facts expire after 24 months; forgotten facts are suppressed immediately and physically purged after a 30-day recovery window.
+- Embeddings are deleted with their source fact lineage.
+- Short-term chat context expires after 30 minutes; local cache/outbox payloads and hosted context rows receive physical cleanup.
+- Financial decisions, approvals, and ledger records keep their separate immutable lifecycle.
+- Retention job outcomes and deletion counts are auditable; failed or overdue jobs are detectable and safe to retry.
+- Restores are checked in isolation, migrations are reapplied, and retention runs before traffic resumes.
+
+Acceptance criteria:
+
+- Stale and forgotten facts are excluded from recall even if physical cleanup is delayed.
+- A successful retention run removes due facts and embeddings atomically and removes expired context.
+- An unauthenticated cron request cannot run retention, and job failures produce a non-success response plus an audit/log signal.
+- Restore instructions account for backup copies that may outlive primary deletion.
+
+## Story 20: Carry Useful Context Forward When A Chat Ends
+
+As a user, I want Victoria to retain a small, grounded summary of a conversation I finish so a later chat can continue relevant context.
+
+Expected behavior:
+
+- The authenticated client can explicitly finish a conversation with `POST /api/victoria/{conversationId}/finish`.
+- Victoria may summarize only eligible user-authored messages from that user's conversation; it does not retain the raw transcript as long-term memory.
+- A summary must pass the existing evidence-quote, confidence, user-attribution, sensitivity, and freshness checks before it is stored.
+- Finishing without enough eligible context, with extraction disabled, or after a summarization failure succeeds safely without storing a summary.
+- Repeating finish for the same unchanged conversation is idempotent and does not create another summary or repeat the provider call.
+- A stored episode can inform a later ordinary reflection when topic relevance and freshness checks pass. Relevance accepts either a cosine similarity score of at least 0.76 or at least two meaningful shared terms across the episode summary/evidence and current message. Episodes are created only at explicit conversation finish or context rollover. It cannot change financial classification, estimate, approval, or ledger behavior.
+- Provider-based extraction runs by default when a real provider model and API key are configured, and can be disabled with `OPENAI_MEMORY_EXTRACTION_ENABLED=false`. Episode summarization is separately opt-in through `OPENAI_EPISODIC_SUMMARIES_ENABLED=true`. Neither enables provider classification or money movement.
+
+Acceptance criteria:
+
+- An unauthenticated or malformed finish request cannot read or summarize another user's context.
+- A valid finish request saves one eligible evidence-linked summary and reports whether context was saved.
+- Repeated finish requests for unchanged context do not duplicate the memory or invoke the summarizer again.
+- Sensitive, unsupported, low-confidence, or quote-free summaries are discarded; finish failures do not delete short-term context.
+- A later relevant ordinary reflection may use the stored episode, but an unrelated turn and all financial actions ignore it.
+
+
+## Story 21: Remember Ordinary Interests And Their Stated Costs
+
+As a user, I want Victoria to remember activities I enjoy and the recurring amount I say I spend on them, so future conversations can account for what matters to me without guessing.
+
+Expected behavior:
+
+- Victoria may remember a clear first-person statement that the user likes, loves, enjoys, or is into an ordinary hobby or interest.
+- A clear list of up to eight ordinary interests is stored as independent facts so correcting one does not replace the others.
+- Victoria may remember spend tied to an activity only when the user states an explicit USD amount and a recurring period such as per month, per week, per session, or per visit. The record keeps the exact evidence and period.
+- One message may state recurring spend for multiple activities; Victoria stores each clear amount/activity/cadence as an independent fact tied to the full original message.
+- A one-time purchase, amount without a time period, tentative statement, or spend amount inferred from the hobby is not saved as a recurring spend fact.
+- An authorized transaction profile may support spend context only when the activity exactly matches a transaction category; broad or loosely related categories are not treated as hobby spending.
+- If the activity label does not match a profile category or merchant, Victoria may use a category/merchant link only after the user directly identifies that transaction label as representing the activity; the link is append-only and can be corrected.
+- Direct mappings may use plain statements such as “I categorize my climbing expenses as outdoor recreation” or “For hiking, I use REI as my transaction merchant.” Questions, guesses, and third-party descriptions do not create mappings.
+- Victoria uses an interest when its topic matches exactly, through a known activity alias, or through a cosine similarity score of at least 0.76, and the conversation is concretely about planning around it, building a routine, a related personal goal, or its spending. A passing mention in an unrelated request is not enough. When it recalls an interest, it says plainly “I remember you enjoy …” and invites correction if it may have changed. The similarity threshold is an initial setting pending hosted relevance evaluation.
+- When no reliable amount or current transaction summary exists, Victoria asks for a typical amount and period or a user-identified category/merchant; it does not guess. User-reported amounts include when they were last noted, and transaction replies disclose the covered date range and warn it may not reflect current spending.
+- A clear first-person correction that the user no longer enjoys an activity supersedes the active interest fact. Changes to a recurring spend append linked facts and preserve the earlier statement.
+- Existing sensitivity, identity, evidence, expiry, user-scope, and append-only memory rules continue to apply.
+
+Acceptance criteria:
+
+- Given “I love hiking,” Victoria acknowledges and stores an evidence-backed ordinary interest without suggesting a savings action.
+- Given “I spend about $45 a month on hiking,” Victoria stores a user-reported recurring amount with its cadence; when asked about hiking spend later, it attributes the amount to the user's statement and asks whether it is still accurate.
+- Given “I spend $45 a month on hiking and $30 per week on pottery,” Victoria stores two independent, evidence-linked recurring spend facts and acknowledges both amounts.
+- Given an amount with no cadence, or an uncertain/hypothetical spend or interest, Victoria stores no durable fact.
+- Given a clear “I don't enjoy hiking anymore” correction, Victoria appends a linked inactive-interest record and does not keep presenting hiking as a current interest.
+- Given a different user or unrelated hobby topic, Victoria does not surface the remembered activity or spend.
+- A transaction category or merchant is used for hobby spend only on an exact activity match or a direct user-confirmed mapping, with its source, count, and observation window disclosed.
+- A user-confirmed activity-to-category/merchant mapping may connect an otherwise unmatched profile fact; Victoria identifies the mapping, keeps transaction-derived totals separate from user-reported recurring amounts, and invites correction.
+- Recalled interests and spend never authorize, estimate, or create a savings action.

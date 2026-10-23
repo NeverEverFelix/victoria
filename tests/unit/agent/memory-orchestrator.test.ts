@@ -15,8 +15,22 @@ const profileMemory = (overrides: Partial<Omit<ConversationalMemory, "id" | "cre
 });
 
 describe("MemoryOrchestrator", () => {
+  it("preserves a paginated current-memory page returned by storage", async () => {
+    const storage = new MockMemoryProvider();
+    const row = {
+      id: "older-current-row", category: "preference" as const, key: "reply_style", value: "Concise.",
+      evidence: "Direct statement.", confidence: 1, createdAt: "2025-01-01T00:00:00.000Z"
+    };
+    const listCurrent = vi.spyOn(storage, "listCurrentConversationalMemories").mockResolvedValue([row]);
+    const orchestrator = new MemoryOrchestrator(storage, { now: () => new Date("2026-10-19T12:00:00.000Z") });
+    const page = { limit: 1, before: { createdAt: "2025-01-02T00:00:00.000Z", id: "cursor" } };
+
+    await expect(orchestrator.listConversationalMemories("user-a", page)).resolves.toEqual([row]);
+    expect(listCurrent).toHaveBeenCalledWith("user-a", false, page);
+  });
+
   it("versions repeated learned facts and retrieves only the current fact", async () => {
-    const orchestrator = new MemoryOrchestrator(new MockMemoryProvider(), { now: () => new Date("2026-10-13T12:00:00Z") });
+    const orchestrator = new MemoryOrchestrator(new MockMemoryProvider(), { now: () => new Date() });
     const first = await orchestrator.rememberConversationalMemory("user-a", {
       category: "preference", key: "response_style", value: "Prefers concise answers.", evidence: "User said so.",
       confidence: 0.95, sourceType: "user_statement"
@@ -31,16 +45,66 @@ describe("MemoryOrchestrator", () => {
     await expect(orchestrator.listConversationalMemories("user-b")).resolves.toEqual([]);
   });
 
+  it("forgets one user fact from current retrieval while preserving linked history", async () => {
+    const storage = new MockMemoryProvider();
+    const first = await storage.rememberConversationalMemory("user-a", {
+      category: "preference", key: "response_style", value: "Prefers concise answers.",
+      evidence: "User said so.", confidence: 0.95, sourceType: "user_statement"
+    });
+    const orchestrator = new MemoryOrchestrator(storage);
+
+    await orchestrator.forgetMemory("user-a", first.id);
+
+    await expect(orchestrator.listConversationalMemories("user-a")).resolves.toEqual([]);
+    const history = await storage.listConversationalMemories("user-a");
+    expect(history).toHaveLength(2);
+    expect(history[1]).toMatchObject({ supersedesId: first.id, sourceMetadata: { memoryStatus: "forgotten" } });
+    await expect(orchestrator.listConversationalMemories("user-b")).resolves.toEqual([]);
+    await expect(orchestrator.forgetMemory("user-a", first.id)).rejects.toThrow("The memory was not found for this user.");
+  });
+
+  it("lets a new explicit fact supersede an earlier forget marker", async () => {
+    const storage = new MockMemoryProvider();
+    const orchestrator = new MemoryOrchestrator(storage);
+    const first = await orchestrator.rememberConversationalMemory("user-a", {
+      category: "preference", key: "response_style", value: "Prefers concise answers.",
+      evidence: "User said so.", confidence: 0.95, sourceType: "user_statement"
+    });
+    await orchestrator.forgetMemory("user-a", first.id);
+    const restored = await orchestrator.rememberConversationalMemory("user-a", {
+      category: "preference", key: "response_style", value: "Prefers concise answers.",
+      evidence: "User stated this preference again.", confidence: 0.95, sourceType: "user_statement"
+    });
+
+    expect(restored.supersedesId).not.toBe(first.id);
+    await expect(orchestrator.listConversationalMemories("user-a")).resolves.toEqual([restored]);
+  });
+
   it("excludes stale transaction profile facts but keeps current user memories", async () => {
     const storage = new MockMemoryProvider();
     await storage.rememberConversationalMemory("user-a", profileMemory({ observedThrough: "2026-05-01" }));
     await storage.rememberConversationalMemory("user-a", {
       category: "goal", key: "move", value: "Wants to save for a move.", evidence: "User said so.", confidence: 0.95
     });
-    const orchestrator = new MemoryOrchestrator(storage, { now: () => new Date("2026-10-13T12:00:00Z") });
+    const orchestrator = new MemoryOrchestrator(storage, { now: () => new Date() });
 
     const result = await orchestrator.getMemoryForUser("user-a", "move");
     expect(result.conversationalMemories?.map((memory) => memory.key)).toEqual(["move"]);
+  });
+
+  it("excludes ordinary memories older than 24 months even before physical cleanup", async () => {
+    const storage = new MockMemoryProvider();
+    const stale: ConversationalMemory = {
+      id: "stale-ordinary", category: "preference", key: "reply_style", value: "Prefers concise replies.",
+      evidence: "User stated it.", confidence: 1, createdAt: "2024-10-01T00:00:00.000Z", sourceType: "user_statement"
+    };
+    vi.spyOn(storage, "searchConversationalMemories").mockResolvedValue([stale]);
+    vi.spyOn(storage, "filterCurrentConversationalMemoryIds").mockResolvedValue(new Set([stale.id]));
+    const orchestrator = new MemoryOrchestrator(storage, { now: () => new Date("2026-10-21T00:00:00.000Z") });
+
+    const result = await orchestrator.getMemoryForUser("user-a", "reply style");
+
+    expect(result.conversationalMemories).toEqual([]);
   });
 
   it("makes missing, stale, and future profile observations unavailable in mock retrieval", async () => {

@@ -43,6 +43,7 @@ describe("PostgresMemoryRepository semantic memory", () => {
     expect(saved.id).toBe("memory-1");
     expect(database.calls).toHaveLength(2);
     expect(database.calls[0]?.values[1]).toBe("user-a");
+    expect(database.calls[0]?.values.at(-1)).toBe("{}");
     expect(database.calls[1]?.sql).toContain("victoria_memory_embeddings");
     expect(database.calls[1]?.values).toContain("user-a");
     expect(database.calls[1]?.values).toContain("memory-1");
@@ -50,11 +51,31 @@ describe("PostgresMemoryRepository semantic memory", () => {
     expect(database.calls[1]?.values).toContain(`[${vector.join(",")}]`);
   });
 
+  it("persists forget markers without creating a new embedding", async () => {
+    const embed = vi.fn(async () => vector);
+    const database = new ScriptedDatabase((sql) => sql.includes("INSERT INTO victoria_conversational_memories")
+      ? [{ id: "forgotten-marker", category: "habit", key: "coffee", value: "This memory was forgotten.",
+        evidence: "The user asked Victoria to forget this memory.", confidence: 1,
+        createdAt: "2026-10-17T12:00:00.000Z", sourceType: "user_correction",
+        sourceMetadata: { memoryStatus: "forgotten" } }]
+      : []);
+    const repository = new PostgresMemoryRepository(database, 30_000, { modelId: "test-embedding-model", embed });
+
+    await repository.rememberConversationalMemory("user-a", memory({
+      value: "This memory was forgotten.", confidence: 1, sourceType: "user_correction",
+      sourceMetadata: { memoryStatus: "forgotten" }
+    }));
+
+    expect(database.calls).toHaveLength(1);
+    expect(database.calls[0]?.sql).toContain("INSERT INTO victoria_conversational_memories");
+    expect(embed).not.toHaveBeenCalled();
+  });
+
   it("retrieves relevant memories through vector similarity with user and model filters", async () => {
     const database = new ScriptedDatabase((sql) => sql.includes("victoria_search_conversational_memories")
       ? [{ id: "memory-2", category: "financial_pattern", key: "merchant:coffee", value: "Typical coffee spend is $6.",
         evidence: "3 posted purchases", confidence: 0.8, createdAt: "2026-10-13T12:00:00.000Z",
-        sourceType: "plaid_transaction_profile", similarity: 0.91 }]
+        sourceType: "plaid_transaction_profile", semanticSimilarity: 0.91 }]
       : []);
     const repository = new PostgresMemoryRepository(database, 30_000, embeddingProvider);
 
@@ -64,6 +85,49 @@ describe("PostgresMemoryRepository semantic memory", () => {
     expect(database.calls[0]?.sql).toContain("victoria_search_conversational_memories");
     expect(database.calls[0]?.values?.[0]).toBe("user-a");
     expect(database.calls[0]?.values?.[2]).toBe("test-embedding-model");
+    expect(database.calls[0]?.sql).toContain('similarity AS "semanticSimilarity"');
+  });
+
+  it("falls back to current memories when vector search has no indexed results", async () => {
+    const database = new ScriptedDatabase((sql) => sql.includes("WITH selected_memories")
+      ? [{ id: "unindexed-memory", category: "preference", key: "reply_style", value: "Prefers concise replies.",
+        evidence: "Please keep replies concise.", confidence: 1, createdAt: "2026-10-18T12:00:00.000Z" }]
+      : []);
+    const repository = new PostgresMemoryRepository(database, 30_000, embeddingProvider);
+
+    const found = await repository.searchConversationalMemories("user-a", "reply style", 8);
+
+    expect(found).toMatchObject([{ id: "unindexed-memory", value: "Prefers concise replies." }]);
+    expect(database.calls).toHaveLength(2);
+    expect(database.calls[0]?.sql).toContain("victoria_search_conversational_memories");
+    expect(database.calls[1]?.sql).toContain("WITH selected_memories");
+  });
+
+  it("filters semantic candidates against current user memory state", async () => {
+    const database = new ScriptedDatabase((sql) => sql.includes("ANY($2::text[])")
+      ? [{ id: "current-memory" }]
+      : []);
+    const repository = new PostgresMemoryRepository(database);
+
+    await expect(repository.filterCurrentConversationalMemoryIds("user-a", ["current-memory", "forgotten-memory"]))
+      .resolves.toEqual(new Set(["current-memory"]));
+    expect(database.calls[0]?.sql).toContain("newer.supersedes_id = m.id");
+    expect(database.calls[0]?.sql).toContain("memoryStatus");
+    expect(database.calls[0]?.values).toEqual(["user-a", ["current-memory", "forgotten-memory"]]);
+  });
+
+  it("lists current facts with keyset pagination and persistent forget suppression", async () => {
+    const database = new ScriptedDatabase((sql) => sql.includes("WITH selected_memories")
+      ? [{ id: "current-memory", category: "habit", key: "coffee", value: "Current.", evidence: "Direct.", confidence: 1 }]
+      : []);
+    const repository = new PostgresMemoryRepository(database);
+
+    await expect(repository.listCurrentConversationalMemories("user-a", false, {
+      limit: 10, before: { createdAt: "2026-10-17T00:00:00.000Z", id: "memory-before" }
+    })).resolves.toMatchObject([{ id: "current-memory" }]);
+    expect(database.calls[0]?.sql).toContain("DISTINCT ON (m.category, m.memory_key)");
+    expect(database.calls[0]?.sql).toContain("forgotten.source_metadata->>'memoryStatus' = 'forgotten'");
+    expect(database.calls[0]?.values).toEqual(["user-a", false, "2026-10-17T00:00:00.000Z", "memory-before", 10]);
   });
 
   it("keeps the non-vector fallback user-scoped and excludes superseded or stale profile facts", async () => {

@@ -296,6 +296,23 @@ describe("parseVictoriaEnv", () => {
     ).toThrow("Production AUTH_SECRET must be at least 32 characters.");
   });
 
+  it("allows production to use Supabase Auth without unrelated Plaid credentials or the local AUTH_SECRET", () => {
+    const env = parseVictoriaEnv(validEnv({
+      APP_ENV: "production",
+      NODE_ENV: "production",
+      DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
+      OPENAI_API_KEY: "sk-production-runtime-key",
+      PLAID_CLIENT_ID: "",
+      PLAID_SECRET: "",
+      PLAID_ENV: "sandbox",
+      AUTH_SECRET: ""
+    }));
+
+    expect(env.authSecret).toBe("");
+    expect(env.plaidClientId).toBe("");
+    expect(env.plaidSecret).toBe("");
+  });
+
   it("rejects test provider credentials in production", () => {
     expect(() =>
       parseVictoriaEnv(

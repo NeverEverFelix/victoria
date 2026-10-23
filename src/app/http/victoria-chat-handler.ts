@@ -1,8 +1,10 @@
 import type { VictoriaAgent } from "../../agent/victoria-agent.js";
+import type { ConversationCoordinator } from "../turns/conversation-coordinator.js";
 
 export interface VictoriaChatHandlerDependencies {
   authenticate(request: Request): Promise<{ readonly userId: string } | null>;
   agent: Pick<VictoriaAgent, "respond">;
+  conversationCoordinator?: ConversationCoordinator;
 }
 
 export interface VictoriaChatRouteContext {
@@ -38,11 +40,14 @@ export function createVictoriaChatHandler(dependencies: VictoriaChatHandlerDepen
     if (!isMessageBody(body)) return respond(400, { error: "invalid_chat_request" });
 
     try {
-      const response = await dependencies.agent.respond({
-        userId: user.userId,
-        conversationId: context.conversationId,
-        message: body.message
-      });
+      const runAgent = () => dependencies.agent.respond({
+          userId: user.userId,
+          conversationId: context.conversationId,
+          message: body.message
+        });
+      const response = dependencies.conversationCoordinator
+        ? await dependencies.conversationCoordinator.runExclusive(user.userId, context.conversationId, runAgent)
+        : await runAgent();
       return respond(200, {
         message: response.message,
         decision: {

@@ -13,6 +13,7 @@ export interface EpisodicMemorySummarizer {
 }
 
 export const EPISODIC_MEMORY_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+export const SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY = 0.76;
 
 /** Only current, validated episode summaries with a clear topic match may shape a reply. */
 export function isUsableEpisodicSummary(
@@ -28,7 +29,10 @@ export function isUsableEpisodicSummary(
   const nowMs = now.getTime();
   if (!Number.isFinite(createdAt) || !Number.isFinite(nowMs) || createdAt > nowMs ||
       nowMs - createdAt > EPISODIC_MEMORY_MAX_AGE_MS) return false;
-  const summaryTerms = new Set(memory.value.toLocaleLowerCase("en-US")
+  if (Number.isFinite(memory.semanticSimilarity) && memory.semanticSimilarity! >= SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY) {
+    return true;
+  }
+  const summaryTerms = new Set(`${memory.value} ${memory.evidence}`.toLocaleLowerCase("en-US")
     .match(/[a-z]{4,}/g)?.map(normalizeEpisodeTerm).filter((term) => !EPISODE_STOP_WORDS.has(term)) ?? []);
   const queryTerms = new Set(userMessage.toLocaleLowerCase("en-US")
     .match(/[a-z]{4,}/g)?.map(normalizeEpisodeTerm) ?? []);

@@ -1,0 +1,14 @@
+[
+  { "id": "interest-planning-paraphrase", "relevant": true, "memory": "The user enjoys hiking.", "query": "Help me plan a few weekend trail walks." },
+  { "id": "interest-routine-paraphrase", "relevant": true, "memory": "The user enjoys pottery.", "query": "How could I fit ceramics practice into my weekly routine?" },
+  { "id": "interest-goal-paraphrase", "relevant": true, "memory": "The user enjoys photography.", "query": "I want to get better at taking photos this year." },
+  { "id": "interest-spending-paraphrase", "relevant": true, "memory": "The user enjoys cycling.", "query": "I am comparing the cost of getting around by bike." },
+  { "id": "episode-reflection-paraphrase", "relevant": true, "memory": "The user has been trying to cook at home when work leaves them tired, and wants a low-effort routine.", "query": "I am exhausted after work again and tempted to order dinner." },
+  { "id": "episode-goal-paraphrase", "relevant": true, "memory": "The user is building an emergency fund and prefers small, consistent contributions.", "query": "Can we make my rainy-day savings plan easier to stick with?" },
+  { "id": "interest-unrelated-request", "relevant": false, "memory": "The user enjoys hiking.", "query": "Can you help me rewrite this email to my landlord?" },
+  { "id": "interest-incidental-mention", "relevant": false, "memory": "The user enjoys pottery.", "query": "My friend mentioned pottery; can you explain how a kiln works?" },
+  { "id": "interest-different-activity", "relevant": false, "memory": "The user enjoys cycling.", "query": "Help me plan a beginner swimming routine." },
+  { "id": "episode-unrelated-finance", "relevant": false, "memory": "The user is building an emergency fund and prefers small, consistent contributions.", "query": "How do I remove a coffee stain from a cotton shirt?" },
+  { "id": "episode-unrelated-routine", "relevant": false, "memory": "The user has been trying to cook at home when work leaves them tired, and wants a low-effort routine.", "query": "What documents should I bring to renew my passport?" },
+  { "id": "interest-related-word-no-use-cue", "relevant": false, "memory": "The user enjoys photography.", "query": "Photography is popular in my town." }
+]

@@ -71,6 +71,9 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Returned event, suggestion, proposal, approval, correction, allocation, and entry snapshots cannot be mutated by callers; changing a habit only affects later suggestions.
 - Habits, goals, and remembered decisions supplied for one user never appear in another user's memory or affect their merchant estimates.
 - A goal allocation after a correction uses the entry's current effective amount, while preserving the original entry amount in history.
+- Local PostgreSQL mode persists approved goal allocations across tool/runtime instances, returns an identical allocation on retry, rejects changed action details, and leaves the linked entry unchanged.
+- A pending goal-allocation proposal resumes after runtime restart with the same action and approval IDs; approval records one allocation, while decline remains terminal and records none.
+- Local PostgreSQL mode persists an approved savings correction across a tool/runtime restart, applies its signed adjustment to effective amount and weekly total reads, and allows goal allocation against the corrected amount without mutating the original entry.
 - Victoria represents a correction or reversal as a new record linked to the original.
 - Correcting a recorded amount requires exact approval, appends a signed adjustment, and leaves the original entry unchanged.
 - Corrections reject invalid, no-op, cross-user, non-completed, or non-mocked targets, and effective weekly totals retain the original entry's week.
@@ -101,20 +104,44 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria can use updated memory for a future suggestion without rewriting an earlier suggestion.
 - PostgreSQL is authoritative for remembered decisions, while SQLite caches those durable reads.
 - Current conversation context is short-term SQLite memory, scoped by user and conversation, retaining up to 20 user and Victoria messages; it remains available during a PostgreSQL outage while a local outbox retries its backup.
+- The local chat route defaults to mock memory, and `VICTORIA_MEMORY_MODE=persistent` opts into PostgreSQL-backed context and durable memories only under validated local development configuration; persistent mode must not be available in staging or production through this local route.
+- Against a dedicated disposable local PostgreSQL database, a memory written through one local chat runtime is recalled by a fresh runtime for the same user, and is not recalled for another user.
+- In local persistent chat, an unanswered avoided-spend amount clarification survives a fresh runtime for the same user and conversation; a new amount yields a fresh suggestion requiring explicit approval, and another user cannot retrieve or answer that clarification.
+- In local persistent chat, a pending savings proposal survives a fresh runtime; exact confirmation records one immutable `mock_ledger` entry, and weekly progress still includes that entry after another runtime restart. Repeating confirmation cannot create a second entry.
+- In local persistent chat, `GET /api/memories` returns only the signed-in local user’s current facts; invalid or absent sessions cannot inspect memory, forget suppresses listing/retrieval immediately, and scheduled retention physically removes the forgotten lineage and embeddings after 30 days; local correction appends a linked current fact and future retrieval uses the correction.
+- Retention jobs delete expired PostgreSQL short-term context, 90-day transaction-profile data, 24-month-old unrefreshed user memories, and forgotten memory lineages plus embeddings; job outcomes are auditable and a protected scheduled handler rejects unauthenticated calls.
+- In local persistent chat, concurrent approval and decline attempts for one proposal serialize to one terminal outcome; a recorded entry cannot coexist with a declined or superseded transition.
+- In local persistent chat, simultaneous turns for the same user and conversation execute sequentially across runtime instances; different conversations remain independent.
 - PostgreSQL can restore unexpired clarification context after SQLite cache loss, and expired context is not returned.
 - Durable conversational memories retain user-stated preferences with evidence and confidence, isolate by user, and supersede earlier facts through linked append-only records.
 - Durable conversational decisions are append-only and cannot mutate financial event, approval, or ledger history.
 - An injected structured extractor can store at most three stable, ordinary, high-confidence contextual facts only when exact supporting evidence appears in the current user turn; temporary, sensitive, weak-confidence, unsupported, duplicate, or malformed candidates are discarded.
+- Direct automatic memory is limited to clear first-person ordinary preferences, recurring habits, stated goals, and clear answers to a typical-spend question. Sensitive health/political/religious/identity details and credentials/account identifiers fail the shared privacy gate; ambiguous, hypothetical, quoted, third-party, and temporary information is not retained.
 - Extraction rejects quoted/third-party, negated, and hypothetical facts even if the words appear in the user's message; memory-extraction failure does not block the chat turn or bypass proposal/approval policy.
 - When the 20-message short-term context is about to roll over, an injected episodic summarizer receives only bounded user-authored messages. It stores a compact append-only summary only when confidence and sensitivity checks pass and each supporting excerpt occurs in the supplied user messages.
-- A relevant episode summary can shape an ordinary reflective reply only when it is well-formed, non-future, and at most 90 days old; unrelated and stale episodes are not surfaced.
-- Episodic summary failures or unsupported/sensitive summaries do not block the current turn, and the default local runtime does not make extraction-provider calls.
+- A relevant episode summary can shape an ordinary reflective reply only when it is well-formed, non-future, at most 90 days old, and meets either the 0.76 semantic similarity threshold or two meaningful shared terms across summary/evidence and query; unrelated and stale episodes are not surfaced. Episode creation remains limited to explicit finish or context rollover.
+- Episodic summary failures or unsupported/sensitive summaries do not block the current turn. The example local environment uses a mock model and placeholder key, so it makes no extraction-provider calls; a real model/key enables structured extraction unless explicitly disabled.
 - An explicit “I prefer saving $20 rather than $50 at a time” statement creates an evidence-backed user preference but no savings proposal or ledger entry.
 - Tentative, ambiguous, equal-amount, or malformed savings preference statements do not create a memory fact.
 - A changed explicit preference appends a fact linked to the prior preference; another user's preference is never returned.
 - A direct preference, recurring habit, or stated goal is stored as an evidence-backed structured fact; an identical repeat is deduplicated and an uncertain statement is ignored.
 - A relevant retrieved preference or goal shapes an ordinary reflective reply in a later conversation; the response remains user-scoped and cannot create a savings entry or goal allocation.
 - A matching remembered coffee, takeout, or merchant routine can shape an ordinary reflection across conversations; unrelated routines and other users' routines stay out, and routine frequency never becomes a money estimate.
+- A clear ordinary hobby/interest statement is stored as a user-scoped, evidence-linked fact; Victoria surfaces it only on a matching ordinary topic, signals it is remembered, and invites correction.
+- A clear list of interests creates one independent evidence-linked memory per listed activity; topic recall remains specific, and correcting one activity leaves the others active.
+- A matching interest may shape activity-specific planning, routine, goal, or spending reflections when exact/alias topic matching or a semantic score of at least 0.76 finds the activity and a concrete use cue is present; Victoria identifies the remembered fact and invites correction. Semantic retrieval without a use cue and scores below threshold must not personalize.
+- A passing activity mention in an unrelated request does not cause interest personalization; inactive/corrected interests stay out of these replies.
+- A recurring hobby-spend fact requires an explicit USD amount and cadence, is labeled as user-reported, and is only surfaced for that activity when asked; Victoria invites correction and creates no financial action.
+- A single first-person message with multiple explicit activity amounts and cadences creates one independent evidence-linked fact per activity; a missing cadence or ambiguous activity in one clause is not invented or carried across clauses.
+- Hobby spending without an explicit period, a one-time purchase, tentative interest/spend, and sensitive interests fail the learning gate.
+- A clear first-person statement that the user no longer enjoys an activity appends a linked inactive-interest fact and prevents future current-interest personalization.
+- A transaction-profile category can inform an activity-specific spend reply only for an exact category/activity key match; the reply discloses transaction total, count, and observation window and asks whether the category fits.
+- An explicit user-confirmed activity-to-category/merchant mapping can retrieve the linked transaction profile fact; Victoria labels the mapping, source window, and count, asks whether the link remains right, and keeps any user-reported periodic spend separate from transaction totals.
+- Tentative, question-form, or sensitive activity-to-transaction mappings do not create memory.
+- Natural first-person statements that explicitly categorize an activity's purchases or name a merchant for that activity create the correct user-confirmed mapping; question, uncertain, or third-party wording does not.
+- An activity-spend question with no reliable amount asks for a typical amount and period or an explicitly identified transaction label; Victoria provides no guessed dollar figure.
+- A recalled user-reported amount says when it was last noted and asks whether it remains accurate; an unavailable/stale transaction profile is not surfaced as a current total.
+- A transaction-derived reply states its observation window and that the history may not reflect current spending, then invites correction of the category/mapping.
 - Remembering a habit or goal does not create a savings proposal or goal allocation; structured facts remain available as source records for future PostgreSQL semantic/vector indexing.
 - A quantified, explicit merchant-spend habit can inform a later estimate only for the same merchant and user; it remains an estimate, needs approval, and does not create a ledger entry by itself.
 - When transaction history is unavailable, Victoria asks for the user's typical merchant spend; a valid answer informs the current proposal and appends a linked user-scoped memory fact for later estimates.
@@ -213,7 +240,8 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - The transactions-only profile builder derives user-scoped merchant/category facts from posted USD purchases within 90 days, with provenance, observed dates, sample count, and confidence; pending, stale, malformed, non-USD, and non-purchase transactions are excluded.
 - Profile facts contain compact aggregates rather than raw transaction payloads or provider transaction identifiers.
 - Persistent profile and conversational facts can be indexed as 1536-dimensional pgvector embeddings; semantic retrieval filters by authenticated user and embedding model, excludes superseded facts, and ignores stale transaction-profile facts.
-- If embedding generation or vector search is unavailable, the fact remains persisted and memory retrieval falls back to recent user-scoped facts.
+- If embedding generation or vector search is unavailable, the fact remains persisted and memory retrieval falls back to recent user-scoped facts, including when vector search returns no indexed rows.
+- Local persistent chat injects the configured 1536-dimensional OpenAI embedding provider only when a non-placeholder API key is present; without it, recent-fact fallback remains available. Run `npm run eval:memory:relevance` before changing the 0.76 threshold and review precision/recall for relevant paraphrases and unrelated queries.
 - Profile-derived context does not approve a savings entry or allocation; exact action approval remains required.
 
 The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-link-token.test.ts`](unit/app/plaid-link-token.test.ts). Broader financial-profile cases remain pending in [`contracts/financial-profile.pending.test.ts`](contracts/financial-profile.pending.test.ts); convert them to executable assertions as the corresponding bounded interfaces and behaviors are implemented.
@@ -236,6 +264,12 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Agent tool calls are logged for auditability.
 # Plaid transaction profile sync
 
+- The client can create/sign in to a Supabase Auth account, renders only the authenticated connection status, and does not call Plaid Link before fetching the server notice and receiving an explicit confirmation for its current version.
+- The client requires the notice to identify Transactions alone and declare balances and transfers disabled before it enables consent or Link; an unsafe notice blocks the flow.
+- Client Link-token creation and public-token exchange use authenticated same-origin requests; access tokens and raw transaction rows are never rendered. Disconnect/delete requires a separate user confirmation.
+- When the consent endpoint is unavailable, the client shows a recoverable status error and no Plaid data or Link flow.
+- Signed-in staging routes return the consent disclosure, accept only a confirmed current consent version, create a Link token only after active Transactions consent, exchange public tokens without returning access tokens, refresh only the authenticated user's profile, and allow authenticated disconnect/delete.
+- Plaid routes fail closed unless the staging financial-profile runtime is explicitly enabled with sandbox credentials, Supabase Auth, and a valid encryption key; production and non-sandbox environments never mount it.
 - Exchange a Link public token only for the authenticated user with active Transactions consent; never return or persist an unencrypted access token.
 - Apply added/modified/removed cursor pages atomically with the cursor and enforce Item ownership.
 - Recheck consent between pages; revoked consent blocks provider access and profile refresh.
@@ -253,6 +287,10 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 
 ## Memory Orchestration
 
+- The provider extractor is considered for ordinary finance statements, pattern reflections, and unclear turns without an uncertain financial intent, including natural sentence forms the deterministic parser does not recognize; its capture does not replace the ordinary response or a follow-up.
+- Natural-statement classification accepts clear first-person context outside the fixed phrase list while questions and spending/action intents keep their existing classification boundaries.
+- Provider candidates still require exact in-turn evidence, first-person user attribution, affirmation, stability, ordinary sensitivity, and high confidence; extraction failure does not block the turn.
+- Provider extraction is skipped while a savings, goal-allocation, or ledger-correction action is pending, and learning never approves or changes a financial action.
 - Changed user memories append a linked current fact; exact repeated evidence is deduplicated.
 - Retrieval excludes superseded and stale transaction-profile memories, resolves duplicate keys by source authority, and stays within the configured per-turn bound.
 - Financial profile refreshes pass through the memory service, append replacements and absence markers, and invalidate SQLite's short-lived durable-memory cache.
@@ -262,4 +300,28 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - An ambiguous correction asks which purchase/day the user means and creates no memory or financial record.
 - A correction during pending savings or ledger-correction approval cannot bypass that approval lifecycle.
 - A correction never updates Plaid data, creates a savings proposal, or writes a ledger entry.
-- The product has no user-facing memory review/edit endpoint or screen.
+- Authenticated memory-management routes expose current memories, append corrections, and append forget suppression markers; they never accept user identity from the request payload.
+- Memory inspection returns allowlisted structured details that distinguish user-reported activity amounts, user-confirmed category/merchant mappings, and transaction-profile totals; arbitrary source metadata and provider payload fields are never returned.
+- Memory controls can correct an interest into an inactive/new structured fact or update an activity mapping only from a clear first-person statement; transaction-derived profile aggregates reject PATCH and remain forgettable.
+- Staging/production chat verifies a bearer token with Supabase Auth, scopes context, facts, approvals, and mock ledger data to the returned subject, and uses durable PostgreSQL storage; the same token scopes memory inspect/correct/forget routes. Missing auth or unsafe runtime configuration fails closed.
+- Hosted authorization is owner based: using the same conversation ID, a second verified user cannot read or finish the first user's context, approve that user's pending savings action, or correct/forget that user's memory; foreign memory IDs return the same not-found response as unknown IDs.
+- Supabase Auth token verification failure returns unauthorized; Auth service unavailability fails closed without exposing memory.
+- Current memory listing is user-scoped, excludes superseded, forgotten, and stale transaction-profile facts, and does not disclose internal source metadata beyond the bounded public contract.
+- Memory listing supports bounded keyset pagination; malformed cursors and unsupported query parameters are rejected, and a cursor cannot cross user scopes.
+- Corrections are append-only and target only the authenticated user's current fact; unknown and foreign IDs return the same not-found result.
+- Forgetting appends a non-embedded marker that suppresses the fact from list and retrieval; source records and embeddings remain retained, and the API states this clearly.
+- No bulk-delete endpoint is present. Memory-management routes use Postgres directly and do not depend on Vercel local filesystem persistence.
+- An authenticated conversation-finish route summarizes only eligible user-authored context, keeps raw short-term context on failure, and returns whether a summary was saved.
+- Finishing unchanged context is idempotent; repeated calls do not store duplicate episodes or call the summarizer again.
+- Episode summaries can influence only fresh, relevant ordinary reflections and never a financial estimate, approval, or ledger action.
+
+## Durable local memory and savings integrity follow-up
+
+- A paginated current-memory page is returned as produced by storage; the orchestration layer must not apply another lifecycle filter that removes records or shifts a cursor.
+- Hydrated durable savings entries and corrections must satisfy the same safe cents, mock-only, approval identity, ownership, and completed-entry checks as newly created records.
+- Persisted goal-allocation approval and terminal records must be detached/frozen and limited to valid terminal states. Only an explicit decline of the exact pending action may persist a declined transition.
+- Persisted goal-allocation approval snapshots must match both their user and action ID, and restored pending decisions must match their stored owner/action keys.
+- PostgreSQL migrations enforce safe-integer cents, user-consistent entry references, goal approval references, a matching recorded transition for each inserted savings entry, and a persisted matching approval for each savings-entry correction.
+- Conversation lock contention must stop with a clear timeout instead of waiting indefinitely; clarification expiry is calculated from the database clock.
+- Supabase turn and Plaid consent tables must have RLS enabled, no anon/authenticated SELECT grants, and server-role access only.
+- A caller-provided deterministic ID factory must not produce duplicate proposal, suggestion, or savings-entry IDs within one agent/tool instance.

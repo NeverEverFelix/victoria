@@ -1,0 +1,80 @@
+import "server-only";
+import { createHash, randomUUID } from "node:crypto";
+import { OpenAiEmbeddingProvider } from "../../agent/memory/openai-embedding-provider.js";
+import { OpenAiConversationalMemoryExtractor } from "../../agent/memory/openai-conversational-memory-extractor.js";
+import { OpenAiEpisodicMemorySummarizer } from "../../agent/memory/openai-episodic-memory-summarizer.js";
+import { PostgresMemoryRepository } from "../../agent/memory/postgres-memory-repository.js";
+import { MemoryOrchestrator } from "../../agent/memory/memory-orchestrator.js";
+import { SEMANTIC_MEMORY_EMBEDDING_DIMENSIONS } from "../../agent/memory/semantic-embedding.js";
+import { parseVictoriaEnv, type EnvSource } from "../../config/env.js";
+import { PostgresPendingAmountClarificationStore } from "../clarifications/postgres-pending-amount-clarification-store.js";
+import { PostgresPendingGoalAllocationActionStore } from "../savings/postgres-pending-goal-allocation-store.js";
+import { PostgresPendingSavingsActionStore } from "../savings/postgres-pending-savings-action-store.js";
+import { PostgresMockSavingsTools } from "../savings/postgres-mock-savings-tools.js";
+import { PostgresConversationCoordinator } from "../turns/postgres-conversation-coordinator.js";
+import { createPostgresTurnStore } from "../turns/postgres-pool.js";
+import { createSupabaseBearerAuthenticator } from "../auth/supabase-bearer-auth.js";
+import { createVictoriaAgent } from "../create-victoria-agent.js";
+import { createVictoriaChatHandler } from "./victoria-chat-handler.js";
+import { createRlsScopedMemoryManagement } from "./rls-scoped-memory-management.js";
+import { createMemoryManagementHandlers } from "./memory-management-handler.js";
+import { createConversationFinishHandler } from "./conversation-finish-handler.js";
+
+type ChatHandler = ReturnType<typeof createVictoriaChatHandler>;
+type FinishHandler = ReturnType<typeof createConversationFinishHandler>;
+type MemoryHandlers = ReturnType<typeof createMemoryManagementHandlers>;
+let cached: { readonly key: string; readonly runtime: { handler: ChatHandler; finishHandler: FinishHandler; memories: MemoryHandlers } } | undefined;
+
+/** Persistent server runtime: Supabase Auth is the sole identity issuer; PostgreSQL stores chat state. */
+export function getPersistentChatRuntime(source: EnvSource = process.env, fetcher?: typeof fetch) {
+  if (source.APP_ENV !== "staging" && source.APP_ENV !== "production") return null;
+  try {
+    const env = parseVictoriaEnv(source);
+    if (env.usesRealMoneyMovement) return null;
+    const supabaseUrl = source.SUPABASE_URL?.trim();
+    const publishableKey = source.SUPABASE_PUBLISHABLE_KEY?.trim();
+    if (!supabaseUrl || !publishableKey) return null;
+    const key = createHash("sha256").update(env.databaseUrl).update("\0").update(env.openAiApiKey)
+      .update("\0").update(env.openAiModel)
+      .update("\0").update(source.OPENAI_MEMORY_EXTRACTION_ENABLED === "false" ? "memory-off" : "memory-on")
+      .update("\0").update(source.OPENAI_EPISODIC_SUMMARIES_ENABLED === "true" ? "episodes-on" : "episodes-off")
+      .update("\0").update(supabaseUrl).update("\0").update(publishableKey).digest("hex");
+    if (cached?.key === key) return cached.runtime;
+
+    const authenticate = createSupabaseBearerAuthenticator({ supabaseUrl, publishableKey, ...(fetcher ? { fetcher } : {}) });
+    const { pool } = createPostgresTurnStore(env.databaseUrl, { maxPoolSize: 2 });
+    const embeddings = new OpenAiEmbeddingProvider({ apiKey: env.openAiApiKey, dimensions: SEMANTIC_MEMORY_EMBEDDING_DIMENSIONS, ...(fetcher ? { fetcher } : {}) });
+    const repository = new PostgresMemoryRepository(pool, undefined, embeddings);
+    const memory = new MemoryOrchestrator(repository, { financialProfiles: repository });
+    const pendingAmountClarifications = new PostgresPendingAmountClarificationStore(pool);
+    const pendingSavingsActions = new PostgresPendingSavingsActionStore(pool);
+    const pendingGoalAllocationActions = new PostgresPendingGoalAllocationActionStore(pool);
+    const agent = createVictoriaAgent({
+      env, memory, tools: new PostgresMockSavingsTools(pool), pendingAmountClarifications,
+      pendingSavingsActions, pendingGoalAllocationActions, idFactory: randomUUID,
+      ...(source.OPENAI_MEMORY_EXTRACTION_ENABLED !== "false" ? {
+        conversationalMemoryExtractor: new OpenAiConversationalMemoryExtractor({
+          apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})
+        })
+      } : {}),
+      ...(source.OPENAI_EPISODIC_SUMMARIES_ENABLED === "true" ? {
+        episodicMemorySummarizer: new OpenAiEpisodicMemorySummarizer({
+          apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})
+        })
+      } : {}),
+      ...(fetcher ? { fetcher } : {})
+    });
+    const conversationCoordinator = new PostgresConversationCoordinator(pool);
+    const handler = createVictoriaChatHandler({
+      authenticate, agent, conversationCoordinator
+    });
+    const finishHandler = createConversationFinishHandler({ authenticate, agent, conversationCoordinator });
+    const memoryForUser = createRlsScopedMemoryManagement(pool, embeddings);
+    const memories = createMemoryManagementHandlers({ authenticate, memoryForUser });
+    const runtime = Object.freeze({ handler, finishHandler, memories });
+    cached = Object.freeze({ key, runtime });
+    return runtime;
+  } catch {
+    return null;
+  }
+}

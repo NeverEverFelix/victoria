@@ -214,7 +214,7 @@ Real-transfer idempotency and provider retry policies are deferred because real 
 | ------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------- |
 | COR-001 | Events, suggestions, proposals, approvals, and ledger entries **MUST** be append-only after creation. | Enforced for returned agent snapshots and mock-ledger records | `tests/unit/agent/victoria-agent.test.ts` |
 | COR-002 | New habits or evidence **MUST** affect only future suggestions.                                       | Enforced for current in-memory habit estimates | `tests/unit/agent/victoria-agent.test.ts` |
-| COR-003 | A corrected amount **MUST** be represented by a new record linked to the record it corrects.          | Enforced in mocked ledger; agent flow covered |
+| COR-003 | A corrected amount **MUST** be represented by a new record linked to the record it corrects.          | Enforced in mocked ledger and durable correction store; agent flow covered |
 | COR-004 | Audit views **MUST** retain both the original record and every linked correction.                     | Enforced by mock ledger correction listing   |
 | COR-005 | Totals **MUST** use the effective ledger impact after corrections without erasing original history.   | Enforced for weekly mocked-ledger total       |
 

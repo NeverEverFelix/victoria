@@ -9,9 +9,21 @@ import {
 import type { AgentTeamSpecialists } from "../../../src/agent/index.js";
 import type { UserHabit } from "../../../src/agent/types.js";
 import type { SavingsEntry } from "../../../src/domain/savings/types.js";
+import type { PendingGoalAllocationActionStore, PersistedPendingGoalAllocationAction } from "../../../src/agent/pending-goal-allocation-store.js";
+import type { PendingAmountClarificationStore } from "../../../src/agent/pending-amount-clarification-store.js";
+import type { PendingSavingsActionStore } from "../../../src/agent/pending-savings-action-store.js";
 
 describe("VictoriaAgent", () => {
   afterEach(() => vi.useRealTimers());
+
+  it.each([
+    "The thing that works best for me is keeping routines small and specific.",
+    "Weekends are easier for me when I plan meals ahead."
+  ])("classifies natural first-person context as ordinary conversation: %s", async (message) => {
+    const memory = await new MockMemoryProvider().getMemoryForUser("classifier_test");
+    const classification = await new MockLlmAdapter().classifyMessage({ userMessage: message, memory });
+    expect(classification.type).toBe("general_finance");
+  });
 
   it("provides the rolling user and Victoria conversation to later classifications", async () => {
     const contexts: (readonly string[])[] = [];
@@ -34,6 +46,46 @@ describe("VictoriaAgent", () => {
 
     expect(contexts.some((context) => context.includes("I almost bought a $9 book but decided to wait."))).toBe(true);
     expect(contexts.some((context) => context.some((message) => message.startsWith("Victoria: ")))).toBe(true);
+  });
+
+  it("keeps generated IDs unique when the injected ID factory repeats a value", async () => {
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools: new MockVictoriaTools(),
+      idFactory: () => "same"
+    });
+    const first = await agent.respond({ userId: "user_ids", conversationId: "chat-a", message: "I almost bought a $9 book but decided to wait." });
+    const second = await agent.respond({ userId: "user_ids", conversationId: "chat-b", message: "I almost bought a $12 book but decided to wait." });
+
+    expect(first.decision.proposal?.id).toBeDefined();
+    expect(second.decision.proposal?.id).toBeDefined();
+    expect(first.decision.proposal?.id).not.toBe(second.decision.proposal?.id);
+    expect(first.decision.toolCall?.actionId).not.toBe(second.decision.toolCall?.actionId);
+  });
+
+  it("ignores a pending amount clarification returned for another user", async () => {
+    const tools = new MockVictoriaTools();
+    const store: PendingAmountClarificationStore = {
+      async get() {
+        return {
+          classification: {
+            type: "avoided_spend", confidence: 1, summary: "Skipped a purchase.", needsClarification: true
+          },
+          savingsEvent: {
+            id: "other-user-event", userId: "user_other", type: "avoided_spend", summary: "Skipped a purchase.",
+            classificationConfidence: 1, createdAt: "2026-10-19T12:00:00.000Z"
+          }
+        };
+      },
+      async set() {},
+      async clear() {}
+    };
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      pendingAmountClarifications: store });
+
+    const response = await agent.respond({ userId: "user_a", conversationId: "amount_scope", message: "$30" });
+
+    expect(response.decision.savingsEvent?.id).not.toBe("other-user-event");
+    expect(await tools.listSavingsEntries("user_a")).toEqual([]);
   });
 
   it("[COR-001] returns frozen financial history snapshots that cannot rewrite an approved proposal or entry", async () => {
@@ -71,11 +123,11 @@ describe("VictoriaAgent", () => {
     vi.setSystemTime(new Date("2026-10-07T15:00:00.000Z"));
     const tools = new MockVictoriaTools([], [
       savingsEntry({ id: "entry_this_week", userId: "user_123", amountCents: 2750,
-        createdAt: "2026-10-05T10:00:00.000Z" }),
+        approvedActionId: "action_this_week", createdAt: "2026-10-05T10:00:00.000Z" }),
       savingsEntry({ id: "entry_prior_week", userId: "user_123", amountCents: 9000,
-        createdAt: "2026-10-04T23:59:59.999Z" }),
+        approvedActionId: "action_prior_week", createdAt: "2026-10-04T23:59:59.999Z" }),
       savingsEntry({ id: "entry_other_user", userId: "user_other", amountCents: 8000,
-        createdAt: "2026-10-06T10:00:00.000Z" })
+        approvedActionId: "action_other_user", createdAt: "2026-10-06T10:00:00.000Z" })
     ]);
     const agent = createAgent([], tools);
 
@@ -238,6 +290,68 @@ describe("VictoriaAgent", () => {
     const recorded = await agent.respond({ ...context, message: "Yes" });
     expect(recorded.decision.goalAllocation).toMatchObject({ status: "recorded", amountCents: 2400 });
     expect(await tools.listSavingsGoalAllocations("user_123")).toHaveLength(1);
+  });
+
+  it("persists a goal decline only after an explicit no to the exact pending action", async () => {
+    const tools = new MockVictoriaTools();
+    let pending: PersistedPendingGoalAllocationAction | null = null;
+    const terminalStatuses: string[] = [];
+    const pendingStore: PendingGoalAllocationActionStore = {
+      async getPending() { return pending; },
+      async commit(input) {
+        if (input.pendingAction) pending = input.pendingAction;
+        if (input.terminalAction) {
+          terminalStatuses.push(input.terminalAction.status);
+          pending = null;
+        }
+      }
+    };
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      pendingGoalAllocationActions: pendingStore
+    });
+    const context = { userId: "user_123", conversationId: "goal_decline" };
+    await agent.respond({ ...context, message: "I almost bought a $27 pastry but decided to wait." });
+    await agent.respond({ ...context, message: "Yes" });
+    await agent.respond({ ...context, message: "Put that toward my emergency fund." });
+
+    const ambiguous = await agent.respond({ ...context, message: "Maybe later" });
+    expect(ambiguous.decision.action).toBe("ask_follow_up");
+    expect(terminalStatuses).toEqual([]);
+
+    const declined = await agent.respond({ ...context, message: "No" });
+    expect(declined.decision.action).toBe("reflect");
+    expect(terminalStatuses).toEqual(["declined"]);
+  });
+
+  it("does not restore a pending savings action whose stored decision belongs to another user", async () => {
+    const tools = new MockVictoriaTools();
+    const ownerAgent = createAgent([], tools);
+    const ownerDecision = await ownerAgent.respond({
+      userId: "user_owner",
+      conversationId: "shared_conversation",
+      message: "I almost bought a $27 pastry but decided to wait."
+    });
+    const actionId = requireActionId(ownerDecision.decision.toolCall?.actionId);
+    const pendingStore: PendingSavingsActionStore = {
+      async getPending() { return { actionId, decision: ownerDecision.decision }; },
+      async commit() {}
+    };
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(),
+      memory: new MockMemoryProvider(),
+      tools,
+      pendingSavingsActions: pendingStore
+    });
+
+    const response = await agent.respond({
+      userId: "user_victim",
+      conversationId: "shared_conversation",
+      message: "Yes"
+    });
+
+    expect(response.decision.action).not.toBe("record_savings_entry");
+    expect(await tools.listSavingsEntries("user_victim")).toEqual([]);
   });
 
   it("[IDM-002] retries an uncertain correction with the same approval", async () => {
