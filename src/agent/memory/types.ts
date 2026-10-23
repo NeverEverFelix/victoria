@@ -37,6 +37,8 @@ export interface ConversationalMemory {
   readonly observedThrough?: string;
   readonly sourceRecordCount?: number;
   readonly sourceMetadata?: Readonly<Record<string, unknown>>;
+  /** Internal cosine similarity for the current retrieval query; not persisted or exposed by memory controls. */
+  readonly semanticSimilarity?: number;
 }
 
 export interface ConversationalMemoryPage {

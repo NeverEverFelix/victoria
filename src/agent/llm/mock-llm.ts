@@ -114,7 +114,21 @@ export class MockLlmAdapter implements LlmAdapter {
       };
     }
 
-    if (/^\s*(?:i(?:'m| am| have| work| usually| often| prefer| like| need| get| do not| don't)\b|my\b|we\b)/i.test(input.userMessage) &&
+    if (/^\s*(?:how much do i (?:usually )?spend|what do i spend|what is my typical spend)\b/i.test(input.userMessage)) {
+      return {
+        type: "general_finance",
+        confidence: 0.9,
+        summary: input.userMessage,
+        needsClarification: false
+      };
+    }
+
+    const directPersonalStatement = /^\s*(?:i(?:'m| am| have| work| usually| often| prefer| like| love| enjoy| spend| am into| need| get| do not|don't)\b|my\b|we\b)/i.test(input.userMessage);
+    const naturalPersonalStatement = !directPersonalStatement &&
+      !/[?]\s*$/.test(input.userMessage) && /\b(?:i|me|my|we|us|our)\b/i.test(input.userMessage) &&
+      !/^\s*(?:how|what|why|when|where|who|can|could|would|should|do|does|did)\b/i.test(input.userMessage) &&
+      !/\$\s*\d|\b(?:estimate|amount|ledger|transaction|saved?|savings|money|spend(?:ing)?|purchase|purchased|bought|paid|transfer(?:red)?)\b/i.test(input.userMessage);
+    if ((directPersonalStatement || naturalPersonalStatement) &&
         !/\b(?:spent|paid|bought|was charged|got charged|transferred|transfer money|moved money)\b/i.test(input.userMessage)) {
       return {
         type: "general_finance",

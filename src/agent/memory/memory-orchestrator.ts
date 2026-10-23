@@ -1,6 +1,7 @@
 import type { AgentMemory, FinancialDecision, SavingsGoal, UserHabit } from "../types.js";
 import type { TransactionFinancialProfile } from "../../domain/financial-profile.js";
 import type { ConversationalMemory, ConversationalMemoryPage, MemoryProvider } from "./types.js";
+import { extractConversationalMemory } from "./extract-preference.js";
 
 export interface FinancialProfileMemoryWriter {
   rememberFinancialProfile(profile: TransactionFinancialProfile): Promise<readonly ConversationalMemory[]>;
@@ -66,6 +67,27 @@ export class MemoryOrchestrator implements MemoryProvider {
     if (!value || value.length > 1000) throw new InvalidMemoryCorrectionError();
     const target = (await this.listCurrentStoredMemories(userId)).find((memory) => memory.id === memoryId);
     if (!target) throw new MemoryNotFoundError();
+    if (target.key.startsWith("financial_profile:")) throw new InvalidMemoryCorrectionError();
+    if (target.key.startsWith("interest:") || target.key.startsWith("interest_spend:") ||
+        target.key.startsWith("activity_mapping:")) {
+      const extracted = extractConversationalMemory(value);
+      const validStructuredCorrection = target.key.startsWith("interest:")
+        ? extracted?.category === "other" && extracted.key.startsWith("interest:")
+        : target.key.startsWith("interest_spend:")
+          ? extracted?.key.startsWith("interest_spend:")
+          : extracted?.key.startsWith("activity_mapping:");
+      if (!extracted || !validStructuredCorrection) throw new InvalidMemoryCorrectionError();
+      const correctedStructured = await this.rememberConversationalMemory(userId, {
+        ...extracted,
+        evidence: evidence?.trim() || `The user corrected this memory: ${value}`,
+        confidence: 1,
+        sourceType: "user_correction",
+        sourceMetadata: { ...extracted.sourceMetadata, correctedFrom: target.id },
+        supersedesId: target.id
+      });
+      await this.invalidateCachedMemory(userId);
+      return correctedStructured;
+    }
     const corrected = await this.rememberConversationalMemory(userId, {
       category: target.category,
       key: target.key,
@@ -238,11 +260,14 @@ export class MemoryOrchestrator implements MemoryProvider {
   }
 
   private isFresh(memory: ConversationalMemory, now = this.options.now?.() ?? new Date()): boolean {
-    if (memory.sourceType !== "plaid_transaction_profile") return true;
-    if (!memory.observedThrough) return false;
-    const observedThrough = Date.parse(`${memory.observedThrough.slice(0, 10)}T00:00:00.000Z`);
-    const cutoff = now.getTime() - 90 * 86_400_000;
-    return Number.isFinite(observedThrough) && observedThrough >= cutoff && observedThrough <= now.getTime();
+    if (memory.sourceType === "plaid_transaction_profile") {
+      if (!memory.observedThrough) return false;
+      const observedThrough = Date.parse(`${memory.observedThrough.slice(0, 10)}T00:00:00.000Z`);
+      const cutoff = now.getTime() - 90 * 86_400_000;
+      return Number.isFinite(observedThrough) && observedThrough >= cutoff && observedThrough <= now.getTime();
+    }
+    const createdAt = Date.parse(memory.createdAt);
+    return Number.isFinite(createdAt) && createdAt >= new Date(now).setUTCMonth(now.getUTCMonth() - 24) && createdAt <= now.getTime();
   }
 
   private async invalidateCachedMemory(userId: string): Promise<void> {

@@ -87,6 +87,7 @@ export class PostgresMemoryRepository implements MemoryProvider {
         m.source_record_count AS "sourceRecordCount", m.source_metadata AS "sourceMetadata"
        FROM victoria_conversational_memories m WHERE m.user_id = $1
          AND (m.source_type <> 'plaid_transaction_profile' OR m.observed_through >= current_date - 90)
+         AND (m.source_type = 'plaid_transaction_profile' OR m.created_at >= now() - interval '24 months')
          AND NOT EXISTS (SELECT 1 FROM victoria_conversational_memories newer
            WHERE newer.user_id = m.user_id AND newer.supersedes_id = m.id)
          AND ($2::boolean OR (
@@ -117,6 +118,7 @@ export class PostgresMemoryRepository implements MemoryProvider {
       `SELECT m.id FROM victoria_conversational_memories m
        WHERE m.user_id = $1 AND m.id = ANY($2::text[])
          AND (m.source_type <> 'plaid_transaction_profile' OR m.observed_through >= current_date - 90)
+         AND (m.source_type = 'plaid_transaction_profile' OR m.created_at >= now() - interval '24 months')
          AND m.source_metadata->>'memoryStatus' IS DISTINCT FROM 'forgotten'
          AND NOT EXISTS (SELECT 1 FROM victoria_conversational_memories newer
            WHERE newer.user_id = m.user_id AND newer.supersedes_id = m.id)
@@ -142,6 +144,7 @@ export class PostgresMemoryRepository implements MemoryProvider {
         `SELECT id, category, key, value, evidence, confidence, created_at AS "createdAt",
           supersedes_id AS "supersedesId", source_type AS "sourceType",
           observed_from::text AS "observedFrom", observed_through::text AS "observedThrough",
+          similarity AS "semanticSimilarity",
           source_record_count AS "sourceRecordCount", source_metadata AS "sourceMetadata"
         FROM victoria_search_conversational_memories($1, $2::extensions.vector(1536), $3, $4)`,
         [userId, toPgVectorLiteral(vector), this.embeddings.modelId, boundedLimit]

@@ -43,6 +43,11 @@ export function extractSavingsAmountPreference(message: string): SavingsAmountPr
 
 /** Extract a narrow set of direct preferences, recurring habits, and stated goals. */
 export function extractConversationalMemory(message: string): ExtractedConversationalMemory | null {
+  const activityMapping = extractActivitySpendMapping(message);
+  if (activityMapping) return activityMapping;
+  const interestSpend = extractInterestSpendMemories(message)[0] ?? extractInterestSpend(message);
+  if (interestSpend) return interestSpend;
+
   const merchantSpend = extractMerchantSpendClaim(message);
   if (merchantSpend && !merchantSpend.isSpeculative && merchantSpend.confidence >= 0.85) {
     return {
@@ -54,6 +59,8 @@ export function extractConversationalMemory(message: string): ExtractedConversat
     };
   }
   if (isUncertain(message)) return null;
+  const interest = extractExplicitInterest(message);
+  if (interest) return interest;
   const savingsPreference = extractSavingsAmountPreference(message);
   if (savingsPreference) {
     return {
@@ -105,6 +112,136 @@ export function extractConversationalMemory(message: string): ExtractedConversat
     };
   }
   return null;
+}
+
+/** Capture only a direct user statement linking an activity to a transaction category or merchant. */
+function extractActivitySpendMapping(message: string): ExtractedConversationalMemory | null {
+  const reportedCategory = /^\s*(?:for\s+)?(.+?)\s+(?:spending|purchases?)\s+(?:shows up under|appears under|is categorized as|is listed under)\s+(.+?)\s+in my\s+(?:linked\s+)?transactions?\s*[.!?]*\s*$/i.exec(message);
+  const explicitTarget = /^\s*for\s+(.+?),?\s+my transaction\s+(category|merchant)\s+is\s+(.+?)[.!?]*\s*$/i.exec(message);
+  const naturalCategory = /^\s*i\s+(?:categorize|categorise|classify|tag|label)\s+(?:my\s+)?(.+?)\s+(?:spending|expenses?|purchases?)\s+(?:as|under)\s+(.+?)(?:\s+in\s+my\s+(?:linked\s+)?transactions?)?[.!?]*\s*$/i.exec(message);
+  const categoryForActivity = /^\s*i\s+(?:use|put|file)\s+(.+?)\s+(?:as\s+)?(?:my\s+)?(?:transaction\s+)?category\s+(?:for|when tracking)\s+(.+?)(?:\s+(?:spending|expenses?|purchases?))?[.!?]*\s*$/i.exec(message);
+  const merchantForActivity = /^\s*for\s+(.+?),?\s+i\s+(?:use|shop\s+at|make\s+purchases\s+at)\s+(.+?)\s+as\s+my\s+(?:transaction\s+)?merchant[.!?]*\s*$/i.exec(message);
+  if (!reportedCategory && !explicitTarget && !naturalCategory && !categoryForActivity && !merchantForActivity) return null;
+  const activity = (reportedCategory?.[1] ?? explicitTarget?.[1] ?? naturalCategory?.[1] ??
+    categoryForActivity?.[2] ?? merchantForActivity?.[1] ?? "").trim();
+  const target = (reportedCategory?.[2] ?? explicitTarget?.[3] ?? naturalCategory?.[2] ??
+    categoryForActivity?.[1] ?? merchantForActivity?.[2] ?? "").trim().replace(/[.!?]+$/, "");
+  const dimension = explicitTarget?.[2]?.toLocaleLowerCase("en-US") === "merchant" || merchantForActivity
+    ? "merchant" : "category";
+  const activityKey = slug(activity);
+  const targetKey = slug(target);
+  const sensitive = /\b(?:medical|health|clinic|hospital|therapy|therapist|political|politics|religious|religion|faith|church|mosque|synagogue|sexuality|race|ethnicity|immigration|visa|citizenship|bank|account|credit card|debit card|pharmacy|prescription)\b/i;
+  if (!activityKey || activityKey.length > 60 || !targetKey || targetKey.length > 60 ||
+      activity.length > 80 || target.length > 80 || sensitive.test(`${activity} ${target}`) ||
+      /\b(?:maybe|might|possibly|not sure|unsure|guess|thinking about)\b/i.test(message)) return null;
+  return {
+    category: "financial_pattern",
+    key: `activity_mapping:${activityKey}`,
+    value: `Uses linked transaction ${dimension} “${target}” for ${activity} spending.`,
+    evidence: message,
+    confidence: 1,
+    sourceType: "user_statement",
+    sourceMetadata: { activity, dimension, target, profileKey: `financial_profile:${dimension}:${targetKey}` }
+  };
+}
+
+/** Extract independently addressable memories from a direct interest list. */
+export function extractConversationalMemories(message: string): readonly ExtractedConversationalMemory[] {
+  const primary = extractConversationalMemory(message);
+  if (primary?.category === "financial_pattern" && primary.key.startsWith("interest_spend:")) {
+    const activitySpends = extractInterestSpendMemories(message);
+    if (activitySpends.length > 1) return activitySpends.map((fact) => ({ ...fact, evidence: message }));
+  }
+  if (!primary || primary.category !== "other" || !primary.key.startsWith("interest:")) {
+    return primary ? [primary] : [];
+  }
+  const match = /^\s*(?:i\s+(?:(?:do not|don't|no longer)\s+(?:really\s+)?(?:love|like|enjoy)|(?:(?:really|really do)\s+)?(?:love|like|enjoy))|i(?:'m| am)\s+(?:(?:really|very)\s+)?into|my\s+hobbies\s+(?:include|are)|one of my hobbies is)\s+(.+?)[.!?]*\s*$/i.exec(message);
+  if (!match?.[1]) return [primary];
+  const activities = match[1].split(/\s*,\s*|\s+and\s+|\s*&\s*/i)
+    .map((item) => item.trim().replace(/^and\s+/i, ""))
+    .filter(Boolean);
+  if (activities.length < 2 || activities.length > 8) return [primary];
+  const correction = primary.sourceMetadata?.interestStatus === "inactive";
+  const memories = activities.map((activity): ExtractedConversationalMemory | null => {
+    if (activity.length > 80 || /\b(?:spend|spending|spent|saving|money|budget|finance|costs?|paid|bought|purchased)\b|\$\s*\d/i.test(activity)) return null;
+    const keyPart = slug(activity);
+    if (!keyPart || keyPart.length > 60) return null;
+    return {
+      category: "other",
+      key: `interest:${keyPart}`,
+      value: correction ? `No longer enjoys ${activity}.` : `Enjoys ${activity}.`,
+      evidence: message,
+      confidence: 0.95,
+      sourceType: correction ? "user_correction" : "user_statement",
+      ...(correction ? { sourceMetadata: { interestStatus: "inactive" } } : {})
+    };
+  }).filter((item): item is ExtractedConversationalMemory => item !== null);
+  return memories.length > 0 ? memories : [primary];
+}
+
+function extractInterestSpend(message: string): ExtractedConversationalMemory | null {
+  if (isUncertain(message)) return null;
+  const amountText = String.raw`(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)`;
+  const cadenceText = String.raw`(session|week|month|year|day|visit|class|trip)s?`;
+  const beforeActivity = new RegExp(
+    String.raw`^\s*i\s+(?:(?:usually|typically|often|regularly)\s+)?spend\s+(?:(?:about|around|approximately)\s+)?\$${amountText}\s+(?:per|a|each|\/)\s*${cadenceText}\s+(?:on|for)\s+(.+?)[.!?]*\s*$`, "i"
+  );
+  const afterActivity = new RegExp(
+    String.raw`^\s*i\s+(?:(?:usually|typically|often|regularly)\s+)?spend\s+(?:(?:about|around|approximately)\s+)?\$${amountText}\s+(?:on|for)\s+(.+?)\s+(?:per|a|each)\s*${cadenceText}[.!?]*\s*$`, "i"
+  );
+  const match = beforeActivity.exec(message) ?? afterActivity.exec(message);
+  if (!match) return null;
+  const amount = parseExplicitDollarAmount(`$${match[1]}`);
+  const cadenceName = match[2]?.toLocaleLowerCase("en-US").replace(/s$/, "");
+  const activityName = match[3]?.trim().replace(/[.!?]+$/, "");
+  if (amount.status !== "valid" || !activityName || activityName.length > 80 || !cadenceName ||
+      /\b(?:rather than|instead of|on my|at the)\b/i.test(activityName)) return null;
+  const keyPart = slug(activityName);
+  if (!keyPart || keyPart.length > 60) return null;
+  return {
+    category: "financial_pattern",
+    key: `interest_spend:${keyPart}`,
+    value: `Usually spends ${formatAmount(amount.amountCents)} per ${cadenceName} on ${activityName}.`,
+    evidence: message,
+    confidence: 0.95,
+    sourceType: "user_statement",
+    sourceMetadata: { activity: activityName, cadence: cadenceName, currency: "USD" }
+  };
+}
+
+/** Extract independently addressable recurring spend facts when a turn states several. */
+function extractInterestSpendMemories(message: string): ExtractedConversationalMemory[] {
+  const clauses = message.split(/\s*(?:[,;]|\band\b)\s*(?=(?:i\s+)?(?:(?:usually|typically|often|regularly)\s+)?(?:spend\b|\$))/i)
+    .map((clause) => clause.trim())
+    .filter(Boolean)
+    .map((clause) => /^\$/.test(clause) ? `I spend ${clause}` : /^spend\b/i.test(clause) ? `I ${clause}` : clause);
+  return clauses.map(extractInterestSpend)
+    .filter((fact): fact is ExtractedConversationalMemory => fact !== null)
+    .map((fact) => ({ ...fact, evidence: message }));
+}
+
+function extractExplicitInterest(message: string): ExtractedConversationalMemory | null {
+  if (isUncertain(message)) return null;
+  const correction = /^\s*i\s+(?:do not|don't|no longer)\s+(?:really\s+)?(?:love|like|enjoy)\s+(.+?)(?:\s+anymore)?[.!?]*\s*$/i.exec(message);
+  const match = correction ?? /^\s*i\s+(?:(?:really|really do)\s+)?(?:love|like|enjoy)\s+(.+?)[.!?]*\s*$/i.exec(message) ??
+    /^\s*i(?:'m| am)\s+(?:(?:really|very)\s+)?into\s+(.+?)[.!?]*\s*$/i.exec(message) ??
+    /^\s*my\s+hobbies\s+(?:include|are)\s+(.+?)[.!?]*\s*$/i.exec(message) ??
+    /^\s*one of my hobbies is\s+(.+?)[.!?]*\s*$/i.exec(message);
+  const activity = match?.[1]?.trim()
+    .split(/\s*,\s*|\s+(?:and|&)\s+/i, 1)[0]
+    ?.replace(/[.!?]+$/, "");
+  if (!activity || activity.length > 80 || /\b(?:spend|spending|spent|saving|money|budget|finance|costs?|paid|bought|purchased)\b|\$\s*\d/i.test(activity)) return null;
+  const keyPart = slug(activity);
+  if (!keyPart || keyPart.length > 60) return null;
+  return {
+    category: "other",
+    key: `interest:${keyPart}`,
+    value: correction ? `No longer enjoys ${activity}.` : `Enjoys ${activity}.`,
+    evidence: message,
+    confidence: 0.95,
+    sourceType: correction ? "user_correction" : "user_statement",
+    ...(correction ? { sourceMetadata: { interestStatus: "inactive" } } : {})
+  };
 }
 
 /** Detects a direct conversational correction of a remembered past spend, not an estimate or new proposal. */

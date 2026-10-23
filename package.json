@@ -11,6 +11,7 @@
     "db:local:up": "docker compose -f docker-compose.local.yml up -d",
     "db:local:down": "docker compose -f docker-compose.local.yml down",
     "db:migrate": "node scripts/migrate-database.mjs",
+    "verify:staging:authorization": "node scripts/verify-hosted-authorization.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier . --write",
@@ -22,6 +23,7 @@
     "eval:provider:financial-moment": "RUN_PROVIDER_EVAL=1 vitest run tests/evaluation/provider-financial-moment.test.ts",
     "eval:provider:mock-comparison": "RUN_MOCK_PROVIDER_COMPARISON=1 vitest run tests/evaluation/mock-provider-comparison.test.ts",
     "eval:provider:comparison": "RUN_PROVIDER_COMPARISON=1 vitest run tests/evaluation/provider-comparison-live.test.ts",
+    "eval:memory:relevance": "node scripts/evaluate-memory-relevance.mjs",
     "agent:smoke:provider-team": "RUN_PROVIDER_AGENT_TEAM_SMOKE=1 vitest run tests/evaluation/provider-agent-team-live.test.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json"
@@ -43,10 +45,12 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "next": "^16.3.6",
     "pg": "^8.23.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-plaid-link": "^5.0.0",
     "server-only": "^0.0.1",
     "zod": "^4.6.5"
   }

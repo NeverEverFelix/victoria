@@ -68,7 +68,7 @@ export function createMemoryManagementHandlers(dependencies: MemoryManagementHan
       return json(200, {
         status: "forgotten",
         memoryId: context.memoryId,
-        detail: "Victoria will no longer use this memory in future replies. Its historical record is retained."
+        detail: "Victoria will no longer use this memory in future replies. Its historical record and embeddings are scheduled for physical deletion after 30 days."
       }, headers);
     } catch (error) {
       if (error instanceof MemoryNotFoundError) return json(404, { error: "memory_not_found" }, headers);
@@ -186,8 +186,55 @@ function toPublicMemory(memory: ConversationalMemory) {
     sourceType: memory.sourceType ?? "user_statement",
     ...(memory.observedFrom ? { observedFrom: memory.observedFrom } : {}),
     ...(memory.observedThrough ? { observedThrough: memory.observedThrough } : {}),
-    ...(memory.sourceRecordCount ? { sourceRecordCount: memory.sourceRecordCount } : {})
+    ...(memory.sourceRecordCount ? { sourceRecordCount: memory.sourceRecordCount } : {}),
+    ...(publicMemoryDetails(memory) ? { details: publicMemoryDetails(memory) } : {})
   });
+}
+
+/** Project bounded, user-meaningful provenance without exposing arbitrary internal metadata. */
+function publicMemoryDetails(memory: ConversationalMemory): Readonly<Record<string, string | number | boolean>> | undefined {
+  const metadata = memory.sourceMetadata;
+  if (!metadata) return undefined;
+  if (memory.key.startsWith("interest_spend:")) {
+    const activity = publicText(metadata.activity) ?? memory.key.slice("interest_spend:".length).replace(/_/g, " ");
+    const cadence = publicText(metadata.cadence);
+    return {
+      spendingBasis: "user_reported",
+      activity,
+      ...(cadence ? { cadence } : {}),
+      ...(publicText(metadata.currency) ? { currency: publicText(metadata.currency)! } : {})
+    };
+  }
+  if (memory.key.startsWith("activity_mapping:")) {
+    const activity = publicText(metadata.activity) ?? memory.key.slice("activity_mapping:".length).replace(/_/g, " ");
+    const mappedLabel = publicText(metadata.target);
+    const mappingType = metadata.dimension === "merchant" ? "merchant" : metadata.dimension === "category" ? "category" : undefined;
+    return {
+      mappingBasis: "user_confirmed",
+      activity,
+      ...(mappedLabel ? { mappedLabel } : {}),
+      ...(mappingType ? { mappingType } : {})
+    };
+  }
+  if (memory.key.startsWith("financial_profile:") && memory.sourceType === "plaid_transaction_profile") {
+    const detail: Record<string, string | number | boolean> = { spendingBasis: "linked_transactions" };
+    const dimension = metadata.dimension;
+    if (dimension === "category" || dimension === "merchant") detail.dimension = dimension;
+    for (const field of ["totalCents", "typicalAmountCents", "lookbackDays"] as const) {
+      const value = metadata[field];
+      if (Number.isSafeInteger(value) && (value as number) >= 0) detail[field] = value as number;
+    }
+    const currency = publicText(metadata.currency);
+    if (currency) detail.currency = currency;
+    return detail;
+  }
+  return undefined;
+}
+
+function publicText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized && normalized.length <= 100 ? normalized : undefined;
 }
 
 function responseHeaders(): Record<string, string> {

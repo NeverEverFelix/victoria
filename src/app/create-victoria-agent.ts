@@ -12,15 +12,26 @@ import type { ProviderUsageReporter } from "../agent/telemetry/provider-usage-re
 import { buildFeatureFlags, type VictoriaEnv } from "../config/index.js";
 import type { UserHabit } from "../agent/types.js";
 import type { MemoryProvider } from "../agent/memory/types.js";
+import type { ConversationalMemoryExtractor } from "../agent/memory/conversational-memory-extractor.js";
+import type { EpisodicMemorySummarizer } from "../agent/memory/episodic-summary.js";
 import type { VictoriaTools } from "../agent/tools/contracts.js";
+import type { PendingAmountClarificationStore } from "../agent/pending-amount-clarification-store.js";
+import type { PendingSavingsActionStore } from "../agent/pending-savings-action-store.js";
+import type { PendingGoalAllocationActionStore } from "../agent/pending-goal-allocation-store.js";
 
 export interface CreateVictoriaAgentOptions {
   env: VictoriaEnv;
   seedHabits?: UserHabit[];
   fetcher?: typeof fetch;
   memory?: MemoryProvider;
+  conversationalMemoryExtractor?: ConversationalMemoryExtractor;
+  episodicMemorySummarizer?: EpisodicMemorySummarizer;
   tools?: VictoriaTools;
   providerUsageReporter?: ProviderUsageReporter;
+  pendingAmountClarifications?: PendingAmountClarificationStore;
+  pendingSavingsActions?: PendingSavingsActionStore;
+  pendingGoalAllocationActions?: PendingGoalAllocationActionStore;
+  idFactory?: () => string;
 }
 
 export function createVictoriaAgent(options: CreateVictoriaAgentOptions): VictoriaAgent {
@@ -55,6 +66,12 @@ export function createVictoriaAgent(options: CreateVictoriaAgentOptions): Victor
     llm: classifier,
     memory,
     tools,
-    specialists
+    ...(options.conversationalMemoryExtractor ? { conversationalMemoryExtractor: options.conversationalMemoryExtractor } : {}),
+    ...(options.episodicMemorySummarizer ? { episodicMemorySummarizer: options.episodicMemorySummarizer } : {}),
+    specialists,
+    ...(options.pendingAmountClarifications ? { pendingAmountClarifications: options.pendingAmountClarifications } : {}),
+    ...(options.pendingSavingsActions ? { pendingSavingsActions: options.pendingSavingsActions } : {}),
+    ...(options.pendingGoalAllocationActions ? { pendingGoalAllocationActions: options.pendingGoalAllocationActions } : {}),
+    ...(options.idFactory ? { idFactory: options.idFactory } : {})
   });
 }

@@ -9,6 +9,8 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
   private readonly db: DatabaseSync;
   private readonly shortTermContextTtlMs: number;
   private readonly pendingContextFlushes = new Set<Promise<void>>();
+  private readonly pendingContextFlushKeys = new Set<string>();
+  private readonly expirySweep: NodeJS.Timeout;
 
   constructor(
     private readonly durable: PostgresMemoryRepository,
@@ -28,6 +30,12 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
       user_id TEXT NOT NULL, conversation_id TEXT NOT NULL, messages TEXT NOT NULL, expires_at INTEGER NOT NULL,
       PRIMARY KEY (user_id, conversation_id)
     );`);
+    this.purgeExpiredContext();
+    this.expirySweep = setInterval(() => {
+      this.purgeExpiredContext();
+      void this.retryPendingContextBackups();
+    }, 60_000);
+    this.expirySweep.unref();
   }
 
   async getMemoryForUser(userId: string, query?: string): Promise<AgentMemory> {
@@ -81,6 +89,7 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
   listGoals(userId: string): Promise<SavingsGoal[]> { return this.durable.listGoals(userId); }
 
   async getConversationContext(userId: string, conversationId: string): Promise<readonly string[]> {
+    this.purgeExpiredContext();
     const row = this.db.prepare(`SELECT messages, expires_at FROM conversation_context_cache
       WHERE user_id = ? AND conversation_id = ?`).get(userId, conversationId) as { messages: string; expires_at: number } | undefined;
     if (row) {
@@ -103,6 +112,7 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
   }
 
   async setConversationContext(userId: string, conversationId: string, messages: readonly string[]): Promise<void> {
+    this.purgeExpiredContext();
     const bounded = messages.slice(-this.contextMessageLimit);
     const expiresAt = Date.now() + this.shortTermContextTtlMs;
     this.db.exec("BEGIN IMMEDIATE");
@@ -122,10 +132,30 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
     await Promise.all([...this.pendingContextFlushes]);
   }
 
+  async retryPendingContextBackups(): Promise<void> {
+    const rows = this.db.prepare(`SELECT user_id, conversation_id FROM conversation_context_outbox
+      WHERE expires_at > ?`).all(Date.now()) as Array<{ user_id: string; conversation_id: string }>;
+    for (const row of rows) this.scheduleContextFlush(row.user_id, row.conversation_id);
+    await this.flushPendingContextBackups();
+  }
+
+  /** Removes expired local cache and outbox payloads, including after a restart. */
+  purgeExpiredContext(now = Date.now()): { readonly cacheRows: number; readonly outboxRows: number } {
+    const cacheRows = Number(this.db.prepare("DELETE FROM conversation_context_cache WHERE expires_at <= ?").run(now).changes);
+    const outboxRows = Number(this.db.prepare("DELETE FROM conversation_context_outbox WHERE expires_at <= ?").run(now).changes);
+    return Object.freeze({ cacheRows, outboxRows });
+  }
+
   private scheduleContextFlush(userId: string, conversationId: string): void {
+    const key = `${userId}\u0000${conversationId}`;
+    if (this.pendingContextFlushKeys.has(key)) return;
+    this.pendingContextFlushKeys.add(key);
     const flush = this.flushContextOutbox(userId, conversationId);
     this.pendingContextFlushes.add(flush);
-    void flush.finally(() => this.pendingContextFlushes.delete(flush));
+    void flush.finally(() => {
+      this.pendingContextFlushes.delete(flush);
+      this.pendingContextFlushKeys.delete(key);
+    });
   }
 
   private cacheShortTermContext(userId: string, conversationId: string, messages: readonly string[], expiresAt: number): void {
@@ -150,5 +180,5 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
     }
   }
 
-  close(): void { this.db.close(); }
+  close(): void { clearInterval(this.expirySweep); this.db.close(); }
 }

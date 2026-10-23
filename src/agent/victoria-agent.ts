@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { LlmAdapter } from "./llm/types.js";
-import type { MemoryProvider } from "./memory/types.js";
+import type { ConversationalMemory, MemoryProvider } from "./memory/types.js";
 import { MemoryOrchestrator } from "./memory/memory-orchestrator.js";
 import type { AgentTeamSpecialists, SavingsAssessment } from "./team-prototype.js";
 import {
@@ -36,6 +36,7 @@ import type {
 import { DEFAULT_CONVERSATION_CONTEXT_LIMIT } from "./memory/types.js";
 import {
   extractConversationalMemory,
+  extractConversationalMemories,
   extractConversationalSpendCorrection,
   extractMerchantSpendClaim,
   merchantHabitMemoryKey,
@@ -44,8 +45,8 @@ import {
 import { selectFinancialContextSource } from "./context-source-policy.js";
 import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } from "./transaction-history-provider.js";
 import { isRealMoneyMovementRequest } from "./money-movement-intent.js";
-import { isExplicitUserEvidence, validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
-import { isUsableEpisodicSummary, validateEpisodicSummary, type EpisodicMemorySummarizer } from "./memory/episodic-summary.js";
+import { isExplicitInterestCorrectionEvidence, isExplicitUserEvidence, validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
+import { isUsableEpisodicSummary, SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY, validateEpisodicSummary, type EpisodicMemorySummarizer } from "./memory/episodic-summary.js";
 import type { PendingAmountClarification, PendingAmountClarificationStore } from "./pending-amount-clarification-store.js";
 import type { PendingSavingsActionStore } from "./pending-savings-action-store.js";
 import type { PendingGoalAllocationActionStore } from "./pending-goal-allocation-store.js";
@@ -128,24 +129,39 @@ export class VictoriaAgent {
     return response;
   }
 
+  /** Saves a grounded summary of a conversation when the client explicitly ends it. */
+  async finishConversation(userId: string, conversationId: string): Promise<boolean> {
+    if (!userId.trim() || !conversationId.trim()) return false;
+    const context = await this.dependencies.memory.getConversationContext(userId, conversationId);
+    return this.summarizeConversation(userId, context, true);
+  }
+
   private async summarizeOverflowingConversation(userId: string, context: readonly string[]): Promise<void> {
+    await this.summarizeConversation(userId, context, false);
+  }
+
+  private async summarizeConversation(userId: string, context: readonly string[], finishing: boolean): Promise<boolean> {
     const summarizer = this.dependencies.episodicMemorySummarizer;
-    if (!summarizer || context.length < DEFAULT_CONVERSATION_CONTEXT_LIMIT) return;
+    if (!summarizer || (!finishing && context.length < DEFAULT_CONVERSATION_CONTEXT_LIMIT)) return false;
     const userMessages = context.slice(-8)
       .filter((message) => !/^Victoria:/i.test(message))
       .filter(isEpisodicSummaryEligible)
       .slice(0, 8);
-    if (userMessages.length < 2) return;
+    if (userMessages.length < 2) return false;
+    const digest = createHash("sha256").update(userId).update("\0").update(userMessages.join("\0")).digest("hex").slice(0, 24);
+    const key = `episode:${digest}`;
+    if ((await this.dependencies.memory.listConversationalMemories(userId)).some((memory) => memory.key === key)) return true;
     try {
       const candidate = validateEpisodicSummary(await summarizer.summarize({ userMessages }), userMessages);
-      if (!candidate) return;
-      const digest = createHash("sha256").update(userId).update("\0").update(userMessages.join("\0")).digest("hex").slice(0, 24);
+      if (!candidate) return false;
       await this.dependencies.memory.rememberConversationalMemory(userId, {
         ...candidate,
-        key: `episode:${digest}`
+        key
       });
+      return true;
     } catch {
       // Episodic summarization is optional and cannot interrupt an ordinary turn.
+      return false;
     }
   }
 
@@ -323,8 +339,11 @@ export class VictoriaAgent {
     }
 
     const extractedCandidate = extractConversationalMemory(request.message);
+    const isInterestCorrection = extractedCandidate?.category === "other" &&
+      extractedCandidate.key.startsWith("interest:") && extractedCandidate.sourceMetadata?.interestStatus === "inactive" &&
+      isExplicitInterestCorrectionEvidence(request.message, extractedCandidate.evidence);
     const extractedMemory = extractedCandidate && extractedCandidate.evidence.length <= 240 &&
-      isExplicitUserEvidence(request.message, extractedCandidate.evidence) ? extractedCandidate : null;
+      (isExplicitUserEvidence(request.message, extractedCandidate.evidence) || isInterestCorrection) ? extractedCandidate : null;
     if (extractedMemory) {
       let memoryToRemember = extractedMemory;
       let acknowledgement: string | undefined;
@@ -364,9 +383,41 @@ export class VictoriaAgent {
           ...(prior ? { supersedesId: prior.id } : {})
         });
       }
-      const message = acknowledgement ?? (merchantSpendClaim?.isSpeculative
-        ? `I'll keep ${formatUsd(merchantSpendClaim.amountCents)} at ${merchantSpendClaim.merchantName} as an unverified estimate for now.`
-        : `Got it. I'll remember: “${memoryToRemember.value}”`);
+      const additionalCandidates = extractConversationalMemories(request.message).slice(1).filter((candidate) => {
+        const supportedInterest = candidate.category === "other" && candidate.key.startsWith("interest:");
+        const supportedActivityFact = candidate.category === "financial_pattern" &&
+          (candidate.key.startsWith("interest_spend:") || candidate.key.startsWith("activity_mapping:"));
+        return (supportedInterest || supportedActivityFact) && candidate.evidence.length <= 240 &&
+          (isExplicitUserEvidence(request.message, candidate.evidence) ||
+            (candidate.sourceMetadata?.interestStatus === "inactive" &&
+              isExplicitInterestCorrectionEvidence(request.message, candidate.evidence)));
+      });
+      for (const candidate of additionalCandidates) {
+        const history = await this.dependencies.memory.listConversationalMemories(request.userId);
+        const previous = [...history].reverse().find((item) =>
+          item.category === candidate.category && item.key === candidate.key);
+        if (!previous || previous.value !== candidate.value || previous.evidence !== candidate.evidence) {
+          await this.dependencies.memory.rememberConversationalMemory(request.userId, {
+            ...candidate,
+            ...(previous ? { supersedesId: previous.id } : {})
+          });
+        }
+      }
+      const activitySpendFacts = [memoryToRemember, ...additionalCandidates]
+        .filter((candidate) => candidate.key.startsWith("interest_spend:"));
+      const multiSpendAcknowledgement = activitySpendFacts.length > 1
+        ? `Got it. I'll remember these recurring activity-spend amounts: ${activitySpendFacts.map((fact) =>
+            `${String(fact.sourceMetadata?.activity ?? fact.key.slice("interest_spend:".length))}: ${fact.value.match(/\$\d[\d,.]* per (?:session|week|month|year|day|visit|class|trip)/i)?.[0] ?? "amount noted"}`
+          ).join(", ")}.`
+        : undefined;
+      const message = acknowledgement ?? multiSpendAcknowledgement ?? (typeof memoryToRemember.sourceMetadata?.activity === "string" &&
+        typeof memoryToRemember.sourceMetadata?.target === "string"
+        ? `Got it. I'll use your linked transaction ${String(memoryToRemember.sourceMetadata.dimension)} “${String(memoryToRemember.sourceMetadata.target)}” for ${String(memoryToRemember.sourceMetadata.activity)} spending when we discuss that activity.`
+        : memoryToRemember.sourceMetadata?.interestStatus === "inactive"
+        ? `Thanks for correcting me. I'll update that and won't assume you still enjoy ${memoryToRemember.value.replace(/^No longer enjoys |\.$/g, "")}.`
+        : merchantSpendClaim?.isSpeculative
+          ? `I'll keep ${formatUsd(merchantSpendClaim.amountCents)} at ${merchantSpendClaim.merchantName} as an unverified estimate for now.`
+          : `Got it. I'll remember: “${memoryToRemember.value}”`);
       const classification: ClassifiedMessage = {
         type: "general_finance", confidence: 1, summary: request.message, needsClarification: false
       };
@@ -385,11 +436,25 @@ export class VictoriaAgent {
       return { message, decision: { action: "reflect", classification, userFacingMessage: message } };
     }
 
-    const memory = await this.dependencies.memory.getMemoryForUser(request.userId, request.message);
+    let memory = await this.dependencies.memory.getMemoryForUser(request.userId, request.message);
+    const activityMapping = (memory.conversationalMemories ?? []).find((item) =>
+      item.key.startsWith("activity_mapping:") && isSpendingQuestion(request.message) &&
+      isMemoryTopicMatched(item, request.message) && typeof item.sourceMetadata?.profileKey === "string");
+    if (activityMapping && typeof activityMapping.sourceMetadata?.target === "string") {
+      const linkedProfile = await this.dependencies.memory.getMemoryForUser(request.userId, activityMapping.sourceMetadata.target);
+      memory = {
+        ...memory,
+        conversationalMemories: [...(memory.conversationalMemories ?? []), ...(linkedProfile.conversationalMemories ?? [])]
+          .filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index)
+      };
+    }
     const { classification, teamAdvice } = await this.classifyWithTeam(
       request.message, memory, conversationContext
     );
-    if (classification.type === "general_finance" && this.dependencies.conversationalMemoryExtractor &&
+    let memoryAcknowledgement: string | undefined;
+    const memoryLearningTurn = classification.type === "general_finance" || classification.type === "pattern_reflection" ||
+      (classification.type === "unclear" && classification.uncertainIntent === undefined);
+    if (memoryLearningTurn && this.dependencies.conversationalMemoryExtractor &&
         !pendingCorrection && !pendingGoalAction && !pendingAction) {
       try {
         const candidates = await this.dependencies.conversationalMemoryExtractor.extract({ userMessage: request.message });
@@ -398,11 +463,14 @@ export class VictoriaAgent {
           await this.dependencies.memory.rememberConversationalMemory(request.userId, candidate);
         }
         if (memories.length > 0) {
-          const message = "Got it. I'll keep that in mind for future conversations.";
-          return {
-            message,
-            decision: { action: "reflect", classification, userFacingMessage: message }
-          };
+          memoryAcknowledgement = "I'll keep that in mind for future conversations.";
+          if (classification.type === "general_finance") {
+            const message = `Got it. ${memoryAcknowledgement}`;
+            return {
+              message,
+              decision: { action: "reflect", classification, userFacingMessage: message }
+            };
+          }
         }
       } catch {
         // Optional extraction cannot block an ordinary turn or financial safety checks.
@@ -647,12 +715,20 @@ export class VictoriaAgent {
 
     let decision = await this.decide(request, resolvedClassification, resolvedSavingsEvent, teamAdvice);
     let userFacingMessage = this.teamMessageForDecision(decision, teamAdvice);
-    if (decision.action === "reflect" && resolvedClassification.type === "general_finance") {
-      const personalizedMessage = personalizeOrdinaryFinancialReply(memory, userFacingMessage, request.message);
+    if (decision.action === "reflect" &&
+        (resolvedClassification.type === "general_finance" || resolvedClassification.type === "pattern_reflection")) {
+      const personalizedMessage = personalizeOrdinaryReply(
+        memory, userFacingMessage, request.message, resolvedClassification.type === "pattern_reflection"
+      );
       if (personalizedMessage) {
         userFacingMessage = personalizedMessage;
         decision = { ...decision, userFacingMessage };
       }
+    }
+
+    if (memoryAcknowledgement && (decision.action === "reflect" || decision.action === "ask_follow_up")) {
+      userFacingMessage = `${userFacingMessage} ${memoryAcknowledgement}`;
+      decision = { ...decision, userFacingMessage };
     }
 
     return {
@@ -1757,12 +1833,96 @@ export class VictoriaAgent {
   }
 }
 
-function personalizeOrdinaryFinancialReply(
+function personalizeOrdinaryReply(
   memory: Awaited<ReturnType<MemoryProvider["getMemoryForUser"]>>,
   fallbackMessage: string,
-  userMessage: string
+  userMessage: string,
+  interestOnly = false
 ): string | undefined {
   const memories = memory.conversationalMemories ?? [];
+  const inactiveInterests = new Set(memories
+    .filter((item) => item.key.startsWith("interest:") && item.sourceMetadata?.interestStatus === "inactive")
+    .map((item) => memoryTopicLabel(item.key)));
+  const spendingQuestion = isSpendingQuestion(userMessage);
+  const matchingInterestContext = memories.find((item) => item.key.startsWith("interest:") &&
+    item.sourceMetadata?.interestStatus !== "inactive" && isMemoryTopicMatched(item, userMessage) &&
+    (spendingQuestion || interestUseContext(item.key, userMessage, item.semanticSimilarity) !== undefined));
+  const matchingActivitySpend = spendingQuestion ? memories.find((item) =>
+    (item.key.startsWith("interest_spend:") || item.key.startsWith("financial_profile:category:") ||
+      item.key.startsWith("activity_mapping:")) &&
+    !inactiveInterests.has(memoryTopicLabel(item.key)) && isMemoryTopicMatched(item, userMessage)) : undefined;
+  const matchingContext = matchingInterestContext ?? matchingActivitySpend;
+  if (matchingContext) {
+    const activity = memoryTopicLabel(matchingContext.key);
+    if (!activity) return undefined;
+    if (spendingQuestion) {
+      const reportedSpend = memories.find((item) => item.key.startsWith("interest_spend:") &&
+        memoryTopicLabel(item.key) === activity);
+      let reportedSpendSummary: string | undefined;
+      if (reportedSpend) {
+        const amount = reportedSpend.value.match(/\$[\d,]+\.\d{2}/)?.[0];
+        const cadence = typeof reportedSpend.sourceMetadata?.cadence === "string"
+          ? reportedSpend.sourceMetadata.cadence
+          : reportedSpend.value.match(/\bper (day|week|month|year|session|visit|class|trip)\b/i)?.[1]?.toLocaleLowerCase("en-US");
+        if (amount && cadence) {
+          reportedSpendSummary = `You told me you spend about ${amount} per ${cadence} on ${activity} (last noted ${formatMemoryDate(reportedSpend.createdAt)})`;
+        }
+      }
+      const mapping = memories.find((item) => item.key === `activity_mapping:${activity}` &&
+        item.sourceType === "user_statement" && typeof item.sourceMetadata?.profileKey === "string");
+      const profileKey = typeof mapping?.sourceMetadata?.profileKey === "string"
+        ? mapping.sourceMetadata.profileKey
+        : `financial_profile:category:${activity}`;
+      const profileSpend = memories.find((item) => item.key === profileKey &&
+        item.sourceType === "plaid_transaction_profile");
+      const totalCents = profileSpend?.sourceMetadata?.totalCents;
+      const recordCount = profileSpend?.sourceRecordCount;
+      if (profileSpend && Number.isSafeInteger(totalCents) && Number.isSafeInteger(recordCount) &&
+          profileSpend.observedFrom && profileSpend.observedThrough) {
+        if (mapping) {
+          const mappedTarget = typeof mapping.sourceMetadata?.target === "string" ? mapping.sourceMetadata.target : activity;
+          const dimension = mapping.sourceMetadata?.dimension === "merchant" ? "merchant" : "category";
+          const userReported = reportedSpendSummary ? `${reportedSpendSummary}. Separately, ` : "";
+          const mappingSummary = reportedSpendSummary
+            ? `you told me to use ${mappedTarget} as the ${dimension} for ${activity}. `
+            : `You told me to use ${mappedTarget} as the ${dimension} for ${activity}. `;
+          return `${userReported}${mappingSummary}Your linked transactions show ${formatUsd(totalCents as number)} across ${recordCount} posted purchases for ${mappedTarget}, from ${profileSpend.observedFrom} through ${profileSpend.observedThrough}; that history may not reflect current spending. Is that mapping still right?`;
+        }
+        const userReported = reportedSpendSummary ? `${reportedSpendSummary}. Separately, ` : "";
+        return `${userReported}${reportedSpendSummary ? "your linked" : "Your linked"} transactions show ${formatUsd(totalCents as number)} across ${recordCount} posted purchases categorized as ${activity}, from ${profileSpend.observedFrom} through ${profileSpend.observedThrough}; that history may not reflect current spending. Is that category a good match for your ${activity} spending?`;
+      }
+      if (reportedSpendSummary) return `${reportedSpendSummary}. Is that still accurate?`;
+      if (mapping) {
+        const target = typeof mapping.sourceMetadata?.target === "string" ? mapping.sourceMetadata.target : "that transaction label";
+        return `You told me to use ${target} for ${activity}, but I don't have a current linked transaction summary for it. If you'd like, tell me what you typically spend per month or per outing, and I'll keep that user-reported estimate separate.`;
+      }
+      return `I remember ${activity} is something you enjoy, but I don't have a reliable spend amount for it. If you'd like to use linked transactions, tell me which category or merchant represents ${activity}; otherwise, tell me what you typically spend per month or per outing. I'll keep those sources separate.`;
+    }
+    const useContext = interestUseContext(matchingContext.key, userMessage, matchingContext.semanticSimilarity);
+    if (useContext === "planning") {
+      return `I remember you enjoy ${activity}. If you're planning around it, we can include ${activity} in the plan. Is that still something you enjoy?`;
+    }
+    if (useContext === "routine") {
+      return `I remember you enjoy ${activity}. We can look for a manageable way to make time for it in your routine. Is that still something you enjoy?`;
+    }
+    if (useContext === "goal") {
+      return `I remember you enjoy ${activity}. If this goal still includes ${activity}, we can keep that in mind as we plan. Is that still something you enjoy?`;
+    }
+    if (useContext === "spending") {
+      return `I remember you enjoy ${activity}. We can include it in this spending discussion, but I don't know what it costs for you. Which expense are you weighing? Is that still something you enjoy?`;
+    }
+    return `I remember you enjoy ${activity}. Is that still something you enjoy?`;
+  }
+
+  if (spendingQuestion) {
+    const activity = extractSpendingTopic(userMessage);
+    return activity
+      ? `I don't have a reliable amount for ${activity} yet. What do you typically spend per month or per outing? If you'd rather use linked transactions, tell me which category or merchant represents ${activity}, and I'll keep that source separate from your estimate.`
+      : "I don't have enough detail to identify the activity or a reliable amount. Which activity do you mean, and what do you typically spend per month or per outing? If you'd rather use linked transactions, tell me the category or merchant to check.";
+  }
+
+  if (interestOnly) return undefined;
+
   const routine = memories.find((item) => isRelevantRecurringRoutine(item, userMessage));
   if (routine) {
     const routineName = describeRecurringRoutine(routine.key);
@@ -1803,6 +1963,80 @@ function personalizeOrdinaryFinancialReply(
   return episode
     ? `I have a note from an earlier conversation: “${episode.value}” Is that still relevant, or has something changed?`
     : fallbackMessage;
+}
+
+function isSpendingQuestion(message: string): boolean {
+  return /\b(?:how much|what do i spend|what's my spend|what is my spend|cost|budget|spend(?:ing)?|spent)\b/i.test(message);
+}
+
+function interestUseContext(
+  interestKey: string,
+  message: string,
+  semanticSimilarity?: number
+): "planning" | "routine" | "goal" | "spending" | undefined {
+  const topic = memoryTopicLabel(interestKey);
+  if (!topic || !(isMemoryTopicMentioned(interestKey, message) || isStrongSemanticMatch(semanticSimilarity))) return undefined;
+  const normalized = message.toLocaleLowerCase("en-US");
+  const topicText = topic.toLocaleLowerCase("en-US");
+  const topicIndex = normalized.indexOf(topicText);
+  const nearby = topicIndex < 0
+    ? normalized
+    : normalized.slice(Math.max(0, topicIndex - 48), Math.min(normalized.length, topicIndex + topicText.length + 48));
+  if (/\b(?:plan(?:ning)?|trip|vacation|itinerary|weekend|activities)\b/.test(nearby)) return "planning";
+  if (/\b(?:routine|schedule|make time|fit|practice|weekly|every week|regularly|do more|keep up)\b/.test(nearby)) return "routine";
+  if (/\b(?:budget(?:ing)?|costs?|spending|spend|expense|price|gear|equipment|class|lesson|fee)\b/.test(nearby)) return "spending";
+  if (/\b(?:goal|aim|aiming|working toward|trying to|want to|hope to)\b/.test(nearby)) return "goal";
+  return undefined;
+}
+
+function memoryTopicLabel(key: string): string | undefined {
+  const topic = key.startsWith("interest_spend:")
+    ? key.slice("interest_spend:".length)
+    : key.startsWith("interest:")
+      ? key.slice("interest:".length)
+      : key.startsWith("activity_mapping:")
+        ? key.slice("activity_mapping:".length)
+      : key.startsWith("financial_profile:category:")
+        ? key.slice("financial_profile:category:".length)
+        : "";
+  return topic ? topic.replace(/_/g, " ") : undefined;
+}
+
+function extractSpendingTopic(message: string): string | undefined {
+  const match = /\b(?:spend|spending|spent|budget|cost)\s+(?:on|for|in)\s+([^?.!,;]{1,80})/i.exec(message);
+  const topic = match?.[1]?.trim().replace(/\b(?:usually|typically|per month|per outing|each month)\b.*$/i, "").trim();
+  return topic ? topic.replace(/\b[a-z]/g, (letter) => letter.toLocaleUpperCase("en-US")) : undefined;
+}
+
+function formatMemoryDate(createdAt: string): string {
+  const date = new Date(createdAt);
+  return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : "date unavailable";
+}
+
+function isMemoryTopicMentioned(key: string, message: string): boolean {
+  const topic = memoryTopicLabel(key);
+  if (!topic) return false;
+  const normalize = (value: string) => `_${value.toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}_`;
+  const normalizedMessage = normalize(message);
+  if (normalizedMessage.includes(normalize(topic))) return true;
+  return (INTEREST_TOPIC_ALIASES[topic] ?? []).some((alias) => normalizedMessage.includes(normalize(alias)));
+}
+
+const INTEREST_TOPIC_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  bird_watching: ["birdwatching", "birding"],
+  cycling: ["biking", "bike riding"],
+  hiking: ["hike", "hikes", "trail walking", "trekking"],
+  running: ["run", "jogging", "jog"],
+  strength_training: ["weight training", "lifting", "weightlifting"],
+  video_games: ["gaming", "video gaming"]
+};
+
+function isMemoryTopicMatched(memory: ConversationalMemory, message: string): boolean {
+  return isMemoryTopicMentioned(memory.key, message) || isStrongSemanticMatch(memory.semanticSimilarity);
+}
+
+function isStrongSemanticMatch(similarity: number | undefined): boolean {
+  return Number.isFinite(similarity) && (similarity as number) >= SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY;
 }
 
 function isRelevantRecurringRoutine(

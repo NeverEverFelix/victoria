@@ -171,6 +171,8 @@ Implications:
 - UI implementation becomes the final product phase after the non-UI work queue is complete and `npm run check` passes.
 - End-to-end browser journeys and production deployment follow the UI phase.
 
+Exception confirmed by the user on 2026-10-22: implement a bounded client sign-in and consent-to-Link experience for the approved Transactions-only Plaid sandbox flow. This does not start the Victoria chat UI or authorize Plaid production behavior. Signed-in deployed verification remains outstanding.
+
 ### Transactions-Only Financial Profile
 
 Decision: Confirmed by the user on 2026-10-13. The first financial profile is built from transaction history only, using user-authorized Plaid Transactions access. Do not include balances, identity data, account metadata, or other Plaid products in this profile.
@@ -195,7 +197,7 @@ The profile input, aggregation, persistence mapping, semantic memory schema, sec
 - Preserve a minimal consent revocation audit event. If remote revocation fails, retain only the encrypted token in a retry queue and keep local access disabled. Retry transient failures with backoff; move permanent provider rejections to manual review without discarding the encrypted token. Resume revocation only after the operator has addressed the provider rejection.
 - Encrypt Item tokens with versioned AES-256-GCM keys. New writes use the active key; configured prior versions are decrypt-only. Rotate and verify every persisted active or queued token before retiring an old key. Missing keys fail closed.
 
-The maintenance operations are implemented, but scheduling, authenticated route mounting, and live database/provider verification remain deployment tasks. Production Plaid access remains disabled until those gates are completed.
+The maintenance operations are implemented, and authenticated consent, Link, token-exchange, refresh, and disconnect routes are mounted for an explicitly enabled staging sandbox runtime. A separate client page now provides sign-in, the consent notice, Link, aggregate profile summaries, and disconnect controls. Scheduling, staging endpoint verification, and live database/provider verification remain deployment tasks. Production Plaid access remains disabled.
 
 ### Typical Merchant Spend Statistic For A Future Provider
 
@@ -358,3 +360,53 @@ Related docs:
 - `docs/agent-work-queue.md`
 - `tests/test-plan.md`
 - `docs/environments.md`
+
+
+### Persistent Hosted Chat Shares Supabase Auth Identity With Memory Controls
+
+Decision: Confirmed on 2026-10-21. Staging and production chat use the existing Supabase Auth bearer verification boundary already used by hosted memory controls. The verified Supabase subject scopes PostgreSQL conversation context, durable memory, pending approvals, and mocked savings state. The same subject scopes inspect/correct/forget memory endpoints. Hosted chat uses PostgreSQL directly rather than local SQLite state.
+
+Implications:
+
+- No user ID from the request body or conversation ID is treated as an identity.
+- `MONEY_MOVEMENT_MODE=real_transfer` remains rejected; hosted savings tools persist mocked ledger records only.
+- Apply and verify hosted migrations required for durable approvals/actions before enabling chat. Trusted client sign-in and full staging endpoint verification remain deployment prerequisites.
+
+### Predictable Memory Learning Boundary
+
+Decision: Confirmed on 2026-10-21; provider-default behavior updated on 2026-10-22 at the user's direction. Victoria automatically remembers only direct, affirmed, user-authored, stable, ordinary statements that match the narrow deterministic preference, recurring habit, goal, or merchant-spend patterns. These statements receive an acknowledgement. Provider extraction runs when a real model and API key are configured unless explicitly disabled, and must pass the same evidence and privacy checks; it is not required for ordinary direct learning. Episode summarization remains a separate opt-in.
+
+Memory handling classes:
+
+- **Remember automatically:** clear first-person preferences, recurring habits, stated savings goals, and a user's clear answer to a specific typical-spend question. Record the exact evidence, source, and confidence; append a linked fact when it changes.
+- **Ask or wait for clarity:** tentative, hypothetical, unclear, or merely inferred statements. Ask a normal conversational follow-up when the fact matters to the current turn; do not persist until the user states a clear, stable fact. Do not ask for broad permission to retain conversation history.
+- **Never store as conversational memory:** credentials and financial account/card/routing identifiers; sensitive health, political, religious, sexuality, race/ethnicity, or immigration details; quoted or third-party facts; and short-lived circumstances. Authorized transaction-profile aggregates remain a separate, provenance-labeled source governed by their existing consent, retention, and freshness rules.
+
+This policy does not change short-term conversation context, financial action approval, or memory-management controls. It does not treat the provider's sensitivity label as authoritative: deterministic evidence screening is still required.
+
+### Remember Ordinary Interests And Activity-Specific Spend
+
+Decision: Confirmed on 2026-10-22. Victoria may remember a directly stated ordinary hobby or interest and a directly stated recurring amount spent on an activity. It uses these memories only when the current topic matches, identifies whether an amount came from the user or linked transactions, and invites correction if the fact may have changed.
+
+For ordinary planning, routine-building, personal-goal, and spending reflections, interest personalization also requires an activity mention near a concrete matching use cue (for example, planning, schedule/time, goal/aim, or budget/cost). A passing mention in an unrelated request does not qualify. Victoria identifies recalled context as remembered and asks whether it is still current. This use remains context only: it does not infer spend or authorize a savings action.
+
+Implications:
+
+- Interest facts use the existing `other` category with `interest:<activity>` keys; they remain user-scoped, evidence-backed, append-only memories.
+- Recurring hobby spend requires an explicit USD amount and cadence. It uses `financial_pattern` with `interest_spend:<activity>` and is labeled as user-reported. A missing cadence, one-time cost, or inferred amount is not stored as recurring spend.
+- A clear first-person correction that an interest is no longer current appends an inactive fact linked to the earlier interest.
+- A transactions-only category or merchant can support an activity spend response on an exact normalized activity match or an explicit user-confirmed mapping. The mapping is stored as an append-only, user-scoped financial-pattern fact. Victoria identifies the mapping and profile source window/count, asks whether the link remains correct, and keeps that transaction summary distinct from a user-reported recurring amount. No broad category mapping is inferred.
+- The optional provider extractor may learn ordinary interests, but provider-generated monetary spend facts are rejected. Amount-bearing activity spend is accepted only through the deterministic explicit-period parser.
+- Memory remains context only and cannot classify or approve a savings action.
+
+
+### Memory Retention, Forget Purge, And Recovery
+
+Decision: Confirmed on 2026-10-21. Explicit conversational facts expire after 24 months without a newer linked revision. Forget suppresses immediately and physically purges the linked memory lineage and embeddings after 30 days. Transaction profile data retains its 90-day window. Short-term context expires after 30 minutes; expired local outbox/cache payloads are swept every minute, on access, and at startup, while hosted Postgres rows are swept by daily maintenance. Financial decisions, approvals, and ledger history retain their separate immutable policy.
+
+Implications:
+
+- Backup copies may survive primary deletion until provider retention elapses. Supabase project backup/PITR retention must be at most 30 days; the maximum expected residual window after forget is 60 days.
+- Daily retention maintenance emits a structured log and writes deletion counts/status to `victoria_retention_runs`. Alert on failed jobs or no success for 48 hours.
+- A restored database must have migrations and retention reapplied before traffic resumes. The restore must first be inspected in a separate recovery project.
+- This supersedes the 2026-10-17 decision that forget only suppresses retrieval and keeps the source/embedding indefinitely.

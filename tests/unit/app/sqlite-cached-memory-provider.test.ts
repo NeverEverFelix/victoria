@@ -102,9 +102,9 @@ describe("SQLite cached conversational memory", () => {
     await provider.setConversationContext("user-a", "chat-1", ["clarification"]);
     expect(await provider.getConversationContext("user-a", "chat-1")).toEqual(["clarification"]);
     expect(database.contexts.has("user-a:chat-1")).toBe(false);
-    database.available = true;
-    expect(await provider.getConversationContext("user-a", "chat-1")).toEqual(["clarification"]);
     await provider.flushPendingContextBackups();
+    database.available = true;
+    await provider.retryPendingContextBackups();
     expect(database.contexts.get("user-a:chat-1")).toEqual(["clarification"]);
     provider.close();
   });
@@ -113,6 +113,17 @@ describe("SQLite cached conversational memory", () => {
     const provider = new SqliteCachedMemoryProvider(new PostgresMemoryRepository(new MemoryDatabase()), ":memory:", 0);
     await provider.setConversationContext("user-a", "chat-1", ["temporary clarification"]);
     expect(await provider.getConversationContext("user-a", "chat-1")).toEqual([]);
+    provider.close();
+  });
+
+  it("purges expired local cache and backup-outbox payloads", async () => {
+    const database = new MemoryDatabase();
+    database.available = false;
+    const provider = new SqliteCachedMemoryProvider(new PostgresMemoryRepository(database));
+    await provider.setConversationContext("user-a", "chat-expired", ["temporary detail"]);
+    await provider.flushPendingContextBackups();
+    expect(provider.purgeExpiredContext(Date.now() + 31 * 60_000)).toEqual({ cacheRows: 1, outboxRows: 1 });
+    expect(await provider.getConversationContext("user-a", "chat-expired")).toEqual([]);
     provider.close();
   });
 });

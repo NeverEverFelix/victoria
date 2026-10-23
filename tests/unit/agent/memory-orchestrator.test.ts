@@ -30,7 +30,7 @@ describe("MemoryOrchestrator", () => {
   });
 
   it("versions repeated learned facts and retrieves only the current fact", async () => {
-    const orchestrator = new MemoryOrchestrator(new MockMemoryProvider(), { now: () => new Date("2026-10-13T12:00:00Z") });
+    const orchestrator = new MemoryOrchestrator(new MockMemoryProvider(), { now: () => new Date() });
     const first = await orchestrator.rememberConversationalMemory("user-a", {
       category: "preference", key: "response_style", value: "Prefers concise answers.", evidence: "User said so.",
       confidence: 0.95, sourceType: "user_statement"
@@ -86,10 +86,25 @@ describe("MemoryOrchestrator", () => {
     await storage.rememberConversationalMemory("user-a", {
       category: "goal", key: "move", value: "Wants to save for a move.", evidence: "User said so.", confidence: 0.95
     });
-    const orchestrator = new MemoryOrchestrator(storage, { now: () => new Date("2026-10-13T12:00:00Z") });
+    const orchestrator = new MemoryOrchestrator(storage, { now: () => new Date() });
 
     const result = await orchestrator.getMemoryForUser("user-a", "move");
     expect(result.conversationalMemories?.map((memory) => memory.key)).toEqual(["move"]);
+  });
+
+  it("excludes ordinary memories older than 24 months even before physical cleanup", async () => {
+    const storage = new MockMemoryProvider();
+    const stale: ConversationalMemory = {
+      id: "stale-ordinary", category: "preference", key: "reply_style", value: "Prefers concise replies.",
+      evidence: "User stated it.", confidence: 1, createdAt: "2024-10-01T00:00:00.000Z", sourceType: "user_statement"
+    };
+    vi.spyOn(storage, "searchConversationalMemories").mockResolvedValue([stale]);
+    vi.spyOn(storage, "filterCurrentConversationalMemoryIds").mockResolvedValue(new Set([stale.id]));
+    const orchestrator = new MemoryOrchestrator(storage, { now: () => new Date("2026-10-21T00:00:00.000Z") });
+
+    const result = await orchestrator.getMemoryForUser("user-a", "reply style");
+
+    expect(result.conversationalMemories).toEqual([]);
   });
 
   it("makes missing, stale, and future profile observations unavailable in mock retrieval", async () => {

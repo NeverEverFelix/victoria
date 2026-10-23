@@ -16,6 +16,15 @@ import type { PendingSavingsActionStore } from "../../../src/agent/pending-savin
 describe("VictoriaAgent", () => {
   afterEach(() => vi.useRealTimers());
 
+  it.each([
+    "The thing that works best for me is keeping routines small and specific.",
+    "Weekends are easier for me when I plan meals ahead."
+  ])("classifies natural first-person context as ordinary conversation: %s", async (message) => {
+    const memory = await new MockMemoryProvider().getMemoryForUser("classifier_test");
+    const classification = await new MockLlmAdapter().classifyMessage({ userMessage: message, memory });
+    expect(classification.type).toBe("general_finance");
+  });
+
   it("provides the rolling user and Victoria conversation to later classifications", async () => {
     const contexts: (readonly string[])[] = [];
     const base = new MockLlmAdapter();

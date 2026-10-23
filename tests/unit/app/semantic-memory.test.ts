@@ -75,7 +75,7 @@ describe("PostgresMemoryRepository semantic memory", () => {
     const database = new ScriptedDatabase((sql) => sql.includes("victoria_search_conversational_memories")
       ? [{ id: "memory-2", category: "financial_pattern", key: "merchant:coffee", value: "Typical coffee spend is $6.",
         evidence: "3 posted purchases", confidence: 0.8, createdAt: "2026-10-13T12:00:00.000Z",
-        sourceType: "plaid_transaction_profile", similarity: 0.91 }]
+        sourceType: "plaid_transaction_profile", semanticSimilarity: 0.91 }]
       : []);
     const repository = new PostgresMemoryRepository(database, 30_000, embeddingProvider);
 
@@ -85,6 +85,7 @@ describe("PostgresMemoryRepository semantic memory", () => {
     expect(database.calls[0]?.sql).toContain("victoria_search_conversational_memories");
     expect(database.calls[0]?.values?.[0]).toBe("user-a");
     expect(database.calls[0]?.values?.[2]).toBe("test-embedding-model");
+    expect(database.calls[0]?.sql).toContain('similarity AS "semanticSimilarity"');
   });
 
   it("falls back to current memories when vector search has no indexed results", async () => {
