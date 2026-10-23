@@ -374,7 +374,7 @@ Implications:
 
 ### Predictable Memory Learning Boundary
 
-Decision: Confirmed on 2026-10-21; provider-default behavior updated on 2026-10-22 at the user's direction. Victoria automatically remembers only direct, affirmed, user-authored, stable, ordinary statements that match the narrow deterministic preference, recurring habit, goal, or merchant-spend patterns. These statements receive an acknowledgement. Provider extraction runs when a real model and API key are configured unless explicitly disabled, and must pass the same evidence and privacy checks; it is not required for ordinary direct learning. Episode summarization remains a separate opt-in.
+Decision: Confirmed on 2026-10-21; provider-default behavior updated on 2026-10-22 at the user's direction. Victoria automatically remembers only direct, affirmed, user-authored, stable, ordinary statements that match the narrow deterministic preference, recurring habit, goal, or merchant-spend patterns. These statements receive an acknowledgement. Provider extraction runs when a real model and API key are configured unless explicitly disabled, and must pass the same evidence and privacy checks; it is not required for ordinary direct learning. Episode summarization follows the same provider-configured default, with `OPENAI_EPISODIC_SUMMARIES_ENABLED=false` as the opt-out. It still runs only at conversation finish or context rollover and stores a concise, evidence-linked summary rather than the raw transcript.
 
 Memory handling classes:
 

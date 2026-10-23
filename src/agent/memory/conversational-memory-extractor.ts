@@ -24,12 +24,12 @@ export interface ConversationalMemoryExtractor {
 export function validateMemoryCandidates(
   candidates: readonly unknown[],
   userMessage: string,
-  limit = 3
+  limit = 8
 ): readonly Omit<ConversationalMemory, "id" | "createdAt" | "supersedesId">[] {
   const result: Omit<ConversationalMemory, "id" | "createdAt" | "supersedesId">[] = [];
   const seenKeys = new Set<string>();
   for (const candidate of candidates) {
-    if (result.length >= Math.max(0, Math.min(limit, 3)) || !isCandidate(candidate)) continue;
+    if (result.length >= Math.max(0, Math.min(limit, 8)) || !isCandidate(candidate)) continue;
     const evidence = candidate.evidence.trim();
     const key = candidate.key.trim().toLowerCase();
     const value = candidate.value.trim();
