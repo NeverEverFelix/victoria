@@ -352,3 +352,7 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - A selected target survives restoration of the original append-only pending proposal in another server worker. An ambiguous ledger reply stays pending; a later explicit approval records only the current monthly amount.
 - A direct refusal of a pending ledger entry remains a decline when followed by a separate question. The declined proposal is recorded as terminal, no entry is made, and Victoria answers the question without reopening the proposal.
 - Ordinary conversational wording cannot offer a new ledger recording or recommend an investment product; rejected drafts receive at most one revision and otherwise fall back safely.
+- Provider-personalized wording accepts validated monthly cents even when the amount is absent from the text context, allows an empty used-memory list when no memory informed the wording, and rejects negative, non-USD, or over-precise monetary mentions.
+- Companion Voice drafts that attribute real transfer capability to Victoria, including second-person phrasing, are rejected while user-directed budgeting suggestions remain allowed.
+- Restored covered-expense planning choices require positive safe-integer monthly cents, an exact twelve-month projection, and agreement with the pending mocked-ledger proposal before they can continue toward approval.
+- Evidence for a confirmed covered-expense planning observation is bounded and strips control characters before storage.

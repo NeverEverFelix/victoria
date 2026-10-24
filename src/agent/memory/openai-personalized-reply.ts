@@ -9,7 +9,7 @@ const outputSchema = z.object({
   // wider provider boundary lets the agent request one concise revision
   // instead of throwing away an otherwise useful but overlong draft.
   message: z.string().min(1).max(10_000),
-  usedMemoryIds: z.array(z.string().min(1)).min(1).max(3)
+  usedMemoryIds: z.array(z.string().min(1)).max(3)
 }).strict();
 
 const responseSchema = {
@@ -18,7 +18,7 @@ const responseSchema = {
   required: ["message", "usedMemoryIds"],
   properties: {
     message: { type: "string" },
-    usedMemoryIds: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } }
+    usedMemoryIds: { type: "array", minItems: 0, maxItems: 3, items: { type: "string" } }
   }
 } as const;
 

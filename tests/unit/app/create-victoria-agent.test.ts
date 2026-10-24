@@ -97,7 +97,7 @@ describe("createVictoriaAgent", () => {
       format?: { schema?: { properties?: { response?: { maxLength?: number } } } };
     };
     expect(typeof voiceRequest.instructions).toBe("string");
-    expect(String(voiceRequest.instructions)).toContain("warmly feminine, graceful, gently charming");
+    expect(String(voiceRequest.instructions)).toContain("mature, warm, calm, and quietly confident");
     expect(String(voiceRequest.instructions)).toContain("not a financial form letter");
     expect(String(requests[1]?.instructions)).toContain("money is a tool for living");
     expect(voiceText.format?.schema?.properties?.response?.maxLength).toBeGreaterThan(0);

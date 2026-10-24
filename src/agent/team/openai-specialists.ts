@@ -262,14 +262,14 @@ async function readProviderError(response: Response): Promise<{ type?: string; c
 
 function safeDiagnosticValue(value: unknown): string | undefined {
   if (typeof value !== "string") return;
-  const normalized = value.toLocaleLowerCase().replace(/[^a-z0-9_-]/g, "_").slice(0, 80);
+  const normalized = value.toLowerCase().replace(/[^a-z0-9_-]/g, "_").slice(0, 80);
   return normalized || undefined;
 }
 
 function providerFailureCategory(error: unknown): string {
   if (error instanceof z.ZodError) return "schema_validation";
   if (error instanceof SyntaxError) return "invalid_json";
-  if (error instanceof Error && error.name === "TimeoutError") return "timeout";
+  if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) return "timeout";
   if (error instanceof Error && /declined to respond/i.test(error.message)) return "provider_refusal";
   if (error instanceof Error && /no output text|no output/i.test(error.message)) return "missing_output";
   return "request_or_response_error";

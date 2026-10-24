@@ -190,8 +190,11 @@ function claimsProhibitedMoneyMovement(message: string): boolean {
   // is not a claim that Victoria can execute a transfer. Guard Victoria's own
   // claimed capability/action and completed passive claims instead.
   const affirmativeActorClaim = new RegExp(`\\b(?:i|we|victoria)\\s+(?:(?:can|will|would|could|have|has|already|just|help(?:\\s+you)?)\\s+)*(?:${action})\\b`, "i");
+  const attributedUserClaim = new RegExp(`\\byou\\s+(?:can|could|will|would|may)\\s+(?:(?:ask|have)\\s+(?:me|victoria)\\s+to\\s+)?(?:${action})\\b.{0,55}\\b(?:with|through|via|using)\\s+victoria(?:['’]s)?(?:\\s+app)?\\b`, "i");
+  const delegatedUserClaim = new RegExp(`\\byou\\s+(?:can|could|will|would|may)\\s+(?:ask\\s+(?:me|victoria)\\s+to|have\\s+(?:me|victoria))\\s+(?:${action})\\b`, "i");
   const completedPassiveClaim = /\b(?:money|funds|a transfer)\s+(?:was|were|has been|have been)\s+(?:(?:moved|transferred|sent|deposited|made|completed|scheduled|initiated|executed|processed|submitted)|set\s+up)\b/i;
-  return affirmativeActorClaim.test(withoutSafeNegations) || completedPassiveClaim.test(withoutSafeNegations);
+  return affirmativeActorClaim.test(withoutSafeNegations) || attributedUserClaim.test(withoutSafeNegations) ||
+    delegatedUserClaim.test(withoutSafeNegations) || completedPassiveClaim.test(withoutSafeNegations);
 }
 
 function claimsUnsupportedAssurance(message: string): boolean {

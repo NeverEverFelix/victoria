@@ -253,7 +253,7 @@ describe("explicit savings preference memory", () => {
 
     const choice = await agent.respond({
       userId, conversationId,
-      message: "I'd rather go with the monthly one."
+      message: "I'd rather go with the monthly one.\n\t"
     });
     expect(choice.decision.action).not.toBe("create_ledger_entry");
     expect(choice.message).not.toMatch(/i'll remember|prefers to allocate/i);
@@ -277,6 +277,10 @@ describe("explicit savings preference memory", () => {
         })
       })
     ]));
+    const observedBehavior = (await memory.listConversationalMemories(userId))
+      .find((item) => item.key === "observed_behavior:covered_recurring_expense_to_savings");
+    expect(observedBehavior?.evidence).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+    expect(observedBehavior?.evidence.length).toBeLessThanOrEqual(240);
 
     const secondExpense = await agent.respond({
       userId, conversationId: "different_covered_expense",

@@ -523,6 +523,31 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsEntries("user_victim")).toEqual([]);
   });
 
+  it.each([
+    { monthlyAmountCents: -3500, annualProjectionCents: -42000 },
+    { monthlyAmountCents: 3500.5, annualProjectionCents: 42006 },
+    { monthlyAmountCents: 3500, annualProjectionCents: 42100 },
+    { monthlyAmountCents: 2700, annualProjectionCents: 32400 }
+  ])("rejects an inconsistent restored planning choice before approval: %j", async (planningChoice) => {
+    const tools = new MockVictoriaTools();
+    const ownerAgent = createAgent([], tools);
+    const request = { userId: "restore_validation_user", conversationId: "restore_validation_chat" };
+    const original = await ownerAgent.respond({ ...request, message: "I almost bought a $35 jacket but decided to wait." });
+    const actionId = requireActionId(original.decision.toolCall?.actionId);
+    const pendingStore: PendingSavingsActionStore = {
+      async getPending() { return { actionId, decision: { ...original.decision, planningChoice } }; },
+      async commit() {}
+    };
+    const restored = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      pendingSavingsActions: pendingStore
+    });
+    const response = await restored.respond({ ...request, message: "yes" });
+
+    expect(response.decision.action).not.toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+  });
+
   it("[IDM-002] retries an uncertain correction with the same approval", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);

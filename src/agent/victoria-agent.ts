@@ -878,8 +878,7 @@ export class VictoriaAgent {
       request,
       resolvedClassification,
       resolvedSavingsEvent,
-      teamAdvice,
-      classification.type === "general_finance" && isAnswerToRecentVictoriaQuestion(conversationContext)
+      teamAdvice
     );
     let userFacingMessage = this.teamMessageForDecision(decision, teamAdvice);
     if (decision.action === "reflect" &&
@@ -1143,8 +1142,7 @@ export class VictoriaAgent {
     request: AgentRequest,
     classification: ClassifiedMessage,
     savingsEvent?: SavingsEvent,
-    teamAdvice?: TeamAdvice,
-    answerToRecentQuestion = false
+    teamAdvice?: TeamAdvice
   ): Promise<AgentDecision> {
     if (classification.type === "savings_progress") {
       let message: string;
@@ -1394,7 +1392,9 @@ export class VictoriaAgent {
       request.userId, request.conversationId ?? "default"
     );
     const targetChoice = getAllocationTargetChoiceFromConversation(conversationContext);
-    const evidence = targetChoice ? `${event.summary} | ${targetChoice.evidence}` : event.summary;
+    const evidence = targetChoice
+      ? `${sanitizeMemoryEvidence(event.summary)} | ${sanitizeMemoryEvidence(targetChoice.evidence)}`
+      : sanitizeMemoryEvidence(event.summary);
     if (!coveredSpend || evidence.length > 240 ||
         !isExplicitUserEvidence(event.summary, event.summary) || !targetChoice) return;
 
@@ -2099,7 +2099,8 @@ export class VictoriaAgent {
       decision.proposal?.status !== "pending" ||
       decision.proposal.actionId !== pending.actionId ||
       decision.proposal.userId !== request.userId ||
-      decision.savingsEvent?.userId !== request.userId
+      decision.savingsEvent?.userId !== request.userId ||
+      (decision.planningChoice !== undefined && !isValidRestoredPlanningChoice(decision))
     ) return;
     const conversationKey = this.conversationKey(request);
     this.pendingSavingsActions.set(pending.actionId, {
@@ -2681,6 +2682,16 @@ function getPriorCoveredSpendProjection(conversationContext: readonly string[]):
 function isAnswerToRecentVictoriaQuestion(conversationContext: readonly string[]): boolean {
   const mostRecentMessage = conversationContext.at(-1);
   return mostRecentMessage?.startsWith("Victoria: ") === true && mostRecentMessage.includes("?");
+}
+
+function isValidRestoredPlanningChoice(decision: AgentDecision): boolean {
+  const choice = decision.planningChoice;
+  if (!choice) return true;
+  return Number.isSafeInteger(choice.monthlyAmountCents) && choice.monthlyAmountCents > 0 &&
+    Number.isSafeInteger(choice.annualProjectionCents) &&
+    choice.annualProjectionCents === choice.monthlyAmountCents * 12 &&
+    choice.monthlyAmountCents === decision.proposal?.suggestion.amountCents &&
+    (choice.selectedHorizon === undefined || choice.selectedHorizon === "monthly" || choice.selectedHorizon === "annual");
 }
 
 function enforceMoneyMovementBoundary(message: string, classification: ClassifiedMessage): ClassifiedMessage {

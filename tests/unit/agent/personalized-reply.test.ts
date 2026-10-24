@@ -23,6 +23,22 @@ describe("personalized ordinary replies", () => {
     }, input)).not.toBeNull();
   });
 
+  it("accepts a supplied monthly amount and a reply that uses no memory", () => {
+    expect(validatePersonalizedReply({
+      message: "You could keep the $35.00 as breathing room. What matters most right now?",
+      usedMemoryIds: []
+    }, { ...input, validatedMonthlyAmountCents: 3500 })).toMatchObject({ usedMemoryIds: [] });
+  });
+
+  it.each(["-$35.00", "$-35.00", "$35.001", "$35.000", "-35 dollars", "£35.00"]) (
+    "rejects an invalid or unsupported monetary mention: %s", (amount) => {
+      expect(validatePersonalizedReply({
+        message: `You could keep ${amount} as breathing room. What matters most right now?`,
+        usedMemoryIds: ["memory_style"]
+      }, { ...input, validatedMonthlyAmountCents: 3500 })).toBeNull();
+    }
+  );
+
   it.each([
     { message: "I recorded $80 for you. What next?", usedMemoryIds: ["memory_style"] },
     { message: "You're irresponsible with spending.", usedMemoryIds: ["memory_style"] },
