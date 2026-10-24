@@ -1,3 +1,5 @@
+import { parseExplicitDollarAmount } from "../domain/financial-events/parse-explicit-amount.js";
+
 /** Conservative deterministic fallback for explicit requests to move real funds. */
 export function isRealMoneyMovementRequest(message: string): boolean {
   const text = message.toLowerCase();
@@ -27,4 +29,3 @@ export function employerCoveredRecurringSpend(message: string): { amountCents: n
   const amount = parseExplicitDollarAmount(message);
   return amount.status === "valid" ? { amountCents: amount.amountCents, cadence } : undefined;
 }
-import { parseExplicitDollarAmount } from "../domain/financial-events/parse-explicit-amount.js";

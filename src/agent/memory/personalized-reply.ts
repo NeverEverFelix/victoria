@@ -107,11 +107,13 @@ function parsePositiveUsdCents(amount: string): number | null {
 }
 
 function claimsActionCompleted(message: string): boolean {
-  return /\b(?:i|we|you|victoria)\s+(?:have\s+)?(?:recorded|transferred|moved|deposited)\b|\b(?:i|we|you|victoria)\s+(?:have\s+)?saved\s+(?:(?:the|some)\s+)?(?:money|funds|savings|amount)\b|\b(?:money|funds)\s+(?:has|have)\s+moved\b/i.test(message);
+  const financialActionText = message.replace(/\bmov(?:e|es|ed)\s+(?:forward|on)\b/gi, "");
+  return /\b(?:i|we|you|victoria)\s+(?:have\s+)?(?:recorded|transferred|moved|deposited)\b|\b(?:i|we|you|victoria)\s+(?:have\s+)?saved\s+(?:(?:the|some)\s+)?(?:money|funds|savings|amount)\b|\b(?:money|funds)\s+(?:has|have)\s+moved\b/i.test(financialActionText);
 }
 
 function claimsMoneyMoved(message: string): boolean {
-  return /\b(?:i|we|you|victoria)\s+(?:(?:can|will|would|have|has|already|just)\s+)*(?:move|moves|moved|transfer|transfers|transferred|send|sends|sent|deposit|deposits|deposited)\b/i.test(message) &&
+  const financialActionText = message.replace(/\bmov(?:e|es|ed)\s+(?:forward|on)\b/gi, "");
+  return /\b(?:i|we|you|victoria)\s+(?:(?:can|will|would|have|has|already|just)\s+)*(?:move|moves|moved|transfer|transfers|transferred|send|sends|sent|deposit|deposits|deposited)\b/i.test(financialActionText) &&
     !/\b(?:can't|cannot|won't|wouldn't|don't|do not|didn't|did not|haven't|have not|hasn't|has not)\b/i.test(message);
 }
 

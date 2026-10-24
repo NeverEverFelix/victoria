@@ -23,6 +23,13 @@ describe("personalized ordinary replies", () => {
     }, input)).not.toBeNull();
   });
 
+  it("allows ordinary progress language without treating it as a transfer", () => {
+    expect(validatePersonalizedReply({
+      message: "We can move forward at your pace. What would help first?",
+      usedMemoryIds: []
+    }, input)).not.toBeNull();
+  });
+
   it("accepts a supplied monthly amount and a reply that uses no memory", () => {
     expect(validatePersonalizedReply({
       message: "You could keep the $35.00 as breathing room. What matters most right now?",

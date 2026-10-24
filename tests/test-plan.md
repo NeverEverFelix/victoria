@@ -358,3 +358,5 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Evidence for a confirmed covered-expense planning observation is bounded and strips control characters before storage.
 - An employer-covered recurring bill with an explicit request for Victoria to transfer funds remains a real-money refusal; a budgeting question about redirecting the freed amount remains a planning conversation.
 - Covered-expense amounts and Companion Voice amount mentions reject negatives, malformed comma grouping, and more than two decimal places before any suggestion or confirmation.
+- Safe target-choice fallback wording presents the monthly and annual figures as conditional planning amounts, not as already available savings.
+- A same-message reversal after a direct ledger refusal never counts as approval or a terminal decline; an unrelated follow-up question after the refusal still records a decline.

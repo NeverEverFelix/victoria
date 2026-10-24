@@ -167,9 +167,9 @@ function inspectVoiceDraft(
     if (!containsExplicitLedgerConfirmation(candidate, assessment.amountCents)) issues.push("missing_confirmation_request");
   }
   if (assessment.outcome === "suggest" && finding.responseContext?.rememberedInterests?.length) {
-    const responseWords = new Set(candidate.toLocaleLowerCase().match(/[a-z0-9]+/g) ?? []);
+    const responseWords = new Set(candidate.toLowerCase().match(/[a-z0-9]+/g) ?? []);
     const interestMentioned = finding.responseContext.rememberedInterests.some((interest) => {
-      const contentWords = (interest.toLocaleLowerCase().match(/[a-z0-9]+/g) ?? [])
+      const contentWords = (interest.toLowerCase().match(/[a-z0-9]+/g) ?? [])
         .filter((word) => word.length >= 4 && !/^(?:enjoy|enjoys|enjoying|playing|play|likes|like|loving|love|about|that|with|your|their|interest|interests)$/.test(word));
       return contentWords.some((word) => responseWords.has(word));
     });
@@ -210,7 +210,8 @@ function claimsUnsupportedAssurance(message: string): boolean {
     .replace(/\b(?:not|never|no longer|isn't|aren't|wasn't|weren't|can't be)\s+(?:be\s+)?guaranteed\b/gi, "")
     .replace(/\bno\s+guarantees?\b/gi, "")
     .replace(/\bnot\s+(?:a\s+)?guarantee\b/gi, "");
-  return /\b(?:guarantee(?:s|d)?|ensure|assure)\b|\b(?:protected|available) balance\b/i.test(withoutExplicitNegation);
+  return /\bguarantee(?:s|d)?\b|\b(?:protected|available) balance\b/i.test(withoutExplicitNegation) ||
+    /\b(?:ensure|assure)\b.{0,80}\b(?:money|funds|savings|balance|transfer|deposit|return|outcome|result)\b/i.test(withoutExplicitNegation);
 }
 
 function hasNoMovementDisclosure(message: string): boolean {
@@ -253,7 +254,7 @@ function deterministicResponse(finding: FinancialMomentFinding, assessment: Savi
     if (finding.responseContext?.awaitingAllocationTargetChoice) {
       const annualCents = finding.responseContext.validatedAdditionalAmountsCents?.[0];
       if (annualCents !== undefined && Number.isSafeInteger(annualCents) && annualCents > 0) {
-        return `With the expense covered, you have ${formatUsd(assessment.amountCents)} for this month, or ${formatUsd(annualCents)} over a year if coverage continues. Which planning target would you prefer, monthly or annual? No real money has moved.`;
+        return `If the coverage continues, you could plan around ${formatUsd(assessment.amountCents)} this month, or ${formatUsd(annualCents)} over a year. Which planning target would you prefer, monthly or annual? No real money has moved.`;
       }
     }
     return `Would you like me to record ${formatUsd(assessment.amountCents)} in your Victoria savings ledger? Please confirm before I record it. No real money has moved.`;

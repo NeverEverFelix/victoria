@@ -28,6 +28,15 @@ describe("companion response money boundary", () => {
     expect(result.voiceDraftAccepted).toBe(true);
   });
 
+  it("allows ordinary reassurance while blocking unsupported financial assurance", () => {
+    expect(finalizeCompanionResponse(
+      "We can take a pause to ensure you feel ready. What matters most?", finding, assessment
+    ).voiceDraftAccepted).toBe(true);
+    expect(finalizeCompanionResponse(
+      "I can ensure your savings balance stays safe. What matters most?", finding, assessment
+    ).validationIssues).toContain("unsupported_assurance");
+  });
+
   it.each(["-$27", "$-27", "$27.001", "-27 dollars"]) (
     "rejects a malformed voice amount even when it resembles the suggested amount: %s", (amount) => {
       const suggestion: SavingsAssessment = {

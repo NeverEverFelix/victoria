@@ -928,7 +928,7 @@ export class VictoriaAgent {
             const revisionInput = {
               ...personalizationInput,
               revisionFeedback: annualTargetSelected
-                ? "The prior draft failed conversational validation. Respond to the user's annual allocation-target choice using the supplied conditional annual projection, preserve the ongoing personal context, keep the response concise, and ask only about recording the current month's amount if appropriate. Never offer the annual projection for recording or imply a real transfer."
+                ? "The prior draft failed conversational validation. Respond to the user's annual allocation-target choice using the supplied conditional annual projection, preserve the ongoing personal context, and keep the response concise. Do not offer to record any amount or imply a real transfer during this reflection."
                 : "The prior draft failed conversational validation. Answer the current turn naturally and concisely, preserve relevant personal context, use only validated amounts and supplied memory IDs, and do not claim an action is complete or imply real money movement. Do not offer to record a ledger entry or recommend an investment product."
             };
             personalized = validatePersonalizedReply(

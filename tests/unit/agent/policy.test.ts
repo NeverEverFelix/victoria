@@ -26,6 +26,10 @@ describe("agent policy", () => {
     expect(interpretApprovalResponse(message, 3500)).toBe("explicit_decline");
   });
 
+  it("does not treat a same-message reversal as a terminal decline", () => {
+    expect(interpretApprovalResponse("Don't record it. Actually, record $27.", 2700)).not.toBe("explicit_decline");
+  });
+
   it("accepts an explicit amount-bound ledger approval only for the pending amount", () => {
     expect(interpretApprovalResponse("Yes, record that $20 in my Victoria ledger.", 2_000)).toBe("explicit_approval");
     expect(interpretApprovalResponse("Yes, record that $25 in my Victoria ledger.", 2_000)).toBe("not_approval");
