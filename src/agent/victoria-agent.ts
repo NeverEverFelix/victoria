@@ -251,7 +251,9 @@ export class VictoriaAgent {
     // question or relying on process-local state.
     if (pendingAction && pendingActionId && pendingAction.decision.planningChoice &&
         !pendingAction.decision.planningChoice.selectedHorizon) {
-      const eventIndex = conversationContext.lastIndexOf(pendingAction.decision.savingsEvent?.summary ?? "");
+      const summary = pendingAction.decision.savingsEvent?.summary;
+      const eventIndex = summary && conversationContext.filter((turn) => turn === summary).length === 1
+        ? conversationContext.lastIndexOf(summary) : -1;
       const selected = eventIndex >= 0
         ? getAllocationTargetChoiceFromConversation(conversationContext, eventIndex)
         : undefined;
@@ -460,7 +462,12 @@ export class VictoriaAgent {
       };
     }
 
-    const extractedCandidate = scopedAllocationTargetChoice ? null : extractConversationalMemory(request.message);
+    const directCandidate = scopedAllocationTargetChoice ? null : extractConversationalMemory(request.message);
+    const deferMixedFactToProvider = directCandidate && directCandidate.category !== "other" &&
+      this.dependencies.conversationalMemoryExtractor &&
+      directCandidate.evidence.trim() !== request.message.trim() &&
+      parseExplicitDollarAmount(request.message).status === "valid";
+    const extractedCandidate = deferMixedFactToProvider ? null : directCandidate;
     const embeddedInterestCandidate = extractConversationalMemories(request.message)
       .find((candidate) => candidate.category === "other" && candidate.key.startsWith("interest:"));
     const isInterestCorrection = extractedCandidate?.category === "other" &&
@@ -576,7 +583,11 @@ export class VictoriaAgent {
           decision: { action: "ask_follow_up", classification, userFacingMessage: followUp }
         };
       }
-      return { message, decision: { action: "reflect", classification, userFacingMessage: message } };
+      const isMixedFinancialTurn = extractedMemory.evidence.trim() !== request.message.trim() &&
+        parseExplicitDollarAmount(request.message).status === "valid";
+      if (!isMixedFinancialTurn) {
+        return { message, decision: { action: "reflect", classification, userFacingMessage: message } };
+      }
     }
 
     let memory = await this.dependencies.memory.getMemoryForUser(request.userId, request.message);
@@ -1323,14 +1334,14 @@ export class VictoriaAgent {
     }
 
     const baseDecision = this.buildSavingsSuggestionDecision(classification, savingsEvent, suggestion);
-    const coveredSpend = employerCoveredRecurringSpend(classification.summary);
+    const coveredSpend = employerCoveredRecurringSpend(request.message);
     const annualProjectionCents = coveredSpend?.cadence === "month" &&
       Number.isSafeInteger(coveredSpend.amountCents * 12)
       ? annualizeMonthlyAmountCents(coveredSpend.amountCents)
       : undefined;
-    const decision: AgentDecision = annualProjectionCents !== undefined && teamAdvice?.awaitingAllocationTargetChoice
+    const decision: AgentDecision = coveredSpend && annualProjectionCents !== undefined && teamAdvice?.awaitingAllocationTargetChoice
       ? { ...baseDecision, planningChoice: {
-          monthlyAmountCents: coveredSpend!.amountCents,
+          monthlyAmountCents: coveredSpend.amountCents,
           annualProjectionCents
         } }
       : baseDecision;
@@ -1393,16 +1404,19 @@ export class VictoriaAgent {
     request: AgentRequest,
     event: SavingsEvent
   ): Promise<void> {
-    const coveredSpend = employerCoveredRecurringSpend(event.summary);
     const conversationContext = await this.dependencies.memory.getConversationContext(
       request.userId, request.conversationId ?? "default"
     );
+    const sourceMessage = [...conversationContext].reverse().find((turn) =>
+      !turn.startsWith("Victoria: ") &&
+      employerCoveredRecurringSpend(turn)?.amountCents === event.userProvidedAmountCents);
+    const coveredSpend = sourceMessage ? employerCoveredRecurringSpend(sourceMessage) : undefined;
     const targetChoice = getAllocationTargetChoiceFromConversation(conversationContext);
     const evidence = targetChoice
-      ? `${sanitizeMemoryEvidence(event.summary)} | ${sanitizeMemoryEvidence(targetChoice.evidence)}`
-      : sanitizeMemoryEvidence(event.summary);
+      ? `${sanitizeMemoryEvidence(sourceMessage ?? "")} | ${sanitizeMemoryEvidence(targetChoice.evidence)}`
+      : sanitizeMemoryEvidence(sourceMessage ?? "");
     if (!coveredSpend || evidence.length > 240 ||
-        !isExplicitUserEvidence(event.summary, event.summary) || !targetChoice) return;
+        !sourceMessage || !isExplicitUserEvidence(sourceMessage, sourceMessage) || !targetChoice) return;
 
     try {
       const key = "observed_behavior:covered_recurring_expense_to_savings";
@@ -2694,6 +2708,7 @@ function isValidRestoredPlanningChoice(decision: AgentDecision): boolean {
   const choice = decision.planningChoice;
   if (!choice) return true;
   return Number.isSafeInteger(choice.monthlyAmountCents) && choice.monthlyAmountCents > 0 &&
+    Number.isSafeInteger(choice.monthlyAmountCents * 12) &&
     Number.isSafeInteger(choice.annualProjectionCents) &&
     choice.annualProjectionCents === choice.monthlyAmountCents * 12 &&
     choice.monthlyAmountCents === decision.proposal?.suggestion.amountCents &&

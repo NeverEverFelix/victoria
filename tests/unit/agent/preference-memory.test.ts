@@ -22,6 +22,21 @@ describe("explicit savings preference memory", () => {
       })]));
   });
 
+  it("learns a later direct preference without including the earlier covered-expense sentence", async () => {
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
+    await agent.respond({
+      userId: "later_covered_spend_preference",
+      message: "My employer now covers my $35 monthly gym membership. I prefer concise, practical replies."
+    });
+    expect(await memory.listConversationalMemories("later_covered_spend_preference"))
+      .toEqual(expect.arrayContaining([expect.objectContaining({
+        key: "preference:concise_practical_replies",
+        value: "Prefers concise, practical replies.",
+        evidence: "I prefer concise, practical replies"
+      })]));
+  });
+
   it("extracts a concise first-person interest from a financial message", () => {
     const message = "Hey, I like to play basketball at a gym that costs me $35 a month, but now my company pays for my gym membership. Is it a good idea to move this money elsewhere?";
     expect(extractConversationalMemories(message)).toEqual(expect.arrayContaining([
