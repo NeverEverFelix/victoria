@@ -14,9 +14,20 @@ import type { PendingAmountClarificationStore } from "../../../src/agent/pending
 import type { PendingSavingsActionStore } from "../../../src/agent/pending-savings-action-store.js";
 
 describe("VictoriaAgent", () => {
+  it("treats a covered-expense money-redirection question as planning advice", async () => {
+    const response = await createAgent([], new MockVictoriaTools()).respond({
+      userId: "covered_budgeting_question_user",
+      message: "I like to play basketball at this gym that costs me $35 a month, but now my company pays for my gym membership. Is it a good idea to move this money elsewhere?"
+    });
+    expect(response.decision.classification.type).toBe("avoided_spend");
+    expect(response.decision.action).toBe("suggest_savings");
+    expect(response.decision.toolCall?.name).toBe("createSavingsEntry");
+  });
+
   it.each([
     "My company now covers my $35 monthly gym bill. Please transfer $35 from checking to savings.",
-    "My company now covers my $35 monthly gym bill. Please transfer it."
+    "My company now covers my $35 monthly gym bill. Please transfer it.",
+    "My company now covers my $35 monthly gym bill. Move the money from checking into savings."
   ])("refuses a real transfer command even when the employer covers the recurring bill: %s", async (message) => {
     const tools = new MockVictoriaTools();
     const response = await createAgent([], tools).respond({
@@ -205,7 +216,8 @@ describe("VictoriaAgent", () => {
     expect(companionVoice).toHaveBeenCalledWith(expect.objectContaining({
       finding: expect.objectContaining({
         responseContext: {
-          validatedAdditionalAmountsCents: [42000], rememberedInterests: ["basketball"],
+          validatedAdditionalAmountsCents: [42000], validatedAnnualProjectionCents: 42000,
+          rememberedInterests: ["basketball"],
           awaitingAllocationTargetChoice: true
         }
       })

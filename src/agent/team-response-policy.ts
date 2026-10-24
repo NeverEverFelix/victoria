@@ -84,6 +84,9 @@ function normalizeLedgerConfirmation(message: string, amountCents: number): stri
     if (!confirmationSignals.test(question) || !recordingAction.test(question) || !messageMentionsAmount(question, amountCents)) continue;
     const trackerOrDestination = /\s+(?:in|to)\s+(?:a|an|the|your|my)\s+(?:[A-Za-z'-]+\s+){0,5}(?:ledger|tracker|fund|goal|account)\s*\?$/i;
     if (trackerOrDestination.test(question)) {
+      if (/\b(?:fund|goal)\s*\?$/i.test(question)) {
+        return message.replace(question, `${question.slice(0, -1).trimEnd()} in your Victoria savings ledger?`);
+      }
       return message.replace(question, question.replace(trackerOrDestination, " in your Victoria savings ledger?"));
     }
     return message.replace(question, `${question.slice(0, -1).trimEnd()} in your Victoria savings ledger?`);
@@ -139,7 +142,7 @@ function parsePositiveVoiceUsdCents(amount: string): number | null {
 
 function containsExplicitLedgerConfirmation(message: string, amountCents: number): boolean {
   const normalized = message.replace(/[’‘]/g, "'");
-  if (!/\bVictoria(?:'s)?\b.{0,40}\b(?:mocked\s+)?savings ledger\b/i.test(normalized)) return false;
+  if (!/\b(?:mocked\s+)?savings ledger\b/i.test(normalized)) return false;
   const confirmationSignals = /\b(?:would you like|do you want|want me to|should I|can I|may I|shall I|please confirm|would you feel comfortable|are you comfortable|is it okay if I|is that okay with you)\b/i;
   const recordingAction = /\b(?:record|save|log|enter|add)\b/i;
   return normalized.split("?").some((question) => confirmationSignals.test(question) &&
@@ -252,8 +255,9 @@ function stripNoMovementDisclosures(message: string): string {
 function deterministicResponse(finding: FinancialMomentFinding, assessment: SavingsAssessment): string {
   if (assessment.outcome === "suggest") {
     if (finding.responseContext?.awaitingAllocationTargetChoice) {
-      const annualCents = finding.responseContext.validatedAdditionalAmountsCents?.[0];
-      if (annualCents !== undefined && Number.isSafeInteger(annualCents) && annualCents > 0) {
+      const annualCents = finding.responseContext.validatedAnnualProjectionCents;
+      if (annualCents !== undefined && Number.isSafeInteger(annualCents) &&
+          annualCents === assessment.amountCents * 12) {
         return `If the coverage continues, you could plan around ${formatUsd(assessment.amountCents)} this month, or ${formatUsd(annualCents)} over a year. Which planning target would you prefer, monthly or annual? No real money has moved.`;
       }
     }

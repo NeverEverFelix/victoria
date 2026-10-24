@@ -37,6 +37,28 @@ describe("companion response money boundary", () => {
     ).validationIssues).toContain("unsupported_assurance");
   });
 
+  it("preserves a stated goal when grounding a confirmation in the ledger", () => {
+    const suggestion: SavingsAssessment = {
+      outcome: "suggest", confidence: 1, amountCents: 3500, source: "user_provided", rationale: "User supplied $35."
+    };
+    const result = finalizeCompanionResponse(
+      "Would you like me to record $35 to your emergency fund? No real money has moved.", finding, suggestion
+    );
+    expect(result.voiceDraftAccepted).toBe(true);
+    expect(result.message).toContain("your emergency fund in your Victoria savings ledger?");
+  });
+
+  it("accepts an explicit confirmation in the savings ledger without duplicating it", () => {
+    const suggestion: SavingsAssessment = {
+      outcome: "suggest", confidence: 1, amountCents: 3500, source: "user_provided", rationale: "User supplied $35."
+    };
+    const result = finalizeCompanionResponse(
+      "Would you like me to record $35 in your savings ledger? No real money has moved.", finding, suggestion
+    );
+    expect(result.voiceDraftAccepted).toBe(true);
+    expect(result.message.match(/Would you like me to record/g)).toHaveLength(1);
+  });
+
   it.each(["-$27", "$-27", "$27.001", "-27 dollars"]) (
     "rejects a malformed voice amount even when it resembles the suggested amount: %s", (amount) => {
       const suggestion: SavingsAssessment = {

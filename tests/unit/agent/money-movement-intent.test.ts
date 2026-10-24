@@ -11,5 +11,6 @@ describe("covered recurring expense intent", () => {
   it("distinguishes a transfer command from a budgeting question about moving money", () => {
     expect(isExplicitRealMoneyMovementRequest("My company covers the $35 monthly gym bill. Please transfer $35 from checking to savings.")).toBe(true);
     expect(isExplicitRealMoneyMovementRequest("My company covers the $35 monthly gym bill. Is it a good idea to move this money elsewhere?")).toBe(false);
+    expect(isExplicitRealMoneyMovementRequest("Please move the meeting to Tuesday.")).toBe(false);
   });
 });

@@ -16,8 +16,14 @@ export function isRealMoneyMovementRequest(message: string): boolean {
 
 /** A direct instruction to Victoria takes precedence over covered-bill budgeting context. */
 export function isExplicitRealMoneyMovementRequest(message: string): boolean {
-  return /\b(?:please|can you|could you|would you|will you|go ahead and)\s+(?:(?:now|just)\s+)?(?:move|transfer|send|deposit|withdraw)\b/i.test(message) ||
+  return /\b(?:please|can you|could you|would you|will you|go ahead and)\s+(?:(?:now|just)\s+)?(?:transfer|deposit|withdraw)\b/i.test(message) ||
+    /\b(?:please|can you|could you|would you|will you|go ahead and)\s+(?:(?:now|just)\s+)?(?:move|send)\b.{0,50}(?:\$\s?\d|\b(?:money|funds|cash|savings|checking|bank|account)\b)/i.test(message) ||
     /\b(?:move|transfer|send|deposit|withdraw)\b.{0,60}\b(?:from|to|into|out of)\b.{0,45}\b(?:checking|savings|bank|account)\b/i.test(message);
+}
+
+/** Questions about whether to redirect a covered expense are planning requests. */
+export function isBudgetingAdviceQuestion(message: string): boolean {
+  return /\b(?:is it (?:a )?good idea|should i|would it make sense|is it sensible|what (?:should|could) i do|what do you think)\b/i.test(message);
 }
 
 /** A recurring bill newly covered by an employer is a budgeting moment, not a transfer instruction. */

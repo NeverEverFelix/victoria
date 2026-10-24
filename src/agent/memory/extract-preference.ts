@@ -81,7 +81,8 @@ export function extractConversationalMemory(message: string): ExtractedConversat
   if (interest) return interest;
   if (/\$\s*\d[\d,.]*.*\b(?:rather than|instead of|over)\b.*\$\s*\d[\d,.]*/i.test(message)) return null;
 
-  const preference = /^\s*(?:actually,?\s*)?(?:i prefer|i'd prefer|i would prefer)\s+(?:a\s+|an\s+|the\s+)?(.+?)[.!?]*\s*$/i.exec(message);
+  const evidence = message.split(/[.!?](?:\s|$)/, 1)[0]?.trim() ?? "";
+  const preference = /^\s*(?:actually,?\s*)?(?:i prefer|i'd prefer|i would prefer)\s+(?:a\s+|an\s+|the\s+)?(.+?)[.!?]*\s*$/i.exec(evidence);
   if (preference?.[1]) {
     const subject = preference[1].trim().replace(/[.!?]+$/, "");
     if (subject && !/^(?:not\s|to\s+avoid\s)/i.test(subject)) {
@@ -89,33 +90,33 @@ export function extractConversationalMemory(message: string): ExtractedConversat
         category: "preference",
         key: preferenceKey(subject),
         value: `Prefers ${subject}.`,
-        evidence: message,
+        evidence,
         confidence: 0.95
       };
     }
   }
 
-  const habit = /^\s*(?:on\s+weekdays,?\s*)?i\s+(?:(?:usually|often|typically|routinely|regularly)\s+)?(.+?)[.!?]*\s*$/i.exec(message);
-  if (habit?.[1] && /\b(?:usually|often|typically|routinely|regularly|every day|every weekday|every week|each day|each week|on weekdays)\b/i.test(message)) {
+  const habit = /^\s*(?:on\s+weekdays,?\s*)?i\s+(?:(?:usually|often|typically|routinely|regularly)\s+)?(.+?)[.!?]*\s*$/i.exec(evidence);
+  if (habit?.[1] && /\b(?:usually|often|typically|routinely|regularly|every day|every weekday|every week|each day|each week|on weekdays)\b/i.test(evidence)) {
     const action = habit[1].trim().replace(/[.!?]+$/, "");
     const merchantName = extractNamedMerchantFromHabit(action);
     return {
       category: "habit",
       key: merchantName ? merchantHabitMemoryKey(merchantName) : habitKey(action),
       value: `Regularly ${action}.`,
-      evidence: message,
+      evidence,
       confidence: 0.9
     };
   }
 
-  const goal = /^\s*(?:my goal is (?:to )?|i am saving for |i'm saving for |i want to save for )(.+?)[.!?]*\s*$/i.exec(message);
+  const goal = /^\s*(?:my goal is (?:to )?|i am saving for |i'm saving for |i want to save for )(.+?)[.!?]*\s*$/i.exec(evidence);
   if (goal?.[1]) {
     const target = goal[1].trim().replace(/[.!?]+$/, "");
     return {
       category: "goal",
       key: goalKey(target),
       value: `Wants to save for ${target}.`,
-      evidence: message,
+      evidence,
       confidence: 0.95
     };
   }

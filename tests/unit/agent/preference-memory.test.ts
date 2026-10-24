@@ -7,6 +7,21 @@ import { extractConversationalMemories } from "../../../src/agent/memory/extract
 import { validateMemoryCandidates } from "../../../src/agent/memory/conversational-memory-extractor.js";
 
 describe("explicit savings preference memory", () => {
+  it("keeps an ordinary reply preference in a covered-expense turn without an interest", async () => {
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
+    await agent.respond({
+      userId: "covered_spend_reply_preference",
+      message: "I prefer concise, practical replies. My employer now covers my $35 monthly gym membership."
+    });
+    expect(await memory.listConversationalMemories("covered_spend_reply_preference"))
+      .toEqual(expect.arrayContaining([expect.objectContaining({
+        key: "preference:concise_practical_replies",
+        value: "Prefers concise, practical replies.",
+        evidence: "I prefer concise, practical replies"
+      })]));
+  });
+
   it("extracts a concise first-person interest from a financial message", () => {
     const message = "Hey, I like to play basketball at a gym that costs me $35 a month, but now my company pays for my gym membership. Is it a good idea to move this money elsewhere?";
     expect(extractConversationalMemories(message)).toEqual(expect.arrayContaining([

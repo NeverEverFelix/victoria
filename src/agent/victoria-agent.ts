@@ -45,7 +45,7 @@ import {
 } from "./memory/extract-preference.js";
 import { selectFinancialContextSource } from "./context-source-policy.js";
 import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } from "./transaction-history-provider.js";
-import { employerCoveredRecurringSpend, isExplicitRealMoneyMovementRequest, isRealMoneyMovementRequest } from "./money-movement-intent.js";
+import { employerCoveredRecurringSpend, isBudgetingAdviceQuestion, isExplicitRealMoneyMovementRequest, isRealMoneyMovementRequest } from "./money-movement-intent.js";
 import { isExplicitInterestCorrectionEvidence, isExplicitUserEvidence, validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
 import { isUsableEpisodicSummary, SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY, validateEpisodicSummary, type EpisodicMemorySummarizer } from "./memory/episodic-summary.js";
 import { validatePersonalizedReply, type ConversationalReplyPersonalizer } from "./memory/personalized-reply.js";
@@ -474,7 +474,7 @@ export class VictoriaAgent {
         isExplicitUserEvidence(request.message, embeddedInterestCandidate.evidence)
         ? embeddedInterestCandidate
         : null;
-    const interestDuringCoveredSpend = interestMemory !== null && employerCoveredRecurringSpend(request.message) !== undefined;
+    const interestDuringCoveredSpend = interestMemory != null && employerCoveredRecurringSpend(request.message) !== undefined;
     if (interestDuringCoveredSpend && interestMemory) {
       const existingMemories = await this.dependencies.memory.listConversationalMemories(request.userId);
       const prior = [...existingMemories].reverse().find((item) =>
@@ -1046,7 +1046,10 @@ export class VictoriaAgent {
       ? annualizeMonthlyAmountCents(coveredSpend.amountCents)
       : undefined;
     const responseContext = {
-      ...(annualProjection === undefined ? {} : { validatedAdditionalAmountsCents: [annualProjection] }),
+      ...(annualProjection === undefined ? {} : {
+        validatedAdditionalAmountsCents: [annualProjection],
+        validatedAnnualProjectionCents: annualProjection
+      }),
       ...(interests.length === 0 ? {} : { rememberedInterests: interests }),
       ...(coveredSpend ? getPriorCoveredExpenseAllocation(memory.conversationalMemories ?? []) : {}),
       ...(coveredSpend && classification.type === "avoided_spend"
@@ -2699,7 +2702,9 @@ function isValidRestoredPlanningChoice(decision: AgentDecision): boolean {
 
 function enforceMoneyMovementBoundary(message: string, classification: ClassifiedMessage): ClassifiedMessage {
   const coveredSpend = employerCoveredRecurringSpend(message);
-  if (coveredSpend && !isExplicitRealMoneyMovementRequest(message)) {
+  const explicitTransfer = isExplicitRealMoneyMovementRequest(message);
+  const realMoneyIntent = isRealMoneyMovementRequest(message);
+  if (coveredSpend && !explicitTransfer && (!realMoneyIntent || isBudgetingAdviceQuestion(message))) {
     return {
       type: "avoided_spend",
       confidence: Math.max(classification.confidence, 0.95),
@@ -2708,7 +2713,7 @@ function enforceMoneyMovementBoundary(message: string, classification: Classifie
       needsClarification: false
     };
   }
-  if (!isExplicitRealMoneyMovementRequest(message) && !isRealMoneyMovementRequest(message)) return classification;
+  if (!explicitTransfer && !realMoneyIntent) return classification;
   return {
     type: "real_money_movement_request",
     confidence: 1,

@@ -360,3 +360,5 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Covered-expense amounts and Companion Voice amount mentions reject negatives, malformed comma grouping, and more than two decimal places before any suggestion or confirmation.
 - Safe target-choice fallback wording presents the monthly and annual figures as conditional planning amounts, not as already available savings.
 - A same-message reversal after a direct ledger refusal never counts as approval or a terminal decline; an unrelated follow-up question after the refusal still records a decline.
+- A covered-expense turn may save an unrelated, directly stated ordinary preference without attaching the expense to that memory. A generic move or send command without financial context is not classified as a transfer.
+- Ledger-confirmation normalization preserves a user-stated goal and accepts an explicit “savings ledger” destination without duplicating the question. The annual fallback uses a named, validated twelve-month projection.

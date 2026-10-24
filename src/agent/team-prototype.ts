@@ -9,6 +9,7 @@ export interface FinancialMomentFinding {
   /** Deterministically validated context for a dynamic voice response; never grants action authority. */
   responseContext?: {
     validatedAdditionalAmountsCents?: readonly number[];
+    validatedAnnualProjectionCents?: number;
     rememberedInterests?: readonly string[];
     /** First covered-expense turn asks which allocation target the user prefers. */
     awaitingAllocationTargetChoice?: boolean;
