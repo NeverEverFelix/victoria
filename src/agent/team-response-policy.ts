@@ -125,12 +125,16 @@ function appendSentences(message: string, additions: readonly (string | undefine
 }
 
 function messageMentionsAmount(message: string, expectedAmountCents: number): boolean {
-  const matches = [...message.matchAll(/(?:-\$|\$-?)([\d,]+(?:\.\d+)?)|\b([\d,]+(?:\.\d+)?)\s+(?:dollars?|bucks)\b/gi)];
-  return matches.some(([, currencyAmount, wordsAmount]) => {
-    const amount = currencyAmount ?? wordsAmount;
-    if (!amount || !/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(amount)) return false;
-    return Math.round(Number(amount.replaceAll(",", "")) * 100) === expectedAmountCents;
-  });
+  const mentions = message.match(/(?:-?[$€£]\s?-?\d[\d,]*(?:\.\d+)?|(?<![\w])-?\d[\d,]*(?:\.\d+)?\s+(?:dollars?|bucks)\b)/gi) ?? [];
+  return mentions.some((mention) => parsePositiveVoiceUsdCents(mention) === expectedAmountCents);
+}
+
+function parsePositiveVoiceUsdCents(amount: string): number | null {
+  if (/[€£-]/.test(amount)) return null;
+  const normalized = amount.replace(/[$\s]|\b(?:dollars?|bucks)\b/gi, "");
+  if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(normalized)) return null;
+  const cents = Math.round(Number(normalized.replaceAll(",", "")) * 100);
+  return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
 }
 
 function containsExplicitLedgerConfirmation(message: string, amountCents: number): boolean {
@@ -155,6 +159,10 @@ function inspectVoiceDraft(
   if (claimsUnsupportedAssurance(candidate)) issues.push("unsupported_assurance");
   if (hasUnsupportedMoneyAmount(candidate, finding, assessment)) issues.push("unsupported_amount");
   if (assessment.outcome === "ask" && !candidate.includes("?")) issues.push("missing_question");
+  if (assessment.outcome === "suggest" && finding.responseContext?.awaitingAllocationTargetChoice &&
+      (!candidate.includes("?") || !/\bmonth(?:ly)?\b/i.test(candidate) || !/\b(?:annual|annually|year|yearly)\b/i.test(candidate))) {
+    issues.push("missing_question");
+  }
   if (assessment.outcome === "suggest" && !finding.responseContext?.awaitingAllocationTargetChoice) {
     if (!containsExplicitLedgerConfirmation(candidate, assessment.amountCents)) issues.push("missing_confirmation_request");
   }
@@ -217,7 +225,7 @@ function isShaming(message: string): boolean {
 }
 
 function hasUnsupportedMoneyAmount(message: string, finding: FinancialMomentFinding, assessment: SavingsAssessment): boolean {
-  const mentions = message.match(/(?:[$€£]\s?-?\d[\d,]*(?:\.\d+)?|\b-?\d[\d,]*(?:\.\d+)?\s+(?:dollars?|bucks)\b)/gi) ?? [];
+  const mentions = message.match(/(?:-?[$€£]\s?-?\d[\d,]*(?:\.\d+)?|(?<![\w])-?\d[\d,]*(?:\.\d+)?\s+(?:dollars?|bucks)\b)/gi) ?? [];
   if (!mentions.length) return false;
   const expectedAmount = assessment.outcome === "suggest"
     ? assessment.amountCents
@@ -226,10 +234,8 @@ function hasUnsupportedMoneyAmount(message: string, finding: FinancialMomentFind
     .filter((amount): amount is number => typeof amount === "number" && Number.isSafeInteger(amount) && amount > 0);
   if (!allowedAmounts.length) return true;
   return mentions.some((mention) => {
-    if (/[€£]/.test(mention)) return true;
-    const normalized = mention.replace(/[$,\s]|\b(?:dollars?|bucks)\b/gi, "");
-    const parsedCents = Math.round(Number(normalized) * 100);
-    return !Number.isSafeInteger(parsedCents) || !allowedAmounts.includes(parsedCents);
+    const parsedCents = parsePositiveVoiceUsdCents(mention);
+    return parsedCents === null || !allowedAmounts.includes(parsedCents);
   });
 }
 
@@ -244,6 +250,12 @@ function stripNoMovementDisclosures(message: string): string {
 
 function deterministicResponse(finding: FinancialMomentFinding, assessment: SavingsAssessment): string {
   if (assessment.outcome === "suggest") {
+    if (finding.responseContext?.awaitingAllocationTargetChoice) {
+      const annualCents = finding.responseContext.validatedAdditionalAmountsCents?.[0];
+      if (annualCents !== undefined && Number.isSafeInteger(annualCents) && annualCents > 0) {
+        return `With the expense covered, you have ${formatUsd(assessment.amountCents)} for this month, or ${formatUsd(annualCents)} over a year if coverage continues. Which planning target would you prefer, monthly or annual? No real money has moved.`;
+      }
+    }
     return `Would you like me to record ${formatUsd(assessment.amountCents)} in your Victoria savings ledger? Please confirm before I record it. No real money has moved.`;
   }
   if (assessment.outcome === "ask") return assessment.question;

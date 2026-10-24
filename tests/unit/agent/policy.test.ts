@@ -20,6 +20,7 @@ describe("agent policy", () => {
   it.each([
     "No, don't record it. What would you recommend instead?",
     "No, don't record the $35.",
+    "No, don't record the $1,200.50.",
     "Please do not save this amount."
   ])("recognizes a direct ledger refusal with surrounding conversation: %s", (message) => {
     expect(interpretApprovalResponse(message, 3500)).toBe("explicit_decline");

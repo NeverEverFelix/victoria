@@ -41,7 +41,7 @@ export function interpretApprovalResponse(message: string, expectedAmountCents?:
   // user adds a follow-up question. Keep this narrow so mixed or uncertain
   // instructions cannot be mistaken for consent or a proposal revision.
   const firstClause = normalized.split(/[.!?]/, 1)[0] ?? normalized;
-  if (/^(?:no\s+)?(?:please\s+)?(?:don't|do not)\s+(?:record|log|save|add)\s+(?:it|this(?:\s+amount)?|that(?:\s+amount)?|the\s+\$?\d+(?:\.\d{1,2})?)(?:\b|$)/i.test(firstClause) &&
+  if (/^(?:no\s+)?(?:please\s+)?(?:don't|do not)\s+(?:record|log|save|add)\s+(?:it|this(?:\s+amount)?|that(?:\s+amount)?|the\s+\$?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?)(?:\b|$)/i.test(firstClause) &&
       !/\b(?:instead|but\s+(?:record|log|save|add)|actually\s+(?:record|log|save|add))\b/i.test(firstClause)) {
     return "explicit_decline";
   }

@@ -45,7 +45,7 @@ import {
 } from "./memory/extract-preference.js";
 import { selectFinancialContextSource } from "./context-source-policy.js";
 import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } from "./transaction-history-provider.js";
-import { employerCoveredRecurringSpend, isRealMoneyMovementRequest } from "./money-movement-intent.js";
+import { employerCoveredRecurringSpend, isExplicitRealMoneyMovementRequest, isRealMoneyMovementRequest } from "./money-movement-intent.js";
 import { isExplicitInterestCorrectionEvidence, isExplicitUserEvidence, validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
 import { isUsableEpisodicSummary, SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY, validateEpisodicSummary, type EpisodicMemorySummarizer } from "./memory/episodic-summary.js";
 import { validatePersonalizedReply, type ConversationalReplyPersonalizer } from "./memory/personalized-reply.js";
@@ -78,6 +78,7 @@ export interface VictoriaAgentDependencies {
 interface TeamAdvice {
   assessment: SavingsAssessment;
   message: string;
+  awaitingAllocationTargetChoice?: boolean;
 }
 
 export class VictoriaAgent {
@@ -1121,7 +1122,11 @@ export class VictoriaAgent {
     }
     return {
       classification,
-      teamAdvice: { assessment, message: finalized.message }
+      teamAdvice: {
+        assessment,
+        message: finalized.message,
+        ...(finding.responseContext?.awaitingAllocationTargetChoice ? { awaitingAllocationTargetChoice: true } : {})
+      }
     };
   }
 
@@ -1320,9 +1325,7 @@ export class VictoriaAgent {
       Number.isSafeInteger(coveredSpend.amountCents * 12)
       ? annualizeMonthlyAmountCents(coveredSpend.amountCents)
       : undefined;
-    const decision: AgentDecision = annualProjectionCents !== undefined && teamAdvice &&
-      /\bmonth(?:ly)?\b/i.test(teamAdvice.message) && /\b(?:annual|annually|year|yearly)\b/i.test(teamAdvice.message) &&
-      teamAdvice.message.includes("?")
+    const decision: AgentDecision = annualProjectionCents !== undefined && teamAdvice?.awaitingAllocationTargetChoice
       ? { ...baseDecision, planningChoice: {
           monthlyAmountCents: coveredSpend!.amountCents,
           annualProjectionCents
@@ -2696,7 +2699,7 @@ function isValidRestoredPlanningChoice(decision: AgentDecision): boolean {
 
 function enforceMoneyMovementBoundary(message: string, classification: ClassifiedMessage): ClassifiedMessage {
   const coveredSpend = employerCoveredRecurringSpend(message);
-  if (coveredSpend) {
+  if (coveredSpend && !isExplicitRealMoneyMovementRequest(message)) {
     return {
       type: "avoided_spend",
       confidence: Math.max(classification.confidence, 0.95),
@@ -2705,7 +2708,7 @@ function enforceMoneyMovementBoundary(message: string, classification: Classifie
       needsClarification: false
     };
   }
-  if (!isRealMoneyMovementRequest(message)) return classification;
+  if (!isExplicitRealMoneyMovementRequest(message) && !isRealMoneyMovementRequest(message)) return classification;
   return {
     type: "real_money_movement_request",
     confidence: 1,

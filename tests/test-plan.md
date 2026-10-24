@@ -356,3 +356,5 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Companion Voice drafts that attribute real transfer capability to Victoria, including second-person phrasing, are rejected while user-directed budgeting suggestions remain allowed.
 - Restored covered-expense planning choices require positive safe-integer monthly cents, an exact twelve-month projection, and agreement with the pending mocked-ledger proposal before they can continue toward approval.
 - Evidence for a confirmed covered-expense planning observation is bounded and strips control characters before storage.
+- An employer-covered recurring bill with an explicit request for Victoria to transfer funds remains a real-money refusal; a budgeting question about redirecting the freed amount remains a planning conversation.
+- Covered-expense amounts and Companion Voice amount mentions reject negatives, malformed comma grouping, and more than two decimal places before any suggestion or confirmation.

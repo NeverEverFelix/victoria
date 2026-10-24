@@ -14,6 +14,35 @@ import type { PendingAmountClarificationStore } from "../../../src/agent/pending
 import type { PendingSavingsActionStore } from "../../../src/agent/pending-savings-action-store.js";
 
 describe("VictoriaAgent", () => {
+  it.each([
+    "My company now covers my $35 monthly gym bill. Please transfer $35 from checking to savings.",
+    "My company now covers my $35 monthly gym bill. Please transfer it."
+  ])("refuses a real transfer command even when the employer covers the recurring bill: %s", async (message) => {
+    const tools = new MockVictoriaTools();
+    const response = await createAgent([], tools).respond({
+      userId: "covered_transfer_user",
+      message
+    });
+    expect(response.decision.classification.type).toBe("real_money_movement_request");
+    expect(response.decision.action).toBe("refuse");
+    expect(await tools.listSavingsEntries("covered_transfer_user")).toEqual([]);
+  });
+
+  it("keeps the planning state grounded when Companion Voice omits the target choice", async () => {
+    const base = createMockAgentTeamSpecialists();
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools: new MockVictoriaTools(),
+      specialists: { ...base, companionVoice: { respond: async () => "The gym is covered. What do you think?" } }
+    });
+    const request = { userId: "planning_voice_fallback_user", conversationId: "planning_voice_fallback_chat" };
+    const first = await agent.respond({ ...request, message: "My employer now covers my $35 monthly gym membership." });
+    expect(first.message).toMatch(/monthly or annual/i);
+    expect(first.decision.planningChoice).toMatchObject({ monthlyAmountCents: 3500, annualProjectionCents: 42000 });
+    const annual = await agent.respond({ ...request, message: "annual" });
+    expect(annual.message).toContain("Would you like me to record");
+    expect(annual.message).not.toMatch(/Which planning target/i);
+  });
+
   it.each(["annual", "I'd rather use the yearly one", "use the annual $420", "monthly"]) (
     "continues a covered-expense planning choice without replaying the question: %s",
     async (answer) => {

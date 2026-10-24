@@ -27,4 +27,18 @@ describe("companion response money boundary", () => {
     );
     expect(result.voiceDraftAccepted).toBe(true);
   });
+
+  it.each(["-$27", "$-27", "$27.001", "-27 dollars"]) (
+    "rejects a malformed voice amount even when it resembles the suggested amount: %s", (amount) => {
+      const suggestion: SavingsAssessment = {
+        outcome: "suggest", confidence: 1, amountCents: 2700, source: "user_provided", rationale: "User supplied $27."
+      };
+      const result = finalizeCompanionResponse(
+        `Would you like me to record ${amount} in your Victoria savings ledger? No real money has moved.`,
+        finding, suggestion
+      );
+      expect(result.voiceDraftAccepted).toBe(false);
+      expect(result.validationIssues).toContain("unsupported_amount");
+    }
+  );
 });

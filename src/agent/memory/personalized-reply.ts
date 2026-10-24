@@ -77,7 +77,8 @@ function hasUnsupportedAmount(
   input: PersonalizedReplyInput,
   usedMemories: readonly Pick<ConversationalMemory, "value">[]
 ): boolean {
-  const values = [input.baselineReply, ...(input.conversationContext ?? []), ...usedMemories.map((memory) => memory.value)];
+  const values = [input.baselineReply, ...(input.conversationContext ?? []), ...usedMemories.map((memory) => memory.value)]
+    .filter((value): value is string => typeof value === "string");
   const amounts = message.match(/(?:-?[$€£]\s?-?\d[\d,]*(?:\.\d+)?|(?<![\w])-?\d[\d,]*(?:\.\d+)?\s+(?:dollars?|bucks)\b)/gi) ?? [];
   if (amounts.some((amount) => parsePositiveUsdCents(amount) === null)) return true;
   return amounts.some((amount) =>
