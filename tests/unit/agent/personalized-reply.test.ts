@@ -26,6 +26,9 @@ describe("personalized ordinary replies", () => {
   it.each([
     { message: "I recorded $80 for you. What next?", usedMemoryIds: ["memory_style"] },
     { message: "You're irresponsible with spending.", usedMemoryIds: ["memory_style"] },
+    { message: "Would you like me to record $35 in your savings ledger?", usedMemoryIds: ["memory_style"] },
+    { message: "You could invest it in an index fund. What matters most?", usedMemoryIds: ["memory_style"] },
+    { message: "Try 1) a fund and 2) a treat. Which sounds useful?", usedMemoryIds: ["memory_style"] },
     { message: "Let's keep it practical and start with one small step.", usedMemoryIds: ["memory_style"] },
     { message: "Let's start small.", usedMemoryIds: ["someone_elses_memory"] },
     { message: "", usedMemoryIds: ["memory_style"] }
@@ -48,6 +51,19 @@ describe("personalized ordinary replies", () => {
     const body = JSON.parse(String(request?.body)) as { store?: boolean; input?: string; instructions?: string };
     expect(body.store).toBe(false);
     expect(body.input).toContain("memory_style");
-    expect(body.instructions).toContain("ordinary conversation");
+    expect(body.instructions).toContain("Continue as Victoria in the ongoing conversation");
+  });
+
+  it("returns an overlong draft for conversational revision instead of failing schema parsing", async () => {
+    const answer = {
+      message: `This draft needs shortening. ${"Still useful context. ".repeat(90)}What would help?`,
+      usedMemoryIds: ["memory_style"]
+    };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(answer) }] }]
+    })));
+    const personalizer = new OpenAiPersonalizedReply({ apiKey: "test-only", model: "test-model", fetcher });
+
+    await expect(personalizer.personalize(input)).resolves.toEqual(answer);
   });
 });

@@ -97,6 +97,9 @@ describe("createVictoriaAgent", () => {
       format?: { schema?: { properties?: { response?: { maxLength?: number } } } };
     };
     expect(typeof voiceRequest.instructions).toBe("string");
+    expect(String(voiceRequest.instructions)).toContain("warmly feminine, graceful, gently charming");
+    expect(String(voiceRequest.instructions)).toContain("not a financial form letter");
+    expect(String(requests[1]?.instructions)).toContain("money is a tool for living");
     expect(voiceText.format?.schema?.properties?.response?.maxLength).toBeGreaterThan(0);
     expect(voiceText.format?.schema?.properties?.response?.maxLength).toBeLessThanOrEqual(1000);
     expect(proposed.decision.action).toBe("suggest_savings");
@@ -200,7 +203,7 @@ describe("createVictoriaAgent", () => {
     expect(proposed.decision.action).toBe("suggest_savings");
     expect(proposed.decision.toolCall?.requiresApproval).toBe(true);
     expect(proposed.message).toContain("Would you like me to record $90.00");
-    expect(proposed.message).toContain("Please confirm");
+    expect(proposed.message).toMatch(/would you like|do you want|please confirm/i);
     expect(proposed.message).toContain("No real money has moved");
 
     const recorded = await agent.respond({ userId: "user_123", conversationId: "provider_voice_failure", message: "Yes" });
@@ -258,7 +261,7 @@ describe("createVictoriaAgent", () => {
     expect(proposed.decision.suggestion?.amountCents).toBe(9000);
     expect(proposed.decision.toolCall?.requiresApproval).toBe(true);
     expect(proposed.message).toContain("Would you like me to record");
-    expect(proposed.message).toContain("Please confirm");
+    expect(proposed.message).toMatch(/would you like|do you want|please confirm/i);
     expect(proposed.message).toContain("No real money has moved");
 
     const recorded = await agent.respond({

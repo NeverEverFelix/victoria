@@ -74,11 +74,23 @@ describe("AgentTeamPrototype", () => {
     const specialists = team({ voiceMessage: "That sounds like a thoughtful pause." });
     const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
     expect(turn.message).toContain("Would you like me to record $90.00");
-    expect(turn.message).toContain("Please confirm before I record it.");
+    expect(turn.message).toMatch(/would you like|do you want|please confirm/i);
     expect(turn.message).toContain("No real money has moved");
     expect(specialists.companionVoice.respond).toHaveBeenCalledWith(expect.objectContaining({
       requiredDisclosures: ["Ask for explicit confirmation before recording.", "No real money has moved."]
     }));
+  });
+
+  it("normalizes a provider confirmation to the exact amount and ledger without duplicating the question", async () => {
+    const specialists = team({
+      voiceMessage: "Nice job avoiding that $90 purchase. Would you like me to record $90 in a coffee savings tracker? I won't record anything without your explicit confirmation, and no real money has moved."
+    });
+    const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
+
+    expect(turn.message).toMatch(/Would you like me to record \$90(?:\.00)? in your Victoria savings ledger\?/);
+    expect(turn.message.match(/\?/g)).toHaveLength(1);
+    expect(turn.message).not.toContain("Please confirm before I record it.");
+    expect(turn.message).toMatch(/no real money has moved/i);
   });
 
   it("uses the savings specialist's clarification without asking voice to rewrite it", async () => {
@@ -153,7 +165,7 @@ describe("AgentTeamPrototype", () => {
     const turn = await new AgentTeamPrototype(specialists).respond({ message: "I made coffee at home", memory: estimateMemory });
     expect(turn.message).toContain("estimate");
     expect(turn.message).toContain("$24.00");
-    expect(turn.message).toContain("Please confirm before I record it.");
+    expect(turn.message).toMatch(/would you like|do you want|please confirm/i);
   });
 
   it("rejects a user-provided amount that was not present in the financial finding", async () => {

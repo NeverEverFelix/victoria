@@ -68,6 +68,7 @@ describe("OpenAiFinancialMomentAdapter", () => {
     expect(result.type).toBe("real_money_movement_request");
     const request = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
     expect(request.instructions).toContain("do not classify from a keyword or phrase alone");
+    expect(request.instructions).toContain("saving more is not automatically the right answer");
     expect(request.input).toContain("I almost bought lunch for $37.46, but skipped it.");
     expect(request.input).toContain("Can we move the $37.46 we discussed into savings?");
   });

@@ -6,6 +6,19 @@ import { finalizeCompanionResponse, requiredDisclosures } from "./team-response-
 /** Advisory result from the financial-moment specialist. */
 export interface FinancialMomentFinding {
   classification: ClassifiedMessage;
+  /** Deterministically validated context for a dynamic voice response; never grants action authority. */
+  responseContext?: {
+    validatedAdditionalAmountsCents?: readonly number[];
+    rememberedInterests?: readonly string[];
+    /** First covered-expense turn asks which allocation target the user prefers. */
+    awaitingAllocationTargetChoice?: boolean;
+    /** Prior observed choices may guide this similar decision, but never determine it. */
+    priorCoveredExpenseAllocation?: {
+      lastPlanningHorizon: "monthly" | "annual";
+      observationCount: number;
+      moreOftenChosen?: "monthly" | "annual";
+    };
+  };
 }
 
 /** Savings reasoning can suggest or ask, but has no approval or tool authority. */
@@ -28,6 +41,7 @@ export interface AgentTeamSpecialists {
       finding: FinancialMomentFinding;
       assessment: SavingsAssessment;
       requiredDisclosures: readonly string[];
+      revisionFeedback?: string;
     }): Promise<string>;
   };
 }

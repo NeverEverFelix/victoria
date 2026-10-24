@@ -18,6 +18,19 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria refuses to call `eventuallyMoveMoney()` during the MVP, even when approval is present.
 - A natural-language real-transfer request receives a clear limitation response and does not create a mocked entry or call a transfer tool, including when a savings suggestion is pending; cover sending money to a named goal and withdrawing money from checking.
 - Intent classification uses recent conversational context and does not treat colloquial wording such as "move over" as a transfer based on that phrase alone; ambiguous intent asks for clarification.
+- An employer-covered monthly expense framed as budgeting advice is recognized as a savings moment, responds to the user's priorities and relevant remembered interests, presents monthly and annual-projection planning options, proposes only the current monthly amount for the mocked ledger, and waits for explicit confirmation; direct transfer requests remain blocked.
+- On the first employer-covered expense response, Victoria asks which amount the user wants as an allocation target—the monthly amount or annual projection—without introducing a separate destination choice or asking to record anything; after the user chooses, she acknowledges that target and asks confirmation only for the current month's amount.
+- A user's short answer to Victoria's prior monthly-versus-annual planning question is resolved against that exchange, remains a planning preference rather than a goal allocation unless an allocation action is explicit, and is answered using the recent conversation rather than repeating an unrelated goal question.
+- A period-based follow-up during a covered monthly expense is not treated as a proposal revision without a clear amount or reason; the conversational model can use the validated annual projection while keeping it distinct from the current monthly ledger suggestion.
+- If a user refers to the calculated annual projection during a pending monthly ledger suggestion, Victoria recognizes it as a planning preference, not a replacement ledger amount or approval; the pending monthly suggestion remains approval-gated.
+- When a user chooses the annual horizon, Victoria acknowledges the conditional annual target, explains it accumulates from the monthly amount, and offers only the current monthly amount for a confirmed mocked ledger entry; the projected annual total is never recordable as if already saved.
+- Contextual replies to a financial follow-up preserve the human and emotional context of the prior exchange, use relevant memory without mechanically repeating it, and address the user's choice directly.
+- When a follow-up explicitly selects an annual horizon, the provider reply uses the validated conditional projection and carries forward relevant personal context; an inadequate draft is regenerated rather than replaced with a canned personalized sentence.
+- When the same message clearly states an ordinary interest, Victoria appends it to that user's memory and acknowledges it in the savings response, including when provider memory extraction fails.
+- A monthly/annual answer to a covered-expense planning question is scoped to that conversation and is not extracted as a permanent preference, even if the user says “I prefer to allocate monthly.”
+- Only after explicit ledger confirmation does Victoria store a concise semantic observation of the covered-expense-to-savings behavior, including the chosen horizon; similar future turns may recall it without assuming the user will choose the same horizon.
+- Repeated monthly/annual choices update an append-only observation count and expose a tendency only when one horizon has been chosen more often across at least two observations.
+- Monthly-to-yearly projections use deterministic integer-cents domain math; no model tool call is needed to calculate them.
 
 ## Environment Safety
 
@@ -95,6 +108,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - An explicit user preference shared through one route conversation can shape a later ordinary reply in a different conversation for the same signed user; another user receives no private preference context.
 - A pending savings confirmation is bound to its conversation: a bare “yes” elsewhere does not record it, returning to the original conversation can approve it, and a later route visit can read the recorded weekly total.
 - A user can correct Victoria's remembered merchant-spend statement through the route; the correction is acknowledged as a separate transaction detail, does not record savings, and does not rewrite the rolling merchant estimate.
+- The local terminal chat command starts the server on loopback, issues a short-lived local signed session without displaying the secret or token, keeps turns in one conversation, supports starting a fresh conversation, and shuts down the child server on exit. Default mode requires a real key and non-mock model and enables provider-backed financial moment, savings reasoning, companion voice, memory extraction, and personalized replies; explicit `--mock` disables provider calls while mock-ledger behavior remains enforced in both modes.
 
 - Victoria remembers recurring merchants.
 - Victoria updates a habit after repeated similar decisions.
@@ -330,3 +344,11 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Conversation lock contention must stop with a clear timeout instead of waiting indefinitely; clarification expiry is calculated from the database clock.
 - Supabase turn and Plaid consent tables must have RLS enabled, no anon/authenticated SELECT grants, and server-role access only.
 - A caller-provided deterministic ID factory must not produce duplicate proposal, suggestion, or savings-entry IDs within one agent/tool instance.
+
+# Covered recurring expense planning choices
+
+- A monthly or annual answer to a pending planning-target question advances that same proposal without asking the target question again or creating a ledger entry. The annual amount is conditional planning context; only the current monthly amount can be recorded after a separate explicit confirmation.
+- A bare approval to the planning-target question does not authorize a ledger entry. Ask the user to choose a target first.
+- A selected target survives restoration of the original append-only pending proposal in another server worker. An ambiguous ledger reply stays pending; a later explicit approval records only the current monthly amount.
+- A direct refusal of a pending ledger entry remains a decline when followed by a separate question. The declined proposal is recorded as terminal, no entry is made, and Victoria answers the question without reopening the proposal.
+- Ordinary conversational wording cannot offer a new ledger recording or recommend an investment product; rejected drafts receive at most one revision and otherwise fall back safely.

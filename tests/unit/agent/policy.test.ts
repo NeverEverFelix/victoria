@@ -17,6 +17,14 @@ describe("agent policy", () => {
     }
   );
 
+  it.each([
+    "No, don't record it. What would you recommend instead?",
+    "No, don't record the $35.",
+    "Please do not save this amount."
+  ])("recognizes a direct ledger refusal with surrounding conversation: %s", (message) => {
+    expect(interpretApprovalResponse(message, 3500)).toBe("explicit_decline");
+  });
+
   it("accepts an explicit amount-bound ledger approval only for the pending amount", () => {
     expect(interpretApprovalResponse("Yes, record that $20 in my Victoria ledger.", 2_000)).toBe("explicit_approval");
     expect(interpretApprovalResponse("Yes, record that $25 in my Victoria ledger.", 2_000)).toBe("not_approval");

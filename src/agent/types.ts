@@ -81,6 +81,12 @@ export interface ClassifiedMessage {
 export interface AgentDecision {
   action: AgentActionType;
   classification: ClassifiedMessage;
+  /** Conversation-scoped planning choice for a covered recurring expense. */
+  planningChoice?: {
+    monthlyAmountCents: number;
+    annualProjectionCents: number;
+    selectedHorizon?: "monthly" | "annual";
+  };
   savingsEvent?: SavingsEvent;
   proposal?: SavingsProposal;
   proposalTransitions?: readonly SavingsProposalTransition[];

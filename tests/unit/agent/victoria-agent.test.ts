@@ -14,6 +14,175 @@ import type { PendingAmountClarificationStore } from "../../../src/agent/pending
 import type { PendingSavingsActionStore } from "../../../src/agent/pending-savings-action-store.js";
 
 describe("VictoriaAgent", () => {
+  it.each(["annual", "I'd rather use the yearly one", "use the annual $420", "monthly"]) (
+    "continues a covered-expense planning choice without replaying the question: %s",
+    async (answer) => {
+      const tools = new MockVictoriaTools();
+      const base = createMockAgentTeamSpecialists();
+      const classify = vi.fn(base.financialMoment.analyze);
+      const voice = vi.fn(async () =>
+        "With work covering the gym, you have $35 each month, or $420 over a year if coverage continues. Which planning target would you prefer, monthly or annual?");
+      const agent = new VictoriaAgent({
+        llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+        specialists: { ...base, financialMoment: { analyze: classify }, companionVoice: { respond: voice } }
+      });
+      const request = { userId: "planning_user", conversationId: "planning_chat" };
+      await agent.respond({ ...request, message: "My employer now covers my $35 monthly gym membership." });
+      const callsAfterFirstTurn = classify.mock.calls.length;
+      const answerResponse = await agent.respond({ ...request, message: answer });
+
+      expect(classify).toHaveBeenCalledTimes(callsAfterFirstTurn);
+      expect(voice).toHaveBeenCalledTimes(1);
+      expect(answerResponse.message).toMatch(/Would you like me to record/);
+      expect(answerResponse.message).not.toMatch(/which planning target/i);
+      expect(answerResponse.message).toContain("$35.00");
+      expect(answerResponse.message).toContain("No real money has moved");
+      if (/annual|yearly/i.test(answer)) expect(answerResponse.message).toContain("$420.00");
+      expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+      const confirmation = await agent.respond({ ...request, message: "yes" });
+      expect(confirmation.decision.action).toBe("create_ledger_entry");
+      expect((await tools.listSavingsEntries(request.userId))[0]?.amountCents).toBe(3500);
+    }
+  );
+
+  it("does not treat yes to a planning-target question as ledger approval", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      specialists: {
+        ...base,
+        companionVoice: { respond: async () =>
+          "You have $35 monthly or $420 annually if coverage continues. Which allocation target would you prefer?" }
+      }
+    });
+    const request = { userId: "approval_guard_user", conversationId: "planning_chat" };
+    await agent.respond({ ...request, message: "My employer covers my $35 monthly gym membership now." });
+    const response = await agent.respond({ ...request, message: "yes" });
+
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.message).toMatch(/monthly or annual/i);
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+  });
+
+  it("recovers a chosen horizon from conversation after restoring an immutable pending proposal", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    let stored: Awaited<ReturnType<PendingSavingsActionStore["getPending"]>> = null;
+    const pendingSavingsActions: PendingSavingsActionStore = {
+      async getPending() { return stored; },
+      async commit({ pendingAction, responseDecision }) {
+        if (!stored && pendingAction) stored = pendingAction;
+        if (responseDecision.proposalTransitions?.some((transition) => transition.to === "recorded")) stored = null;
+      }
+    };
+    const createAgent = () => new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools, pendingSavingsActions,
+      specialists: { ...base, companionVoice: { respond: async () =>
+        "The gym is covered at $35 monthly or $420 annually if coverage continues. Which planning target do you prefer?" } }
+    });
+    const request = { userId: "restored_choice_user", conversationId: "restored_choice_chat" };
+    await createAgent().respond({ ...request, message: "I like basketball at a gym that costs $35 a month, but my company now covers it." });
+    const chosen = await createAgent().respond({ ...request, message: "yearly" });
+    expect(chosen.message).toContain("Would you like me to record this month's $35.00");
+    const ambiguous = await createAgent().respond({ ...request, message: "sure I guess" });
+    expect(ambiguous.decision.action).toBe("ask_follow_up");
+    const approved = await createAgent().respond({ ...request, message: "yes" });
+    expect(approved.decision.action).toBe("create_ledger_entry");
+    expect((await tools.listSavingsEntries(request.userId))[0]?.amountCents).toBe(3500);
+  });
+
+  it("declines a pending entry and continues with the user's separate question", async () => {
+    const tools = new MockVictoriaTools();
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools });
+    const request = { userId: "decline_question_user", conversationId: "decline_question_chat" };
+    await agent.respond({ ...request, message: "I almost bought a $35 jacket but decided to wait." });
+
+    const response = await agent.respond({
+      ...request,
+      message: "No, don't record it. What should I think about instead?"
+    });
+
+    expect(["reflect", "ask_follow_up"]).toContain(response.decision.action);
+    expect(response.decision.proposal?.status).toBe("declined");
+    expect(response.decision.proposalTransitions?.at(-1)?.to).toBe("declined");
+    expect(response.message).toMatch(/^No problem\. I won't record it\. /);
+    expect(response.message.length).toBeGreaterThan("No problem. I won't record it.".length);
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+  });
+
+  it("answers a separate question after declining without reopening the ledger proposal", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      specialists: { ...base, companionVoice: { respond: async () =>
+        "The gym is covered at $35 monthly or $420 yearly if coverage continues. Which planning target do you prefer, monthly or annual?" } },
+      personalizedReplyPersonalizer: {
+        async personalize(input) {
+          return {
+            message: "You could keep the $35 monthly as breathing room or set it aside for a priority that matters to you. Which feels more useful right now?",
+            usedMemoryIds: input.memories.slice(0, 1).map((item) => item.id)
+          };
+        }
+      }
+    });
+    const request = { userId: "decline_advice_user", conversationId: "decline_advice_chat" };
+    await agent.respond({ ...request, message: "I like basketball, and work now covers my $35 monthly gym membership." });
+    await agent.respond({ ...request, message: "annual" });
+    const response = await agent.respond({
+      ...request, message: "No, don't record it. What would you recommend I do with the money instead?"
+    });
+
+    expect(response.message).toContain("No problem. I won't record it.");
+    expect(response.message).toContain("You could keep the $35 monthly as breathing room");
+    expect(response.decision.proposal?.status).toBe("declined");
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+  });
+
+  it("treats an employer-covered monthly bill as a savings suggestion and distinguishes its annual projection", async () => {
+    const tools = new MockVictoriaTools();
+    const memory = new MockMemoryProvider();
+    const baseSpecialists = createMockAgentTeamSpecialists();
+    const companionVoice = vi.fn(async ({ finding }: Parameters<typeof baseSpecialists.companionVoice.respond>[0]) => {
+      const interest = finding.responseContext?.rememberedInterests?.[0];
+      const annual = finding.responseContext?.validatedAdditionalAmountsCents?.[0];
+      return `I'm glad you shared that you enjoy ${interest}; I'll keep it in mind. That leaves $35.00 each month, or $${((annual ?? 0) / 100).toFixed(2)} over the year if coverage continues. Which planning horizon would you prefer?`;
+    });
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools,
+      specialists: { ...baseSpecialists, companionVoice: { respond: companionVoice } }
+    });
+    const response = await agent.respond({
+      userId: "user_123",
+      conversationId: "employer_covers_gym",
+      message: "Hey, I like to play basketball at this gym that costs me $35 a month, but now my company pays for my gym membership. Is it a good idea to move this money elsewhere?"
+    });
+
+    expect(response.decision.classification.type).toBe("avoided_spend");
+    expect(response.decision.action).toBe("suggest_savings");
+    expect(response.decision.suggestion?.amountCents).toBe(3500);
+    expect(response.message).toContain("$420.00 over the year if coverage continues");
+    expect(response.message).toContain("$35.00");
+    expect(response.message).toContain("I'm glad you shared that you enjoy basketball");
+    expect(response.message).toMatch(/planning horizon|allocation target/i);
+    expect(response.message).not.toMatch(/record .*ledger/i);
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+    expect(await memory.listConversationalMemories("user_123")).toEqual(expect.arrayContaining([
+      expect.objectContaining({ category: "other", key: "interest:basketball", value: "Enjoys basketball." })
+    ]));
+    expect(companionVoice).toHaveBeenCalledWith(expect.objectContaining({
+      finding: expect.objectContaining({
+        responseContext: {
+          validatedAdditionalAmountsCents: [42000], rememberedInterests: ["basketball"],
+          awaitingAllocationTargetChoice: true
+        }
+      })
+    }));
+  });
+
   afterEach(() => vi.useRealTimers());
 
   it.each([
@@ -1704,6 +1873,30 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsEntries("user_123")).toEqual([]);
   });
 
+  it("resolves a bare amount against the pending amount question before model intent classification", async () => {
+    const tools = new MockVictoriaTools();
+    const memory = new MockMemoryProvider();
+    const llm = new MockLlmAdapter();
+    const baseLlm = new MockLlmAdapter();
+    const classify = vi.spyOn(llm, "classifyMessage");
+    const baseClassify = baseLlm.classifyMessage.bind(baseLlm);
+    classify.mockImplementation(async (input) => input.userMessage.trim() === "$35"
+      ? { type: "entry_correction", confidence: 0.99, amountCents: 3500, summary: input.userMessage, needsClarification: false }
+      : baseClassify(input));
+    const agent = new VictoriaAgent({ llm, memory, tools });
+    const context = { userId: "user_123", conversationId: "amount_reply_context" };
+
+    const question = await agent.respond({ ...context, message: "I cooked instead of ordering takeout." });
+    expect(question.decision.action).toBe("ask_follow_up");
+
+    const answer = await agent.respond({ ...context, message: "$35" });
+    expect(answer.decision.classification.type).toBe("avoided_spend");
+    expect(answer.decision.action).toBe("suggest_savings");
+    expect(answer.decision.suggestion?.amountCents).toBe(3500);
+    expect(answer.decision.toolCall?.requiresApproval).toBe(true);
+    expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
   it("responds without shame or savings action for regretful spending", async () => {
     const tools = new MockVictoriaTools();
     const agent = createAgent([], tools);
@@ -1804,7 +1997,7 @@ describe("VictoriaAgent", () => {
     const approval = await agent.respond({ ...context, message: "Yes" });
     expect(approval.decision.action).toBe("create_ledger_entry");
     expect(await tools.listSavingsEntries("user_123")).toMatchObject([{ amountCents: 1800 }]);
-    expect(specialists.financialMoment.analyze).toHaveBeenCalledTimes(2);
+    expect(specialists.financialMoment.analyze).toHaveBeenCalledTimes(1);
     expect(specialists.savingsReasoning.assess).toHaveBeenCalledTimes(1);
     expect(specialists.companionVoice.respond).not.toHaveBeenCalled();
   });

@@ -70,6 +70,9 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
           console.warn("Victoria conversational memory extraction failed; continuing without provider-derived memories.", { errorName });
         }
       } : {}),
+      onCompanionVoiceValidationFailure: (issues) => {
+        console.warn("Victoria companion voice draft remained invalid after revision; using guarded fallback.", { issues });
+      },
       ...(episodicSummariesEnabled ? {
         episodicMemorySummarizer: new OpenAiEpisodicMemorySummarizer({
           apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})

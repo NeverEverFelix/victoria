@@ -55,9 +55,24 @@ export function createVictoriaChatHandler(dependencies: VictoriaChatHandlerDepen
           classification: response.decision.classification
         }
       });
-    } catch {
+    } catch (error) {
+      console.error("Victoria chat turn failed", safeErrorDiagnostic(error));
       return respond(503, { error: "chat_unavailable" });
     }
+  };
+}
+
+function safeErrorDiagnostic(error: unknown): Readonly<Record<string, unknown>> {
+  if (!(error instanceof Error)) return { errorName: "non_error_throwable" };
+  const code = "code" in error && typeof error.code === "string"
+    ? error.code.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80)
+    : undefined;
+  const stackFrames = error.stack?.split("\n").slice(1, 6).map((frame) => frame.trim());
+  return {
+    errorName: error.name,
+    ...(error instanceof ReferenceError ? { referenceError: error.message.slice(0, 160) } : {}),
+    ...(code ? { errorCode: code } : {}),
+    ...(stackFrames?.length ? { stackFrames } : {})
   };
 }
 

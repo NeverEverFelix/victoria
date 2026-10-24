@@ -1,4 +1,6 @@
 import { MockLlmAdapter } from "../../agent/llm/mock-llm.js";
+import { OpenAiFinancialMomentAdapter } from "../../agent/llm/openai-financial-moment.js";
+import { createOpenAiAgentTeamSpecialists } from "../../agent/team/openai-specialists.js";
 import { MockMemoryProvider } from "../../agent/memory/mock-memory.js";
 import { MockVictoriaTools } from "../../agent/tools/mock-tools.js";
 import { VictoriaAgent } from "../../agent/victoria-agent.js";
@@ -44,8 +46,13 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
   const secret = env.AUTH_SECRET?.trim();
   if (!secret || Buffer.byteLength(secret, "utf8") < 32 || /(?:replace|example|placeholder|changeme)/i.test(secret)) return null;
   const openAiKey = env.OPENAI_API_KEY?.trim();
-  const embeddingsEnabled = Boolean(openAiKey) &&
+  const hasRealOpenAiKey = Boolean(openAiKey) &&
     !/(?:local-openai|replace|example|placeholder|changeme)/i.test(openAiKey ?? "");
+  const embeddingsEnabled = hasRealOpenAiKey;
+  const providerAgentTeamEnabled = env.OPENAI_AGENT_TEAM_ENABLED === "true" &&
+    hasRealOpenAiKey && Boolean(env.OPENAI_MODEL?.trim()) && env.OPENAI_MODEL !== "mock";
+  const providerFinancialMomentEnabled = !providerAgentTeamEnabled && env.OPENAI_FINANCIAL_MOMENT_ENABLED === "true" &&
+    hasRealOpenAiKey && Boolean(env.OPENAI_MODEL?.trim()) && env.OPENAI_MODEL !== "mock";
   const persistentMemoryEnabled = env.VICTORIA_MEMORY_MODE === "persistent";
   if (env.VICTORIA_MEMORY_MODE !== undefined && env.VICTORIA_MEMORY_MODE !== "mock" && !persistentMemoryEnabled) return null;
   let persistentMemory: MemoryOrchestrator | undefined;
@@ -105,17 +112,24 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
     .update("\0").update(env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small")
     .update("\0").update(memoryExtractorEnabled ? openAiKey! : "mock")
     .update("\0").update(env.OPENAI_MODEL ?? "mock")
+    .update("\0").update(providerAgentTeamEnabled ? "agent-team-on" : "agent-team-off")
+    .update("\0").update(providerFinancialMomentEnabled ? "financial-moment-on" : "financial-moment-off")
     .update("\0").update(personalizedRepliesEnabled ? "personalized-replies-on" : "personalized-replies-off")
     .update("\0").update(episodicSummariesEnabled ? "episodes-on" : "episodes-off").digest("hex");
   if (cachedRuntime?.cacheKey === cacheKey) return cachedRuntime.runtime;
   const transactionHistory = new MockProfileTransactionHistoryProvider();
   const agent = new VictoriaAgent({
-    llm: new MockLlmAdapter(),
+    llm: providerFinancialMomentEnabled
+      ? new OpenAiFinancialMomentAdapter({ apiKey: openAiKey!, model: env.OPENAI_MODEL! })
+      : new MockLlmAdapter(),
     memory: persistentMemory ?? new MockMemoryProvider(),
     tools: persistentSavingsTools ?? new MockVictoriaTools(),
     ...(pendingAmountClarificationStore ? { pendingAmountClarifications: pendingAmountClarificationStore } : {}),
     ...(pendingSavingsActionStore ? { pendingSavingsActions: pendingSavingsActionStore, idFactory: randomUUID } : {}),
     ...(pendingGoalAllocationActionStore ? { pendingGoalAllocationActions: pendingGoalAllocationActionStore } : {}),
+    ...(providerAgentTeamEnabled ? {
+      specialists: createOpenAiAgentTeamSpecialists({ apiKey: openAiKey!, model: env.OPENAI_MODEL! })
+    } : {}),
     transactionHistory,
     ...(memoryExtractorEnabled ? {
       conversationalMemoryExtractor: new OpenAiConversationalMemoryExtractor({
@@ -127,6 +141,9 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
         console.warn("Victoria conversational memory extraction failed; continuing without provider-derived memories.", { errorName });
       }
     } : {}),
+    onCompanionVoiceValidationFailure: (issues) => {
+      console.warn("Victoria companion voice draft remained invalid after revision; using guarded fallback.", { issues });
+    },
     ...(personalizedRepliesEnabled ? {
       personalizedReplyPersonalizer: new OpenAiPersonalizedReply({ apiKey: openAiKey!, model: env.OPENAI_MODEL! })
     } : {}),

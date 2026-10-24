@@ -18,6 +18,7 @@ import type { VictoriaTools } from "../agent/tools/contracts.js";
 import type { PendingAmountClarificationStore } from "../agent/pending-amount-clarification-store.js";
 import type { PendingSavingsActionStore } from "../agent/pending-savings-action-store.js";
 import type { PendingGoalAllocationActionStore } from "../agent/pending-goal-allocation-store.js";
+import type { VoiceDraftIssue } from "../agent/team-response-policy.js";
 
 export interface CreateVictoriaAgentOptions {
   env: VictoriaEnv;
@@ -28,6 +29,7 @@ export interface CreateVictoriaAgentOptions {
   episodicMemorySummarizer?: EpisodicMemorySummarizer;
   tools?: VictoriaTools;
   providerUsageReporter?: ProviderUsageReporter;
+  onCompanionVoiceValidationFailure?: (issues: readonly VoiceDraftIssue[]) => void;
   pendingAmountClarifications?: PendingAmountClarificationStore;
   pendingSavingsActions?: PendingSavingsActionStore;
   pendingGoalAllocationActions?: PendingGoalAllocationActionStore;
@@ -69,6 +71,9 @@ export function createVictoriaAgent(options: CreateVictoriaAgentOptions): Victor
     ...(options.conversationalMemoryExtractor ? { conversationalMemoryExtractor: options.conversationalMemoryExtractor } : {}),
     ...(options.episodicMemorySummarizer ? { episodicMemorySummarizer: options.episodicMemorySummarizer } : {}),
     specialists,
+    ...(options.onCompanionVoiceValidationFailure
+      ? { onCompanionVoiceValidationFailure: options.onCompanionVoiceValidationFailure }
+      : {}),
     ...(options.pendingAmountClarifications ? { pendingAmountClarifications: options.pendingAmountClarifications } : {}),
     ...(options.pendingSavingsActions ? { pendingSavingsActions: options.pendingSavingsActions } : {}),
     ...(options.pendingGoalAllocationActions ? { pendingGoalAllocationActions: options.pendingGoalAllocationActions } : {}),

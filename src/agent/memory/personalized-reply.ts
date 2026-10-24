@@ -4,6 +4,10 @@ export interface PersonalizedReplyInput {
   readonly userMessage: string;
   readonly baselineReply: string;
   readonly memories: readonly Pick<ConversationalMemory, "id" | "category" | "key" | "value">[];
+  readonly conversationContext?: readonly string[];
+  readonly validatedMonthlyAmountCents?: number;
+  readonly validatedAnnualProjectionCents?: number;
+  readonly revisionFeedback?: string;
 }
 
 export interface ConversationalReplyPersonalizer {
@@ -22,7 +26,7 @@ export function validatePersonalizedReply(
 ): ValidatedPersonalizedReply | null {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
   const result = candidate as { message?: unknown; usedMemoryIds?: unknown };
-  if (typeof result.message !== "string" || !result.message.trim() || result.message.trim().length > 900 ||
+  if (typeof result.message !== "string" || !result.message.trim() || result.message.trim().length > 1500 ||
       !Array.isArray(result.usedMemoryIds) || result.usedMemoryIds.length < 1 || result.usedMemoryIds.length > 3 ||
       !result.usedMemoryIds.every((id) => typeof id === "string")) return null;
   const available = new Map(input.memories.map((memory) => [memory.id, memory]));
@@ -30,10 +34,42 @@ export function validatePersonalizedReply(
   if (usedIds.length !== result.usedMemoryIds.length || usedIds.some((id) => !available.has(id))) return null;
 
   const message = result.message.trim();
+  const annualProjectionCents = input.validatedAnnualProjectionCents;
+  const projectionMentioned = annualProjectionCents === undefined ||
+    !/\b(?:annual|year|yearly|annually)\b/i.test(input.userMessage) ||
+    (message.match(/(?:\$\s?-?\d[\d,]*(?:\.\d+)?|\b-?\d[\d,]*(?:\.\d+)?\s+(?:dollars?|bucks)\b)/gi) ?? [])
+      .some((amount) => containsEquivalentCents(annualProjectionCents, amount));
   if ((input.baselineReply.includes("?") && !message.includes("?")) || isShaming(message) ||
-      claimsActionCompleted(message) || claimsMoneyMoved(message) ||
+      claimsActionCompleted(message) || claimsMoneyMoved(message) || !projectionMentioned ||
+      offersAnnualProjectionForRecording(message, input) || offersLedgerRecording(message) ||
+      offersSpecificInvestmentAdvice(message) || /(?:^|\s)1[).]\s+.*(?:^|\s)2[).]\s+/s.test(message) ||
       hasUnsupportedAmount(message, input, usedIds.map((id) => available.get(id)!))) return null;
   return Object.freeze({ message, usedMemoryIds: Object.freeze(usedIds) });
+}
+
+function offersLedgerRecording(message: string): boolean {
+  return message.split("?").some((clause) =>
+    /\b(?:would you like|do you want|want me to|should I|can I|may I|shall I)\b/i.test(clause) &&
+    /\b(?:record|log|add|save)\b/i.test(clause) &&
+    /\b(?:ledger|savings|entry|amount)\b/i.test(clause));
+}
+
+function offersSpecificInvestmentAdvice(message: string): boolean {
+  return /\b(?:invest(?:ing)?\s+(?:it|this|that|the\s+money)|index fund|etf|stocks?|bonds?|crypto|tfsa|ira|401\s?\(?k\)?)\b/i.test(message);
+}
+
+function offersAnnualProjectionForRecording(message: string, input: PersonalizedReplyInput): boolean {
+  const annualCents = input.validatedAnnualProjectionCents;
+  const monthlyCents = input.validatedMonthlyAmountCents;
+  if (!Number.isSafeInteger(annualCents) || !Number.isSafeInteger(monthlyCents) || annualCents === monthlyCents) return false;
+  const clauses = message.split(/[.!?;\n]+/);
+  return clauses.some((clause) => {
+    if (!/\b(?:record|save|log|enter|add|deposit|transfer)\b/i.test(clause) ||
+        !/\b(?:ledger|account|bank|transfer|deposit)\b/i.test(clause)) return false;
+    if (/\b(?:annual|yearly|annually|per year)\b/i.test(clause)) return true;
+    const amounts = clause.match(/(?:\$\s?-?\d[\d,]*(?:\.\d+)?|\b-?\d[\d,]*(?:\.\d+)?\s+(?:dollars?|bucks)\b)/gi) ?? [];
+    return amounts.some((amount) => containsEquivalentCents(annualCents, amount));
+  });
 }
 
 function hasUnsupportedAmount(
@@ -41,9 +77,17 @@ function hasUnsupportedAmount(
   input: PersonalizedReplyInput,
   usedMemories: readonly Pick<ConversationalMemory, "value">[]
 ): boolean {
-  const values = [input.baselineReply, ...usedMemories.map((memory) => memory.value)];
+  const values = [input.baselineReply, ...(input.conversationContext ?? []), ...usedMemories.map((memory) => memory.value)];
   const amounts = message.match(/(?:[$€£]\s?-?\d[\d,]*(?:\.\d+)?|\b-?\d[\d,]*(?:\.\d+)?\s+(?:dollars?|bucks)\b)/gi) ?? [];
-  return amounts.some((amount) => !values.some((value) => containsEquivalentAmount(value, amount)));
+  return amounts.some((amount) =>
+    !values.some((value) => containsEquivalentAmount(value, amount)) &&
+    !containsEquivalentCents(input.validatedAnnualProjectionCents, amount));
+}
+
+function containsEquivalentCents(expectedCents: number | undefined, amount: string): boolean {
+  if (!Number.isSafeInteger(expectedCents) || (expectedCents ?? 0) <= 0 || /[€£]/.test(amount)) return false;
+  const normalized = amount.replace(/[$,\s]|\b(?:dollars?|bucks)\b/gi, "");
+  return Math.round(Number(normalized) * 100) === expectedCents;
 }
 
 function containsEquivalentAmount(text: string, amount: string): boolean {

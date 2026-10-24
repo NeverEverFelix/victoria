@@ -11,3 +11,15 @@ export function isRealMoneyMovementRequest(message: string): boolean {
     /\b(?:bank|account)\s+transfer\b/.test(text)
   );
 }
+
+/** A recurring bill newly covered by an employer is a budgeting moment, not a transfer instruction. */
+export function employerCoveredRecurringSpend(message: string): { amountCents: number; cadence: "month" | "year" } | undefined {
+  if (!/\b(?:company|employer|work)\b.{0,100}\b(?:pay(?:s|ing)?|cover(?:s|ing)?|reimburse(?:s|d|ing)?)\b|\b(?:pay(?:s|ing)?|cover(?:s|ing)?|reimburse(?:s|d|ing)?)\b.{0,100}\b(?:company|employer|work)\b/i.test(message)) return;
+  const cadence = /\b(?:per|a|each|every)\s+month|\bmonthly\b/i.test(message) ? "month"
+    : /\b(?:per|a|each|every)\s+year|\byearly\b|\bannually\b/i.test(message) ? "year" : undefined;
+  if (!cadence || !/\b(?:now|anymore|instead|covered|covering|pays|paid)\b/i.test(message)) return;
+  const amounts = [...message.matchAll(/(?:-\$|\$-?)([\d,]+(?:\.\d+)?)/g)];
+  if (amounts.length !== 1 || !amounts[0]?.[1]) return;
+  const amountCents = Math.round(Number(amounts[0][1].replaceAll(",", "")) * 100);
+  return Number.isSafeInteger(amountCents) && amountCents > 0 ? { amountCents, cadence } : undefined;
+}

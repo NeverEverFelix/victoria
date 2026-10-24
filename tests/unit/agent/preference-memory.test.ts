@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
+import { createMockAgentTeamSpecialists, MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
 import { buildTransactionFinancialProfile } from "../../../src/domain/financial-profile.js";
 import { MockProfileTransactionHistoryProvider } from "../../../src/app/financial-profile/mock-profile-transaction-history-provider.js";
 import { MockTransactionHistoryProvider } from "../../fixtures/mock-transaction-history-provider.js";
@@ -7,6 +7,13 @@ import { extractConversationalMemories } from "../../../src/agent/memory/extract
 import { validateMemoryCandidates } from "../../../src/agent/memory/conversational-memory-extractor.js";
 
 describe("explicit savings preference memory", () => {
+  it("extracts a concise first-person interest from a financial message", () => {
+    const message = "Hey, I like to play basketball at a gym that costs me $35 a month, but now my company pays for my gym membership. Is it a good idea to move this money elsewhere?";
+    expect(extractConversationalMemories(message)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "interest:basketball", value: "Enjoys basketball.", evidence: "I like to play basketball" })
+    ]));
+  });
+
   it("keeps the savings amount preference when the same turn also mentions activity spend", async () => {
     const memory = new MockMemoryProvider();
     const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
@@ -214,6 +221,90 @@ describe("explicit savings preference memory", () => {
     });
     expect(recorded.decision.action).toBe("create_ledger_entry");
     expect(await tools.listSavingsEntries("user_pref_pending")).toHaveLength(1);
+  });
+
+  it("keeps a monthly allocation choice scoped to the covered expense and remembers the confirmed behavior", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const specialists = createMockAgentTeamSpecialists();
+    const voiceContexts: unknown[] = [];
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools,
+      specialists: {
+        ...specialists,
+        companionVoice: { respond: async ({ finding }) => {
+          voiceContexts.push(finding.responseContext);
+          return "Which allocation target would you prefer: the monthly amount or the annual projection?";
+        } }
+      }
+    });
+    const userId = "user_scoped_allocation_choice";
+    const conversationId = "covered_expense_monthly_choice";
+
+    const firstTurn = await agent.respond({
+      userId, conversationId,
+      message: "I like basketball at a gym that costs $35 a month, but my company now covers it. Is it sensible to put that money toward savings?"
+    });
+    expect(firstTurn.decision.action).toBe("suggest_savings");
+    await memory.setConversationContext(userId, conversationId, [
+      "I like basketball at a gym that costs $35 a month, but my company now covers it. Is it sensible to put that money toward savings?",
+      "Victoria: Which planning horizon feels right for this expense, the $35 monthly amount or the $420 yearly projection?"
+    ]);
+
+    const choice = await agent.respond({
+      userId, conversationId,
+      message: "I'd rather go with the monthly one."
+    });
+    expect(choice.decision.action).not.toBe("create_ledger_entry");
+    expect(choice.message).not.toMatch(/i'll remember|prefers to allocate/i);
+    expect(await tools.listSavingsEntries(userId)).toEqual([]);
+    const memoriesAfterChoice = await memory.listConversationalMemories(userId);
+    expect(memoriesAfterChoice.filter((item) => item.category === "preference")).toEqual([]);
+    expect(memoriesAfterChoice.filter((item) => item.key.startsWith("observed_behavior:"))).toEqual([]);
+
+    const confirmed = await agent.respond({ userId, conversationId, message: "Yes" });
+    expect(confirmed.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries(userId)).toHaveLength(1);
+    expect(await memory.listConversationalMemories(userId)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        category: "financial_pattern",
+        key: "observed_behavior:covered_recurring_expense_to_savings",
+        value: expect.stringMatching(/covered recurring expense.*savings/i),
+        sourceType: "system_inference",
+        sourceMetadata: expect.objectContaining({
+          memoryKind: "observed_behavior", observationCount: 1, lastPlanningHorizon: "monthly",
+          planningHorizonCounts: { monthly: 1, annual: 0 }
+        })
+      })
+    ]));
+
+    const secondExpense = await agent.respond({
+      userId, conversationId: "different_covered_expense",
+      message: "My employer now covers a $22 monthly streaming service, so I'd like to direct that toward savings."
+    });
+    expect(voiceContexts.at(-1)).toMatchObject({
+      priorCoveredExpenseAllocation: { lastPlanningHorizon: "monthly", observationCount: 1 }
+    });
+    expect(secondExpense.decision.action).toBe("suggest_savings");
+    await memory.setConversationContext(userId, "different_covered_expense", [
+      "My employer now covers a $22 monthly streaming service, so I'd like to direct that toward savings.",
+      "Victoria: Which allocation target would you prefer: the $22 monthly amount or the $264 annual projection?"
+    ]);
+    await agent.respond({ userId, conversationId: "different_covered_expense", message: "monthly" });
+    expect(await tools.listSavingsEntries(userId)).toHaveLength(1);
+    await agent.respond({ userId, conversationId: "different_covered_expense", message: "Yes" });
+    expect(await tools.listSavingsEntries(userId)).toHaveLength(2);
+
+    const thirdExpense = await agent.respond({
+      userId, conversationId: "third_covered_expense",
+      message: "My employer covers a $18 monthly wellness membership now; it could go toward savings."
+    });
+    expect(thirdExpense.decision.action).toBe("suggest_savings");
+    expect(voiceContexts.at(-1)).toMatchObject({
+      priorCoveredExpenseAllocation: {
+        lastPlanningHorizon: "monthly", observationCount: 2, moreOftenChosen: "monthly"
+      }
+    });
   });
 
   it("[MEM-002] remembers an explicit preferred amount without suggesting or recording savings", async () => {

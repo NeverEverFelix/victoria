@@ -399,6 +399,18 @@ Implications:
 - The optional provider extractor may learn ordinary interests, but provider-generated monetary spend facts are rejected. Amount-bearing activity spend is accepted only through the deterministic explicit-period parser.
 - Memory remains context only and cannot classify or approve a savings action.
 
+### Keep Financial Choices Scoped, Remember Confirmed Patterns
+
+Decision: Confirmed on 2026-10-23. A user's monthly-versus-annual choice while considering one covered recurring expense is contextual to that expense. It is not a general preference. After the user explicitly confirms recording the covered expense in the mocked ledger, Victoria may append a concise semantic observation of the behavior and chosen planning horizon.
+
+Implications:
+
+- The observed memory is written only after successful ledger confirmation and never authorizes an action.
+- The memory records the covered-expense-to-savings behavior and horizon as one evidence-linked `financial_pattern`, not a preference sentence copied from the user's reply.
+- A later similar conversation may recall the previous choice as a soft reference while asking what the user wants this time.
+- Victoria may describe a recurring tendency only when at least two observations show one horizon was chosen more often; conflicting choices remain visible in compact counts and do not become a fixed preference.
+- See [Story 22](user-stories.md) and the [user-learning schema](specification/user-learning-schema.md) for the behavior and memory shape.
+
 
 ### Memory Retention, Forget Purge, And Recovery
 

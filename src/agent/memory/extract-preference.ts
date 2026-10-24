@@ -240,7 +240,8 @@ function extractExplicitInterest(message: string): ExtractedConversationalMemory
     /^\s*i(?:'m| am)\s+(?:(?:really|very)\s+)?into\s+(.+?)[.!?]*\s*$/i.exec(message) ??
     /^\s*my\s+hobbies\s+(?:include|are)\s+(.+?)[.!?]*\s*$/i.exec(message) ??
     /^\s*one of my hobbies is\s+(.+?)[.!?]*\s*$/i.exec(message);
-  const activity = match?.[1]?.trim()
+  const embeddedMatch = match ? null : /\bi\s+(?:(?:really|really do)\s+)?(?:like|love|enjoy)\s+(?:to\s+)?(?:play\s+)?([a-z][a-z -]{0,59}?)(?=\s+(?:at|and|but|because|that|while|now)\b|[,;.!?]|$)/i.exec(message);
+  const activity = (match?.[1] ?? embeddedMatch?.[1])?.trim()
     .split(/\s*,\s*|\s+(?:and|&)\s+/i, 1)[0]
     ?.replace(/[.!?]+$/, "");
   if (!activity || activity.length > 80 || /\b(?:spend|spending|spent|saving|money|budget|finance|costs?|paid|bought|purchased)\b|\$\s*\d/i.test(activity)) return null;
@@ -250,7 +251,7 @@ function extractExplicitInterest(message: string): ExtractedConversationalMemory
     category: "other",
     key: `interest:${keyPart}`,
     value: correction ? `No longer enjoys ${activity}.` : `Enjoys ${activity}.`,
-    evidence: message,
+    evidence: embeddedMatch?.[0].trim() ?? message,
     confidence: 0.95,
     sourceType: correction ? "user_correction" : "user_statement",
     ...(correction ? { sourceMetadata: { interestStatus: "inactive" } } : {})

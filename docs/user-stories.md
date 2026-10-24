@@ -583,3 +583,19 @@ Acceptance criteria:
 - A transaction category or merchant is used for hobby spend only on an exact activity match or a direct user-confirmed mapping, with its source, count, and observation window disclosed.
 - A user-confirmed activity-to-category/merchant mapping may connect an otherwise unmatched profile fact; Victoria identifies the mapping, keeps transaction-derived totals separate from user-reported recurring amounts, and invites correction.
 - Recalled interests and spend never authorize, estimate, or create a savings action.
+
+## Story 22: Employer-Covered Recurring Expense
+
+As a user whose employer now covers a recurring expense, I want Victoria to help me think about the amount that frees up without mistaking my budgeting question for a bank-transfer instruction.
+
+Expected behavior:
+
+- When I state a clear monthly USD cost that my employer now covers and ask whether to redirect it, Victoria recognizes a savings moment and may show the annualized amount as a projection.
+- Victoria proposes only the user-stated monthly amount for the mocked ledger and asks before recording it; the annual projection is never treated as a current or guaranteed saving.
+- Victoria does not claim access to a complete current financial picture unless an available authorized profile supports that claim.
+- If the user explicitly shares an interest in the same message, Victoria remembers that interest and acknowledges it naturally, even if optional provider memory extraction is unavailable.
+- If I provide an amount in a follow-up, Victoria uses the conversation context and asks for confirmation instead of asking what the amount was for again.
+- If I choose monthly or annual as the planning target, that choice applies to this expense only and is not saved as a general preference.
+- After I confirm recording the covered recurring expense, Victoria may remember a compact, evidence-linked observation of the choice and the planning horizon. This is an observed example, not a permanent preference.
+- In a later similar conversation, Victoria may recall the prior choice as a gentle cue; she must still leave the current choice open. A tendency may be described only after multiple observed choices support it.
+- No real money moves, and a direct instruction to transfer or withdraw money remains blocked.

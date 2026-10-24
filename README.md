@@ -69,6 +69,16 @@ npm run check
 
 Only commit `.env*.example` files. Keep real `.env.local`, `.env.test`, `.env.staging`, and `.env.production` files uncommitted.
 
+### Talk to Victoria in the terminal
+
+After setting up `.env.local` and applying local database migrations, run:
+
+```bash
+npm run chat
+```
+
+This starts the development server on `127.0.0.1:3210` and opens an interactive chat in the same terminal. Type `/new` to start a separate conversation, `/help` for commands, or `/quit` to stop the server. It uses a stable local CLI identity so persistent memories can carry across conversations. By default, it uses the configured OpenAI provider team, conversational memory extraction, and personalized replies; episodic summaries stay disabled. Financial conversations supported by the agent team can make multiple provider calls, and memory search can also use embeddings. Eligible inputs are sent to OpenAI and can incur API charges, so configure `OPENAI_API_KEY` and a non-mock `OPENAI_MODEL` in ignored `.env.local`. Run `npm run chat -- --mock` for the no-API mock mode. Savings entries remain mocked and no real money moves in either mode. Local persistent memory requires `VICTORIA_MEMORY_MODE=persistent` plus a migrated loopback `*_local` database. The CLI does not run migrations automatically.
+
 ## Agentic Coding Setup
 
 Victoria is set up for agent-assisted development before full product development begins.
