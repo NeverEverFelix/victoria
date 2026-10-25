@@ -1,6 +1,7 @@
 import { MockLlmAdapter } from "../../agent/llm/mock-llm.js";
-import { OpenAiFinancialMomentAdapter } from "../../agent/llm/openai-financial-moment.js";
 import { createOpenAiAgentTeamSpecialists } from "../../agent/team/openai-specialists.js";
+import { OpenAiContextReferenceResolver } from "../../agent/context-reference-resolver.js";
+import { OpenAiConversationResponder } from "../../agent/conversation-responder.js";
 import { MockMemoryProvider } from "../../agent/memory/mock-memory.js";
 import { MockVictoriaTools } from "../../agent/tools/mock-tools.js";
 import { VictoriaAgent } from "../../agent/victoria-agent.js";
@@ -23,6 +24,7 @@ import { PostgresPendingAmountClarificationStore } from "../clarifications/postg
 import { PostgresPendingSavingsActionStore } from "../savings/postgres-pending-savings-action-store.js";
 import { PostgresMockSavingsTools } from "../savings/postgres-mock-savings-tools.js";
 import { PostgresPendingGoalAllocationActionStore } from "../savings/postgres-pending-goal-allocation-store.js";
+import { PostgresPendingEntryCorrectionStore } from "../savings/postgres-pending-entry-correction-store.js";
 import { PostgresConversationCoordinator } from "../turns/postgres-conversation-coordinator.js";
 import { createMemoryManagementHandlers } from "./memory-management-handler.js";
 import { createConversationFinishHandler } from "./conversation-finish-handler.js";
@@ -40,7 +42,7 @@ export interface LocalMockVictoriaRuntime {
 let cachedRuntime: { readonly cacheKey: string; readonly runtime: LocalMockVictoriaRuntime } | undefined;
 const persistentPools = new Map<string, ReturnType<typeof createPostgresTurnStore>["pool"]>();
 
-/** Creates a local chat runtime with mock model/tools by default; all other environments fail closed. */
+/** Creates the local chat runtime; a configured provider is used automatically. */
 export function getLocalMockVictoriaRuntime(env: Record<string, string | undefined> = process.env): LocalMockVictoriaRuntime | null {
   if (env.APP_ENV !== "local" || env.NODE_ENV !== "development") return null;
   const secret = env.AUTH_SECRET?.trim();
@@ -49,22 +51,19 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
   const hasRealOpenAiKey = Boolean(openAiKey) &&
     !/(?:local-openai|replace|example|placeholder|changeme)/i.test(openAiKey ?? "");
   const embeddingsEnabled = hasRealOpenAiKey;
-  const providerAgentTeamEnabled = env.OPENAI_AGENT_TEAM_ENABLED === "true" &&
-    hasRealOpenAiKey && Boolean(env.OPENAI_MODEL?.trim()) && env.OPENAI_MODEL !== "mock";
-  const providerFinancialMomentEnabled = !providerAgentTeamEnabled && env.OPENAI_FINANCIAL_MOMENT_ENABLED === "true" &&
-    hasRealOpenAiKey && Boolean(env.OPENAI_MODEL?.trim()) && env.OPENAI_MODEL !== "mock";
-  const persistentMemoryEnabled = env.VICTORIA_MEMORY_MODE === "persistent";
-  if (env.VICTORIA_MEMORY_MODE !== undefined && env.VICTORIA_MEMORY_MODE !== "mock" && !persistentMemoryEnabled) return null;
+  const providerEnabled = hasRealOpenAiKey && Boolean(env.OPENAI_MODEL?.trim()) && env.OPENAI_MODEL !== "mock";
+  const persistentMemoryEnabled = Boolean(env.DATABASE_URL?.trim());
   let persistentMemory: MemoryOrchestrator | undefined;
   let pendingAmountClarificationStore: PostgresPendingAmountClarificationStore | undefined;
   let pendingSavingsActionStore: PostgresPendingSavingsActionStore | undefined;
   let pendingGoalAllocationActionStore: PostgresPendingGoalAllocationActionStore | undefined;
+  let pendingEntryCorrectionStore: PostgresPendingEntryCorrectionStore | undefined;
   let persistentSavingsTools: PostgresMockSavingsTools | undefined;
   let conversationCoordinator: PostgresConversationCoordinator | undefined;
   let persistentMemoryKey = "mock-memory";
   if (persistentMemoryEnabled) {
     try {
-      // Persistent mode is deliberately local-only in this slice. parseVictoriaEnv
+      // PostgreSQL-backed local chat is deliberately local-only. parseVictoriaEnv
       // enforces a loopback *_local database and a strong local session secret.
       const config = parseVictoriaEnv(env);
       if (config.appEnv !== "local" || config.nodeEnv !== "development") return null;
@@ -88,6 +87,7 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
       pendingAmountClarificationStore = new PostgresPendingAmountClarificationStore(pool);
       pendingSavingsActionStore = new PostgresPendingSavingsActionStore(pool);
       pendingGoalAllocationActionStore = new PostgresPendingGoalAllocationActionStore(pool);
+      pendingEntryCorrectionStore = new PostgresPendingEntryCorrectionStore(pool);
       persistentSavingsTools = new PostgresMockSavingsTools(pool);
       conversationCoordinator = new PostgresConversationCoordinator(pool);
     } catch {
@@ -112,23 +112,27 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
     .update("\0").update(env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small")
     .update("\0").update(memoryExtractorEnabled ? openAiKey! : "mock")
     .update("\0").update(env.OPENAI_MODEL ?? "mock")
-    .update("\0").update(providerAgentTeamEnabled ? "agent-team-on" : "agent-team-off")
-    .update("\0").update(providerFinancialMomentEnabled ? "financial-moment-on" : "financial-moment-off")
+    .update("\0").update(providerEnabled ? "provider-on" : "provider-off")
     .update("\0").update(personalizedRepliesEnabled ? "personalized-replies-on" : "personalized-replies-off")
     .update("\0").update(episodicSummariesEnabled ? "episodes-on" : "episodes-off").digest("hex");
   if (cachedRuntime?.cacheKey === cacheKey) return cachedRuntime.runtime;
   const transactionHistory = new MockProfileTransactionHistoryProvider();
   const agent = new VictoriaAgent({
-    llm: providerFinancialMomentEnabled
-      ? new OpenAiFinancialMomentAdapter({ apiKey: openAiKey!, model: env.OPENAI_MODEL! })
-      : new MockLlmAdapter(),
+    llm: new MockLlmAdapter(),
     memory: persistentMemory ?? new MockMemoryProvider(),
     tools: persistentSavingsTools ?? new MockVictoriaTools(),
     ...(pendingAmountClarificationStore ? { pendingAmountClarifications: pendingAmountClarificationStore } : {}),
     ...(pendingSavingsActionStore ? { pendingSavingsActions: pendingSavingsActionStore, idFactory: randomUUID } : {}),
     ...(pendingGoalAllocationActionStore ? { pendingGoalAllocationActions: pendingGoalAllocationActionStore } : {}),
-    ...(providerAgentTeamEnabled ? {
+    ...(pendingEntryCorrectionStore ? { pendingEntryCorrections: pendingEntryCorrectionStore } : {}),
+    ...(providerEnabled ? {
       specialists: createOpenAiAgentTeamSpecialists({ apiKey: openAiKey!, model: env.OPENAI_MODEL! })
+    } : {}),
+    ...(providerEnabled ? {
+      contextReferenceResolver: new OpenAiContextReferenceResolver({ apiKey: openAiKey!, model: env.OPENAI_MODEL! })
+    } : {}),
+    ...(providerEnabled ? {
+      conversationResponder: new OpenAiConversationResponder({ apiKey: openAiKey!, model: env.OPENAI_MODEL! })
     } : {}),
     transactionHistory,
     ...(memoryExtractorEnabled ? {

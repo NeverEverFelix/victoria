@@ -46,7 +46,7 @@ export function voiceDraftRevisionFeedback(issues: readonly VoiceDraftIssue[]): 
     missing_question: "Ask a clear, relevant question.",
     missing_confirmation_request: "Include an explicit, natural confirmation request for recording only the current suggested amount in the Victoria savings ledger.",
     missing_remembered_interest: "Naturally acknowledge at least one supplied remembered interest; do not mechanically repeat its stored wording.",
-    missing_validated_projection: "Include the supplied annual projection and say it depends on the coverage continuing; do not present it as already saved or transferable."
+    missing_validated_projection: "Include the supplied annual projection and say it depends on the monthly saving continuing; do not present it as already saved or transferable."
   };
   return `Revise the reply to fix these review findings: ${[...new Set(issues)].map((issue) => guidance[issue]).join(" ")} Keep the user's emotional and practical context, answer their actual question, and retain a warm, conversational voice. Do not quote this feedback.`;
 }
@@ -258,7 +258,7 @@ function deterministicResponse(finding: FinancialMomentFinding, assessment: Savi
       const annualCents = finding.responseContext.validatedAnnualProjectionCents;
       if (annualCents !== undefined && Number.isSafeInteger(annualCents) &&
           annualCents === assessment.amountCents * 12) {
-        return `If the coverage continues, you could plan around ${formatUsd(assessment.amountCents)} this month, or ${formatUsd(annualCents)} over a year. Which planning target would you prefer, monthly or annual? No real money has moved.`;
+        return `If that monthly cost stays out of your budget, you could plan around ${formatUsd(assessment.amountCents)} this month, or ${formatUsd(annualCents)} over a year. Which planning target would you prefer, monthly or annual? No real money has moved.`;
       }
     }
     return `Would you like me to record ${formatUsd(assessment.amountCents)} in your Victoria savings ledger? Please confirm before I record it. No real money has moved.`;

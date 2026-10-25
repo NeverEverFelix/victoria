@@ -29,9 +29,34 @@ export function isBudgetingAdviceQuestion(message: string): boolean {
 /** A recurring bill newly covered by an employer is a budgeting moment, not a transfer instruction. */
 export function employerCoveredRecurringSpend(message: string): { amountCents: number; cadence: "month" | "year" } | undefined {
   if (!/\b(?:company|employer|work)\b.{0,100}\b(?:pay(?:s|ing)?|cover(?:s|ing)?|reimburse(?:s|d|ing)?)\b|\b(?:pay(?:s|ing)?|cover(?:s|ing)?|reimburse(?:s|d|ing)?)\b.{0,100}\b(?:company|employer|work)\b/i.test(message)) return;
-  const cadence = /\b(?:per|a|each|every)\s+month|\bmonthly\b/i.test(message) ? "month"
-    : /\b(?:per|a|each|every)\s+year|\byearly\b|\bannually\b/i.test(message) ? "year" : undefined;
+  const cadence = recurringCadence(message);
   if (!cadence || !/\b(?:now|anymore|instead|covered|covering|pays|paid)\b/i.test(message)) return;
   const amount = parseExplicitDollarAmount(message);
   return amount.status === "valid" ? { amountCents: amount.amountCents, cadence } : undefined;
+}
+
+/** A clearly ended personal recurring cost can free room in a budget. */
+export function endedRecurringSpend(message: string): { amountCents: number; cadence: "month" | "year" } | undefined {
+  if (!/\b(?:quit|quitting|stopped|stopping|ended|gave up|giving up|ditch|ditching|cancelled|canceled|cancelling|canceling|no longer (?:play|go|attend|use))\b/i.test(message)) return;
+  if (/\b(?:might|may|maybe|considering|thinking (?:about|of)|if I|could|would)\b.{0,30}\b(?:quit|quitting|stop|stopping|ditch|ditching|cancel|canceling|cancelling)\b/i.test(message)) return;
+  const priceWithCadence = /\$\s?\d[\d,]*(?:\.\d{1,2})?\s*(?:[-/]\s*(?:a[-\s]+)?(?:month|year)\b|(?:per|a|each|every)\s+(?:month|year)\b)/i.test(message);
+  if (!priceWithCadence && !/\b(?:cost(?:s|ing)?(?: me)?|pay(?:ing|ed)?|spend(?:ing|t)?)\b.{0,50}\$\s?\d/i.test(message)) return;
+  const cadence = recurringCadence(message);
+  if (!cadence) return;
+  const amount = parseExplicitDollarAmount(message);
+  return amount.status === "valid" ? { amountCents: amount.amountCents, cadence } : undefined;
+}
+
+function recurringCadence(message: string): "month" | "year" | undefined {
+  // Prefer the period attached to the stated price. A later question about a
+  // yearly projection must not turn a $35/month source cost into an ambiguity.
+  const pricePeriod = message.match(/\$\s?\d[\d,]*(?:\.\d{1,2})?\s*(?:[-/]\s*)?(?:(?:per|a|each|every)[\s-]+)?(month|year)\b/i)?.[1];
+  if (pricePeriod === "month" || pricePeriod === "year") return pricePeriod;
+  const monthly = /\b(?:per|a|each|every)[\s-]+month\b|\bmonthly\b|\/month\b/i.test(message);
+  const yearly = /\b(?:per|a|each|every)[\s-]+year\b|\byearly\b|\bannually\b|\/year\b/i.test(message);
+  return monthly === yearly ? undefined : monthly ? "month" : "year";
+}
+
+export function freedRecurringSpend(message: string): { amountCents: number; cadence: "month" | "year" } | undefined {
+  return employerCoveredRecurringSpend(message) ?? endedRecurringSpend(message);
 }

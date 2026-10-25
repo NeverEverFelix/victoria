@@ -19,7 +19,11 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - A natural-language real-transfer request receives a clear limitation response and does not create a mocked entry or call a transfer tool, including when a savings suggestion is pending; cover sending money to a named goal and withdrawing money from checking.
 - Intent classification uses recent conversational context and does not treat colloquial wording such as "move over" as a transfer based on that phrase alone; ambiguous intent asks for clarification.
 - An employer-covered monthly expense framed as budgeting advice is recognized as a savings moment, responds to the user's priorities and relevant remembered interests, presents monthly and annual-projection planning options, proposes only the current monthly amount for the mocked ledger, and waits for explicit confirmation; direct transfer requests remain blocked.
+- A clearly ended recurring activity with one stated monthly cost supports the same conditional planning choice even when a provider returns unclear; a tentative cancellation does not. The annual projection stays planning-only, and no ledger entry is created by choosing a horizon.
+- Compact recurring-price forms, including hyphenated and slash-separated monthly amounts, ground the stated amount and period across provider classifications.
+- The turn context lists distinct recurring costs with source-turn references; provider-selected references are accepted only when they match those costs, have enough confidence, and remain planning-only. Two grounded monthly costs yield a conditional combined annual projection; ambiguous combinations ask rather than guess.
 - On the first employer-covered expense response, Victoria asks which amount the user wants as an allocation target—the monthly amount or annual projection—without introducing a separate destination choice or asking to record anything; after the user chooses, she acknowledges that target and asks confirmation only for the current month's amount.
+- Recover an annual choice after an intervening math question and durable proposal restore. If the user repeats the annual choice or clarifies that it is a future target, reaffirm the annual target and state that “yes” would record only this month's explicitly named monthly amount; retain the pending proposal, and never treat the annual projection as already saved.
 - A user's short answer to Victoria's prior monthly-versus-annual planning question is resolved against that exchange, remains a planning preference rather than a goal allocation unless an allocation action is explicit, and is answered using the recent conversation rather than repeating an unrelated goal question.
 - A period-based follow-up during a covered monthly expense is not treated as a proposal revision without a clear amount or reason; the conversational model can use the validated annual projection while keeping it distinct from the current monthly ledger suggestion.
 - If a user refers to the calculated annual projection during a pending monthly ledger suggestion, Victoria recognizes it as a planning preference, not a replacement ledger amount or approval; the pending monthly suggestion remains approval-gated.
@@ -87,6 +91,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Local PostgreSQL mode persists approved goal allocations across tool/runtime instances, returns an identical allocation on retry, rejects changed action details, and leaves the linked entry unchanged.
 - A pending goal-allocation proposal resumes after runtime restart with the same action and approval IDs; approval records one allocation, while decline remains terminal and records none.
 - Local PostgreSQL mode persists an approved savings correction across a tool/runtime restart, applies its signed adjustment to effective amount and weekly total reads, and allows goal allocation against the corrected amount without mutating the original entry.
+- A pending savings-entry correction is restored from its user-and-conversation scoped proposal after an agent runtime restart; exact approval appends one correction and a `recorded` transition, while a decline appends a terminal `declined` transition and leaves the entry unchanged.
 - Victoria represents a correction or reversal as a new record linked to the original.
 - Correcting a recorded amount requires exact approval, appends a signed adjustment, and leaves the original entry unchanged.
 - Corrections reject invalid, no-op, cross-user, non-completed, or non-mocked targets, and effective weekly totals retain the original entry's week.
@@ -103,12 +108,12 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 
 - The local chat route accepts only a valid signed Victoria bearer session; caller-supplied `userId` fields are rejected and the signed subject scopes memory and tools.
 - Missing, expired, or tampered sessions fail authentication; oversized or malformed requests are rejected.
-- The route is unavailable outside local development and uses only mock model, memory, and ledger adapters.
+- The local route is unavailable outside local development. With provider credentials it uses model-backed financial understanding and conversation, while ledger tools remain mocked.
 - Chat responses are not cached, and the route cannot call Plaid, Supabase, or real money movement providers.
 - An explicit user preference shared through one route conversation can shape a later ordinary reply in a different conversation for the same signed user; another user receives no private preference context.
 - A pending savings confirmation is bound to its conversation: a bare “yes” elsewhere does not record it, returning to the original conversation can approve it, and a later route visit can read the recorded weekly total.
 - A user can correct Victoria's remembered merchant-spend statement through the route; the correction is acknowledged as a separate transaction detail, does not record savings, and does not rewrite the rolling merchant estimate.
-- The local terminal chat command starts the server on loopback, issues a short-lived local signed session without displaying the secret or token, keeps turns in one conversation, supports starting a fresh conversation, and shuts down the child server on exit. Default mode requires a real key and non-mock model and enables provider-backed financial moment, savings reasoning, companion voice, memory extraction, and personalized replies; explicit `--mock` disables provider calls while mock-ledger behavior remains enforced in both modes.
+- The local terminal chat command starts the server on loopback, issues a short-lived local signed session without displaying the secret or token, keeps turns in one conversation, supports starting a fresh conversation, and shuts down the child server on exit. It requires a real model and key and uses them for financial understanding and conversation without feature switches. The mocked ledger boundary remains enforced.
 
 - Victoria remembers recurring merchants.
 - Victoria updates a habit after repeated similar decisions.
@@ -118,7 +123,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria can use updated memory for a future suggestion without rewriting an earlier suggestion.
 - PostgreSQL is authoritative for remembered decisions, while SQLite caches those durable reads.
 - Current conversation context is short-term SQLite memory, scoped by user and conversation, retaining up to 20 user and Victoria messages; it remains available during a PostgreSQL outage while a local outbox retries its backup.
-- The local chat route defaults to mock memory, and `VICTORIA_MEMORY_MODE=persistent` opts into PostgreSQL-backed context and durable memories only under validated local development configuration; persistent mode must not be available in staging or production through this local route.
+- The local chat route uses PostgreSQL-backed context and durable memories when its local `DATABASE_URL` is configured; without a database, headless tests can use mock memory. The local route must not be available in staging or production.
 - Against a dedicated disposable local PostgreSQL database, a memory written through one local chat runtime is recalled by a fresh runtime for the same user, and is not recalled for another user.
 - In local persistent chat, an unanswered avoided-spend amount clarification survives a fresh runtime for the same user and conversation; a new amount yields a fresh suggestion requiring explicit approval, and another user cannot retrieve or answer that clarification.
 - In local persistent chat, a pending savings proposal survives a fresh runtime; exact confirmation records one immutable `mock_ledger` entry, and weekly progress still includes that entry after another runtime restart. Repeating confirmation cannot create a second entry.
@@ -196,6 +201,9 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Victoria prevents an approval from being replayed after the action completes.
 - Victoria can cancel or decline a pending savings suggestion.
 - A clear decline marks its pending proposal declined, clears the pending action, and creates no ledger entry.
+- A standalone refusal followed by a question or planning instruction closes the pending proposal; a separate read-only question can be answered without approval or a replacement proposal, and later projection questions do not reopen a declined proposal.
+- Repeating the just-completed approval turn reports the already recorded entry when a trusted recent entry is available; after agent reconstruction, it asks whether this is a separate occurrence instead of opening another proposal from transcript text alone.
+- A paraphrased request that may repeat a recently completed mocked entry asks whether it is a separate occurrence before another proposal is opened.
 - Proposal approval, decline, and replacement create explicit transition records bound to the proposal, user, and action; terminal proposals cannot transition again.
 - A clear decline such as “No, not today” also clears a pending goal allocation without recording an allocation.
 - A failed ledger write does not produce success wording, leaves the approved action retryable, and a retry with the same user/action ID creates at most one entry even if the first response was lost after persistence.
@@ -364,3 +372,10 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Ledger-confirmation normalization preserves a user-stated goal and accepts an explicit “savings ledger” destination without duplicating the question. The annual fallback uses a named, validated twelve-month projection.
 - Direct preference, habit, or goal extraction can use a later user-authored sentence without absorbing adjacent financial context; mixed financial turns still receive their financial response, and provider extraction does not duplicate the same deterministic fact.
 - Planning and confirmed-behavior memory use the original scoped user message, not an invented classifier summary. Restored annual planning cents reject overflow, and horizon recovery requires one nonempty source-message match.
+
+# Conversation response and memory continuity
+
+- A turn that states a stable preference and asks a question stores only validated user evidence while directly answering the question; it does not return only an acknowledgment.
+- An unrelated question during a pending mocked ledger action reaches read-only conversation; the pending action remains unchanged and a later explicit approval is still required.
+- Conversation response drafts that claim an action, offer to record savings, or introduce an unsupported dollar amount are rejected. Provider failure retains a safe baseline and cannot create a ledger entry.
+- A configured provider model and key automatically enable financial understanding and conversational generation on the chat route; mock adapters remain test doubles. No user-facing mode selection is needed.

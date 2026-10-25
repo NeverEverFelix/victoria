@@ -8,6 +8,8 @@ import {
   VictoriaAgent
 } from "../agent/index.js";
 import { createOpenAiAgentTeamSpecialists } from "../agent/team/openai-specialists.js";
+import { OpenAiContextReferenceResolver } from "../agent/context-reference-resolver.js";
+import type { ConversationResponder } from "../agent/conversation-responder.js";
 import type { ProviderUsageReporter } from "../agent/telemetry/provider-usage-reporter.js";
 import { buildFeatureFlags, type VictoriaEnv } from "../config/index.js";
 import type { UserHabit } from "../agent/types.js";
@@ -18,6 +20,7 @@ import type { VictoriaTools } from "../agent/tools/contracts.js";
 import type { PendingAmountClarificationStore } from "../agent/pending-amount-clarification-store.js";
 import type { PendingSavingsActionStore } from "../agent/pending-savings-action-store.js";
 import type { PendingGoalAllocationActionStore } from "../agent/pending-goal-allocation-store.js";
+import type { PendingEntryCorrectionStore } from "../agent/pending-entry-correction-store.js";
 import type { VoiceDraftIssue } from "../agent/team-response-policy.js";
 
 export interface CreateVictoriaAgentOptions {
@@ -26,6 +29,7 @@ export interface CreateVictoriaAgentOptions {
   fetcher?: typeof fetch;
   memory?: MemoryProvider;
   conversationalMemoryExtractor?: ConversationalMemoryExtractor;
+  conversationResponder?: ConversationResponder;
   episodicMemorySummarizer?: EpisodicMemorySummarizer;
   tools?: VictoriaTools;
   providerUsageReporter?: ProviderUsageReporter;
@@ -33,6 +37,7 @@ export interface CreateVictoriaAgentOptions {
   pendingAmountClarifications?: PendingAmountClarificationStore;
   pendingSavingsActions?: PendingSavingsActionStore;
   pendingGoalAllocationActions?: PendingGoalAllocationActionStore;
+  pendingEntryCorrections?: PendingEntryCorrectionStore;
   idFactory?: () => string;
 }
 
@@ -69,14 +74,21 @@ export function createVictoriaAgent(options: CreateVictoriaAgentOptions): Victor
     memory,
     tools,
     ...(options.conversationalMemoryExtractor ? { conversationalMemoryExtractor: options.conversationalMemoryExtractor } : {}),
+    ...(options.conversationResponder ? { conversationResponder: options.conversationResponder } : {}),
     ...(options.episodicMemorySummarizer ? { episodicMemorySummarizer: options.episodicMemorySummarizer } : {}),
     specialists,
+    ...(flags.useProviderAgentTeam ? { contextReferenceResolver: new OpenAiContextReferenceResolver({
+      apiKey: options.env.openAiApiKey,
+      model: options.env.openAiModel,
+      ...(options.fetcher ? { fetcher: options.fetcher } : {})
+    }) } : {}),
     ...(options.onCompanionVoiceValidationFailure
       ? { onCompanionVoiceValidationFailure: options.onCompanionVoiceValidationFailure }
       : {}),
     ...(options.pendingAmountClarifications ? { pendingAmountClarifications: options.pendingAmountClarifications } : {}),
     ...(options.pendingSavingsActions ? { pendingSavingsActions: options.pendingSavingsActions } : {}),
     ...(options.pendingGoalAllocationActions ? { pendingGoalAllocationActions: options.pendingGoalAllocationActions } : {}),
+    ...(options.pendingEntryCorrections ? { pendingEntryCorrections: options.pendingEntryCorrections } : {}),
     ...(options.idFactory ? { idFactory: options.idFactory } : {})
   });
 }

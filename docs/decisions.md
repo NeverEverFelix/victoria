@@ -422,3 +422,13 @@ Implications:
 - Daily retention maintenance emits a structured log and writes deletion counts/status to `victoria_retention_runs`. Alert on failed jobs or no success for 48 hours.
 - A restored database must have migrations and retention reapplied before traffic resumes. The restore must first be inspected in a separate recovery project.
 - This supersedes the 2026-10-17 decision that forget only suppresses retrieval and keeps the source/embedding indefinitely.
+
+### Product Chat Has No User-Selected AI Or Memory Mode
+
+Decision: Confirmed by the user on 2026-10-25. Victoria's chat uses a configured provider model for financial understanding and ordinary conversation without requiring feature switches. A configured local database is used automatically for durable chat state and the mocked ledger. The terminal chat command has one product path.
+
+Implications:
+
+- Internal mock adapters remain available to automated tests, but product testing does not require a user to choose or understand a mock/provider mode.
+- Previous opt-in provider and local-memory decisions above are superseded for the product chat route.
+- Deterministic financial calculations, explicit approval, mocked ledger records, and the prohibition on real-money movement are unchanged.

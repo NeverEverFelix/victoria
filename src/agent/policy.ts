@@ -37,6 +37,14 @@ export function interpretApprovalResponse(message: string, expectedAmountCents?:
     return "explicit_decline";
   }
 
+  // A standalone refusal can be followed by a separate request. Preserve the
+  // refusal unless the user reverses it or asks for a recording in that turn.
+  if (/^(?:no|nope|nah)[.!?,]\s+/.test(message.trim().toLowerCase()) &&
+      !/\b(?:actually|instead|but)\s+(?:please\s+)?(?:record|log|save|add)\b/i.test(message) &&
+      !/^(?:no|nope|nah)[.!?,]\s+(?:please\s+)?(?:record|log|save|add)\b/i.test(message.trim())) {
+    return "explicit_decline";
+  }
+
   // A direct refusal of the pending ledger action remains a refusal when the
   // user adds a follow-up question. Keep this narrow so mixed or uncertain
   // instructions cannot be mistaken for consent or a proposal revision.

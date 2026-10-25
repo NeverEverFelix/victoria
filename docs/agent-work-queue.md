@@ -1,5 +1,9 @@
 # Agent Work Queue
 
+## Conversation Reliability Follow-ups
+
+Pending savings-entry correction proposals and terminal outcomes are implemented in migration `0021`; verify it in persistent local chat and apply it to staging/production before considering the gap fully closed. Long-session dialogue state, structured tracing, and asynchronous memory processing remain open. Keep context-builder development paused while these gaps are worked independently.
+
 This file gives coding agents a prioritized list of small implementation slices.
 
 ## Conversational Memory Storage Slice

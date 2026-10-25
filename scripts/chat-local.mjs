@@ -11,11 +11,8 @@ const { loadEnvConfig } = nextEnv;
 
 loadEnvConfig(process.cwd());
 
-const args = new Set(process.argv.slice(2));
-const mockMode = args.has("--mock");
-const realAiMode = !mockMode;
-if ([...args].some((arg) => arg !== "--mock")) {
-  console.error("Usage: npm run chat [-- --mock]");
+if (process.argv.length > 2) {
+  console.error("Usage: npm run chat");
   process.exit(1);
 }
 
@@ -32,12 +29,12 @@ if (!secret || Buffer.byteLength(secret, "utf8") < 32 || /(?:replace|example|pla
 
 const configuredApiKey = process.env.OPENAI_API_KEY?.trim() ?? "";
 const configuredModel = process.env.OPENAI_MODEL?.trim() ?? "";
-if (realAiMode && (!configuredApiKey || /(?:local-openai|replace|example|placeholder|changeme)/i.test(configuredApiKey))) {
-  console.error("Real AI mode needs an OpenAI API key in .env.local. The key is not shown or saved by this command.");
+if (!configuredApiKey || /(?:local-openai|replace|example|placeholder|changeme)/i.test(configuredApiKey)) {
+  console.error("Victoria needs an OpenAI API key in .env.local. The key is not shown or saved by this command.");
   process.exit(1);
 }
-if (realAiMode && (!configuredModel || configuredModel === "mock")) {
-  console.error("Real AI mode needs a non-mock OPENAI_MODEL in .env.local.");
+if (!configuredModel || configuredModel === "mock") {
+  console.error("Victoria needs a provider OPENAI_MODEL in .env.local.");
   process.exit(1);
 }
 
@@ -124,13 +121,6 @@ try {
     ...process.env,
     APP_ENV: "local",
     NODE_ENV: "development",
-    OPENAI_API_KEY: realAiMode ? configuredApiKey : "local-openai-key",
-    OPENAI_MODEL: realAiMode ? configuredModel : "mock",
-    OPENAI_FINANCIAL_MOMENT_ENABLED: "false",
-    OPENAI_AGENT_TEAM_ENABLED: realAiMode ? "true" : "false",
-    OPENAI_MEMORY_EXTRACTION_ENABLED: realAiMode ? "true" : "false",
-    OPENAI_PERSONALIZED_REPLIES_ENABLED: realAiMode ? "true" : "false",
-    OPENAI_EPISODIC_SUMMARIES_ENABLED: "false",
     PORT: String(port)
   };
   server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--webpack", "--hostname", "127.0.0.1", "--port", String(port)], {
@@ -145,9 +135,7 @@ try {
 
   console.log(`Starting Victoria locally at ${baseUrl}…`);
   await waitUntilReady(server);
-  console.log(realAiMode
-    ? `Victoria is ready with the OpenAI ${configuredModel} agent team. Eligible turns can make multiple API calls and incur charges; no real money movement is enabled.`
-    : "Victoria is ready. Chat below; no model API calls or real money movement are enabled.");
+  console.log(`Victoria is ready. No real money movement is enabled.`);
   console.log("Commands: /new starts another conversation, /help shows commands, /quit exits.\n");
 
   terminal = createInterface({ input: stdin, output: stdout, terminal: Boolean(stdin.isTTY) });

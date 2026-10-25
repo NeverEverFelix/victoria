@@ -21,14 +21,13 @@ describe.skipIf(!runLiveSmoke)("live provider agent-team smoke", () => {
     if (process.env.APP_ENV !== "local") throw new Error("This smoke command only runs with APP_ENV=local.");
 
     const env = parseVictoriaEnv({ ...process.env, NODE_ENV: "development" });
-    if (!env.openAiAgentTeamEnabled) throw new Error("Set OPENAI_AGENT_TEAM_ENABLED=true for the smoke run.");
     if (env.openAiModel === "mock") throw new Error("Set OPENAI_MODEL to a provider model for the smoke run.");
     if (env.moneyMovementMode !== "mock_ledger") throw new Error("The smoke run requires MONEY_MOVEMENT_MODE=mock_ledger.");
 
     const providerRoles: string[] = [];
     const tools = new MockVictoriaTools();
     const agent = createVictoriaAgent({
-      env,
+      env: { ...env, openAiAgentTeamEnabled: true },
       tools,
       fetcher: async (input, init) => {
         try {

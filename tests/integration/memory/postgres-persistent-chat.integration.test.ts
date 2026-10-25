@@ -481,6 +481,66 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
     }
   });
 
+  it("restores an unapproved entry correction after a runtime restart", async () => {
+    const correctionUserId = `memory-check-${randomUUID()}`;
+    const conversationId = `pending-correction-restart-${randomUUID()}`;
+    const firstToken = signVictoriaSession({ userId: correctionUserId, secret: firstSecret });
+    const firstRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: firstSecret });
+    expect(firstRuntime).not.toBeNull();
+    await firstRuntime!.handler(chatRequest(firstToken, conversationId,
+      "I almost bought a $45 book but decided to wait."), { conversationId });
+    await firstRuntime!.handler(chatRequest(firstToken, conversationId, "Yes"), { conversationId });
+    const proposed = await firstRuntime!.handler(chatRequest(firstToken, conversationId,
+      "I need to correct that entry. I saved $30, not $45."), { conversationId });
+    expect((await proposed.json() as { decision: { action: string } }).decision.action).toBe("correct_ledger_entry");
+
+    const restartedRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: secondSecret });
+    expect(restartedRuntime).not.toBeNull();
+    const secondToken = signVictoriaSession({ userId: correctionUserId, secret: secondSecret });
+    const recorded = await restartedRuntime!.handler(chatRequest(secondToken, conversationId, "Yes"), { conversationId });
+    expect((await recorded.json() as { message: string; decision: { action: string } })).toMatchObject({
+      decision: { action: "correct_ledger_entry" }, message: expect.stringContaining("corrected the recorded amount to $30.00")
+    });
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    try {
+      const entries = await new PostgresMockSavingsTools(store.pool).listSavingsEntries(correctionUserId);
+      expect(entries).toHaveLength(1);
+      expect(await new PostgresMockSavingsTools(store.pool).getEffectiveSavingsEntryAmount(correctionUserId, entries[0]!.id)).toBe(3000);
+      const transitions = await store.pool.query<{ status: string }>(
+        "SELECT status FROM victoria_local_entry_correction_transitions WHERE user_id = $1 AND conversation_id = $2",
+        [correctionUserId, conversationId]);
+      expect(transitions.rows).toEqual([{ status: "recorded" }]);
+    } finally { await store.pool.end(); }
+  });
+
+  it("keeps a restored correction unchanged when the user declines", async () => {
+    const correctionUserId = `memory-check-${randomUUID()}`;
+    const conversationId = `declined-correction-restart-${randomUUID()}`;
+    const firstToken = signVictoriaSession({ userId: correctionUserId, secret: firstSecret });
+    const firstRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: firstSecret });
+    expect(firstRuntime).not.toBeNull();
+    await firstRuntime!.handler(chatRequest(firstToken, conversationId,
+      "I almost bought a $45 book but decided to wait."), { conversationId });
+    await firstRuntime!.handler(chatRequest(firstToken, conversationId, "Yes"), { conversationId });
+    await firstRuntime!.handler(chatRequest(firstToken, conversationId,
+      "I need to correct that entry. I saved $30, not $45."), { conversationId });
+
+    const restartedRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: secondSecret });
+    expect(restartedRuntime).not.toBeNull();
+    const secondToken = signVictoriaSession({ userId: correctionUserId, secret: secondSecret });
+    const declined = await restartedRuntime!.handler(chatRequest(secondToken, conversationId, "No"), { conversationId });
+    expect((await declined.json() as { message: string }).message).toContain("entry remains unchanged");
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    try {
+      const rows = await store.pool.query<{ status: string }>(
+        "SELECT status FROM victoria_local_entry_correction_transitions WHERE user_id = $1 AND conversation_id = $2",
+        [correctionUserId, conversationId]);
+      expect(rows.rows).toEqual([{ status: "declined" }]);
+      const corrections = await store.pool.query("SELECT 1 FROM victoria_local_savings_entry_corrections WHERE user_id = $1", [correctionUserId]);
+      expect(corrections.rowCount).toBe(0);
+    } finally { await store.pool.end(); }
+  });
+
   it("restores a pending goal allocation after restart and persists its terminal approval or decline", async () => {
     const allocationUserId = `memory-check-${randomUUID()}`;
     const approvalConversationId = `goal-resume-${randomUUID()}`;

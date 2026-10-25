@@ -62,15 +62,42 @@ describe("Victoria chat HTTP boundary", () => {
     expect(getLocalMockVictoriaChatHandler({ APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: "short" })).toBeNull();
   });
 
-  it("keeps persistent memory opt-in and fails closed when its local database configuration is missing", () => {
+  it("uses an available local database without a memory switch and rejects invalid database configuration", () => {
     expect(getLocalMockVictoriaRuntime({
-      APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: `${secret}-persistent-missing`,
-      VICTORIA_MEMORY_MODE: "persistent"
-    })).toBeNull();
+      APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: `${secret}-no-database`
+    })).not.toBeNull();
     expect(getLocalMockVictoriaRuntime({
       APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: `${secret}-persistent-invalid`,
-      VICTORIA_MEMORY_MODE: "typo"
+      DATABASE_URL: "not-a-database-url", OPENAI_API_KEY: "local-openai-key", OPENAI_MODEL: "mock",
+      PLAID_ENV: "sandbox", MONEY_MOVEMENT_MODE: "mock_ledger"
     })).toBeNull();
+  });
+
+  it("uses the configured provider for conversation without a separate switch", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify({
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
+        text: "Start with one easy evening routine you can repeat."
+      }) }] }]
+    })));
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      const base = {
+        APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: `${secret}-response-mode`,
+        OPENAI_API_KEY: "sk-test-provider-key", OPENAI_MODEL: "gpt-5-mini",
+        OPENAI_MEMORY_EXTRACTION_ENABLED: "false", OPENAI_PERSONALIZED_REPLIES_ENABLED: "false",
+        OPENAI_EPISODIC_SUMMARIES_ENABLED: "false"
+      };
+      const provider = getLocalMockVictoriaRuntime(base);
+      expect(provider).not.toBeNull();
+      const token = signVictoriaSession({ userId: "response-mode-user", secret: base.AUTH_SECRET });
+      const response = await provider!.handler(chatRequest(token, "response-mode-chat", "What can I do with my evenings?"),
+        { conversationId: "response-mode-chat" });
+      expect(response.status).toBe(200);
+      expect((await response.json()).message).toContain("easy evening routine");
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("enables episode summaries by default with a real provider and honors the explicit opt-out", async () => {
@@ -105,7 +132,7 @@ describe("Victoria chat HTTP boundary", () => {
       }
       const finished = await runtime!.finishHandler(finishRequest(token), "episode-default");
       expect(await finished.json()).toEqual({ saved: true });
-      expect(episodeRequests).toEqual(["episodic_memory_summary_v1"]);
+      expect(episodeRequests.filter((name) => name === "episodic_memory_summary_v1")).toEqual(["episodic_memory_summary_v1"]);
 
       episodeRequests.length = 0;
       const disabledEnv = {
@@ -119,7 +146,7 @@ describe("Victoria chat HTTP boundary", () => {
       }
       const notSaved = await disabledRuntime!.finishHandler(finishRequest(disabledToken), "episode-optout");
       expect(await notSaved.json()).toEqual({ saved: false });
-      expect(episodeRequests).toEqual([]);
+      expect(episodeRequests).not.toContain("episodic_memory_summary_v1");
     } finally {
       vi.unstubAllGlobals();
     }

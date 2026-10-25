@@ -4,16 +4,17 @@ import { describe, expect, it } from "vitest";
 import { parseVictoriaEnv, type EnvSource } from "../../../src/config/env.js";
 
 describe("environment example files", () => {
-  it("keeps the local example parseable for mock-backed development", () => {
+  it("keeps the local example parseable for product chat setup", () => {
     const env = parseVictoriaEnv(readEnvExample(".env.example"));
 
     expect(env.appEnv).toBe("local");
     expect(env.nodeEnv).toBe("development");
-    expect(env.openAiModel).toBe("mock");
+    expect(env.openAiModel).toBe("gpt-5-mini");
     expect(env.moneyMovementMode).toBe("mock_ledger");
     const example = readEnvExample(".env.example");
-    expect(example.OPENAI_MEMORY_EXTRACTION_ENABLED).toBe("true");
-    expect(example.OPENAI_EPISODIC_SUMMARIES_ENABLED).toBe("true");
+    expect(example.OPENAI_AGENT_TEAM_ENABLED).toBeUndefined();
+    expect(example.OPENAI_CONVERSATION_ENABLED).toBeUndefined();
+    expect(example.VICTORIA_MEMORY_MODE).toBeUndefined();
   });
 
   it("keeps the test example parseable for automated tests", () => {

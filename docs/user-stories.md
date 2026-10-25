@@ -596,6 +596,56 @@ Expected behavior:
 - If the user explicitly shares an interest in the same message, Victoria remembers that interest and acknowledges it naturally, even if optional provider memory extraction is unavailable.
 - If I provide an amount in a follow-up, Victoria uses the conversation context and asks for confirmation instead of asking what the amount was for again.
 - If I choose monthly or annual as the planning target, that choice applies to this expense only and is not saved as a general preference.
+- An intervening projection question does not erase that choice. If I repeat that I want the annual amount or clarify that it is a future target, she acknowledges the $420/year target and offers to record only this month's $35 toward it. A clear “yes” approves that specifically stated monthly ledger entry; the annual projection itself is never recorded as already saved.
 - After I confirm recording the covered recurring expense, Victoria may remember a compact, evidence-linked observation of the choice and the planning horizon. This is an observed example, not a permanent preference.
 - In a later similar conversation, Victoria may recall the prior choice as a gentle cue; she must still leave the current choice open. A tendency may be described only after multiple observed choices support it.
 - No real money moves, and a direct instruction to transfer or withdraw money remains blocked.
+
+## Story 23: Ended Recurring Activity Cost
+
+As a user who has stopped an activity with a stated recurring cost, I want Victoria to recognize the amount I may now have room to set aside and answer my planning question without asking me to repeat the cost.
+
+Expected behavior:
+
+- A clear statement that the activity ended, with one positive USD amount and monthly or yearly period, supports an avoided-spend planning moment even if the provider returns an unclear classification.
+- Common compact price wording such as "$35-a-month" and "$35/month" supplies the same stated period; tentative cancellations and conflicting periods still require clarification.
+- Victoria may present an annual projection from a monthly amount only as conditional on the cost remaining out of the budget. She responds to the user's reason for stopping without shame or medical advice.
+- A monthly or annual planning choice is separate from approval. Victoria may offer to record only the current month's amount in the mocked ledger after that choice and must wait for explicit confirmation.
+- A read-only planning question can be answered while a proposal is pending without approving or replacing it. A clear refusal in the same message closes the proposal before Victoria answers the separate question. Later projection questions do not reopen a declined proposal.
+- A tentative plan to stop, missing period, conflicting amounts, or direct real-transfer instruction does not create a savings proposal from this rule.
+
+Acceptance criteria:
+
+- Given “I quit baseball; it cost me $350 a month. Should I set that money aside?”, Victoria uses $350 for monthly planning and treats $4,200 as a conditional annual projection without claiming either amount was saved.
+- A provider's unclear classification does not trigger a question asking for the activity or amount already given.
+- An annual planning answer creates no ledger entry; a separate explicit approval can record only one current-month $350 mocked entry.
+- “I might quit baseball” does not count as an ended expense.
+
+## Story 24: Resolve References Across Financial Moments
+
+As a user discussing several spending changes, I want Victoria to understand which earlier moments I mean without combining the wrong amounts or recording the same moment twice.
+
+Expected behavior:
+
+- Victoria builds a scoped, typed view of recently stated recurring costs and their source turns. The language model may select which events a planning question refers to, but code verifies that those events exist and calculates any total in cents.
+- A question about two clearly identified monthly costs can receive a conditional combined annual projection without creating a savings proposal or ledger entry. If the reference could point to several combinations, Victoria asks which costs the user means.
+- A refusal can contain a separate read-only planning request. Victoria closes the pending proposal and answers the separate request when its amount and meaning are grounded.
+- A request that may repeat a recently completed entry asks whether this is a new occurrence before opening another proposal. An explicit new occurrence can follow the normal approval flow.
+- Transcript-derived context is advisory. It never supplies approval, a bank transfer, or proof of a completed ledger entry.
+
+Acceptance criteria:
+
+- After canceling separate $35/month and $20/month costs, “both over a year” yields a conditional $660 projection and no ledger write.
+- With three eligible costs, an unclear “both” asks which two. A model reference to an unknown event is rejected.
+- After one $6 mocked entry, a paraphrased request to log that same $6 moment asks whether it is separate; the weekly total remains $6 until a new occurrence and its own approval are clear.
+
+## Story 25: Answer While Learning
+
+As a user sharing a preference or routine while asking for help, I want Victoria to answer my question in the same turn without replacing the answer with a memory acknowledgment.
+
+Expected behavior:
+
+- A validated user-stated memory may be saved during an ordinary turn, but it does not end a turn that also asks a question.
+- With the configured provider, Victoria uses the current question, recent ordered dialogue, and relevant memories to give a read-only answer. Retrieved memories are optional context, not facts to recite.
+- A separate question can be answered while a mocked savings entry, goal allocation, or entry correction is pending. That question does not approve, change, or cancel the pending action.
+- Generated conversation text cannot claim a ledger write or real transfer, offer a new ledger action, or invent dollar amounts. A rejected or unavailable response falls back to a safe reply.

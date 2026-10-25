@@ -4,12 +4,14 @@ import { OpenAiEmbeddingProvider } from "../../agent/memory/openai-embedding-pro
 import { OpenAiConversationalMemoryExtractor } from "../../agent/memory/openai-conversational-memory-extractor.js";
 import { OpenAiPersonalizedReply } from "../../agent/memory/openai-personalized-reply.js";
 import { OpenAiEpisodicMemorySummarizer } from "../../agent/memory/openai-episodic-memory-summarizer.js";
+import { OpenAiConversationResponder } from "../../agent/conversation-responder.js";
 import { PostgresMemoryRepository } from "../../agent/memory/postgres-memory-repository.js";
 import { MemoryOrchestrator } from "../../agent/memory/memory-orchestrator.js";
 import { SEMANTIC_MEMORY_EMBEDDING_DIMENSIONS } from "../../agent/memory/semantic-embedding.js";
 import { parseVictoriaEnv, type EnvSource } from "../../config/env.js";
 import { PostgresPendingAmountClarificationStore } from "../clarifications/postgres-pending-amount-clarification-store.js";
 import { PostgresPendingGoalAllocationActionStore } from "../savings/postgres-pending-goal-allocation-store.js";
+import { PostgresPendingEntryCorrectionStore } from "../savings/postgres-pending-entry-correction-store.js";
 import { PostgresPendingSavingsActionStore } from "../savings/postgres-pending-savings-action-store.js";
 import { PostgresMockSavingsTools } from "../savings/postgres-mock-savings-tools.js";
 import { PostgresConversationCoordinator } from "../turns/postgres-conversation-coordinator.js";
@@ -38,6 +40,9 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
     const episodicSummariesEnabled = source.OPENAI_EPISODIC_SUMMARIES_ENABLED !== "false" &&
       env.openAiModel !== "mock" && Boolean(env.openAiApiKey.trim()) &&
       !/(?:local-openai|replace|example|placeholder|changeme)/i.test(env.openAiApiKey);
+    const providerEnabled = env.openAiModel !== "mock" && Boolean(env.openAiApiKey.trim()) &&
+      !/(?:local-openai|replace|example|placeholder|changeme)/i.test(env.openAiApiKey);
+    if (!providerEnabled) return null;
     const supabaseUrl = source.SUPABASE_URL?.trim();
     const publishableKey = source.SUPABASE_PUBLISHABLE_KEY?.trim();
     if (!supabaseUrl || !publishableKey) return null;
@@ -57,9 +62,10 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
     const pendingAmountClarifications = new PostgresPendingAmountClarificationStore(pool);
     const pendingSavingsActions = new PostgresPendingSavingsActionStore(pool);
     const pendingGoalAllocationActions = new PostgresPendingGoalAllocationActionStore(pool);
+    const pendingEntryCorrections = new PostgresPendingEntryCorrectionStore(pool);
     const agent = createVictoriaAgent({
-      env, memory, tools: new PostgresMockSavingsTools(pool), pendingAmountClarifications,
-      pendingSavingsActions, pendingGoalAllocationActions, idFactory: randomUUID,
+      env: { ...env, openAiAgentTeamEnabled: true }, memory, tools: new PostgresMockSavingsTools(pool), pendingAmountClarifications,
+      pendingSavingsActions, pendingGoalAllocationActions, pendingEntryCorrections, idFactory: randomUUID,
       ...(source.OPENAI_MEMORY_EXTRACTION_ENABLED !== "false" ? {
         conversationalMemoryExtractor: new OpenAiConversationalMemoryExtractor({
           apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})
@@ -83,6 +89,9 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
           apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})
         })
       } : {}),
+      conversationResponder: new OpenAiConversationResponder({
+        apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})
+      }),
       ...(fetcher ? { fetcher } : {})
     });
     const conversationCoordinator = new PostgresConversationCoordinator(pool);

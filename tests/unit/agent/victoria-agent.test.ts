@@ -14,6 +14,218 @@ import type { PendingAmountClarificationStore } from "../../../src/agent/pending
 import type { PendingSavingsActionStore } from "../../../src/agent/pending-savings-action-store.js";
 
 describe("VictoriaAgent", () => {
+  it("[INT-005] answers a combined annual projection from two distinct recurring costs without recording either", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const request = { userId: "combined_cost_user", conversationId: "combined_cost_chat" };
+    await agent.respond({ ...request, message: "I canceled my $35/month yoga membership." });
+    await agent.respond({ ...request, message: "No." });
+    const response = await agent.respond({ ...request,
+      message: "I also canceled a $20-a-month streaming service. How much would both freed-up amounts be over a year?" });
+    expect(response.decision.action).toBe("reflect");
+    expect(response.message).toContain("$55.00 a month");
+    expect(response.message).toContain("$660.00 over 12 months");
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+  });
+
+  it("[ARC-006] uses model-selected references only after matching them to grounded context events", async () => {
+    const tools = new MockVictoriaTools();
+    const memory = new MockMemoryProvider();
+    const request = { userId: "selected_cost_user", conversationId: "selected_cost_chat" };
+    await memory.setConversationContext(request.userId, request.conversationId, [
+      "I canceled a $35/month yoga membership.",
+      "I quit a $20-a-month streaming service.",
+      "I ended a $12/month music subscription."
+    ]);
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools,
+      contextReferenceResolver: { async resolve() { return {
+        kind: "annual_projection", sourceTurnIndexes: [0, 1], confidence: 0.95
+      }; } }
+    });
+    const response = await agent.respond({ ...request, message: "What is the yearly total for yoga and streaming?" });
+    expect(response.decision.action).toBe("reflect");
+    expect(response.message).toContain("$660.00");
+    expect(response.message).not.toContain("$804.00");
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+  });
+
+  it("[APR-004] answers a separate buffer request after declining a pending proposal", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const request = { userId: "buffer_advice_user", conversationId: "buffer_advice_chat" };
+    await agent.respond({ ...request, message: "I canceled a yoga membership that cost $35 a month." });
+    const response = await agent.respond({ ...request,
+      message: "No, please do not record it. Just answer whether keeping that money as a buffer makes sense." });
+    expect(response.decision.proposal?.status).toBe("declined");
+    expect(response.message).toMatch(/buffer/i);
+    expect(response.message).toContain("$35.00");
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+  });
+
+  it("[ERR-001] asks whether a paraphrased completed savings request is a new occurrence", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const request = { userId: "paraphrase_repeat_user", conversationId: "paraphrase_repeat_chat" };
+    await agent.respond({ ...request, message: "I made coffee at home instead of buying a $6 latte." });
+    await agent.respond({ ...request, message: "Yes, record the $6 latte I skipped in the mocked savings ledger." });
+    const repeat = await agent.respond({ ...request, message: "Please log that coffee I skipped for $6." });
+    expect(repeat.decision.action).toBe("ask_follow_up");
+    expect(repeat.message).toMatch(/separate new occurrence/i);
+    expect(repeat.decision.toolCall).toBeUndefined();
+    expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);
+    const separate = await agent.respond({ ...request,
+      message: "Today I made coffee at home instead of buying another $6 latte." });
+    expect(separate.decision.action).toBe("suggest_savings");
+    expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);
+    const approved = await agent.respond({ ...request, message: "Yes" });
+    expect(approved.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries(request.userId)).toHaveLength(2);
+  });
+
+  it.each([
+    "I stopped my $35-a-month pottery class last week. Help me plan what to do with that money.",
+    "I cancelled a pottery class that was $35/month. What should I do with the freed-up amount?",
+    "I quit a class that cost $35 a month. What might that be per year?",
+    "I quit the pottery class I paid $35 per month for. How might I plan for it?"
+  ])("[INT-005] grounds a clearly ended recurring cost across common cadence wording: %s", async (message) => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const response = await agent.respond({ userId: "ended_cadence_user", conversationId: message, message });
+    expect(response.decision.classification.type).toBe("avoided_spend");
+    expect(response.decision.suggestion?.amountCents).toBe(3500);
+    expect(response.message).not.toMatch(/what did you avoid spending on|how much would it have cost/i);
+    expect(await tools.listSavingsEntries("ended_cadence_user")).toEqual([]);
+  });
+
+  it("[APR-004] respects a compound refusal and answers conditional annual math without another proposal", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const request = { userId: "compound_decline_user", conversationId: "compound_decline_chat" };
+    await agent.respond({ ...request, message: "I stopped a class that cost me $35 each month." });
+    const response = await agent.respond({ ...request, message: "No. Do not record it. Just answer the annual math, please." });
+    expect(response.decision.proposal?.status).toBe("declined");
+    expect(response.message).toContain("$420.00");
+    expect(response.message).not.toMatch(/would you like me to record|confirm or decline/i);
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+  });
+
+  it("[APR-004] answers a read-only planning question while a proposal is pending", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const request = { userId: "pending_projection_user", conversationId: "pending_projection_chat" };
+    await agent.respond({ ...request, message: "I stopped a class that cost me $35 each month." });
+    const response = await agent.respond({ ...request, message: "Maybe later. What would that add up to in a year if I kept it aside each month?" });
+    expect(response.message).toContain("$420.00");
+    expect(response.message).not.toMatch(/clear yes or no|confirm or decline/i);
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+    const decline = await agent.respond({ ...request, message: "No." });
+    expect(decline.decision.proposal?.status).toBe("declined");
+  });
+
+  it("[APR-004] lets a separate read-only question through without approving the pending entry", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      specialists: { ...base, financialMoment: { analyze: async ({ message }) => ({ classification: {
+        type: message.includes("What options") ? "general_finance" : "avoided_spend",
+        confidence: 0.9, summary: message, needsClarification: false,
+        ...(message.includes("What options") ? {} : { amountCents: 3500 })
+      } }) } }
+    });
+    const request = { userId: "pending_advice_user", conversationId: "pending_advice_chat" };
+    await agent.respond({ ...request, message: "I skipped a $35 purchase." });
+    const answer = await agent.respond({ ...request, message: "What options do I have for thinking about that amount?" });
+    expect(answer.decision.action).toBe("reflect");
+    expect(answer.message).not.toMatch(/confirm or decline|clear yes or no/i);
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+    const approved = await agent.respond({ ...request, message: "Yes" });
+    expect(approved.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);
+  });
+
+  it("[APR-004] answers later recurring-cost math after a declined proposal without reopening it", async () => {
+    const tools = new MockVictoriaTools();
+    const agent = createAgent([], tools);
+    const request = { userId: "declined_projection_user", conversationId: "declined_projection_chat" };
+    await agent.respond({ ...request, message: "I canceled a class that cost me $35 each month." });
+    await agent.respond({ ...request, message: "No." });
+    const response = await agent.respond({ ...request, message: "How much would that be in a year if I kept it aside?" });
+    expect(response.decision.action).toBe("reflect");
+    expect(response.message).toContain("$420.00");
+    expect(response.decision.toolCall).toBeUndefined();
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+  });
+
+  it("[IDM-001] does not reopen a completed entry for a repeated approval turn", async () => {
+    const tools = new MockVictoriaTools();
+    const memory = new MockMemoryProvider();
+    const createFreshAgent = () => new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools });
+    const agent = createFreshAgent();
+    const request = { userId: "repeat_approval_user", conversationId: "repeat_approval_chat" };
+    await agent.respond({ ...request, message: "I made coffee at home instead of buying a $6 latte." });
+    const approval = "Yes, record the $6 latte I skipped in the mocked savings ledger.";
+    const recorded = await agent.respond({ ...request, message: approval });
+    expect(recorded.decision.action).toBe("create_ledger_entry");
+    const repeat = await createFreshAgent().respond({ ...request, message: approval });
+    expect(repeat.decision.action).toBe("ask_follow_up");
+    expect(repeat.message).toMatch(/repeat of your last approval/i);
+    expect(repeat.decision.toolCall).toBeUndefined();
+    expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);
+  });
+
+  it("[INT-005] uses an ended recurring activity cost for planning even when the provider calls it unclear", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      specialists: {
+        ...base,
+        financialMoment: { analyze: async () => ({ classification: {
+          type: "unclear", confidence: 0.8, summary: "Budgeting question", needsClarification: true
+        } }) },
+        companionVoice: { respond: async () =>
+          "Quitting baseball sounds sensible if it was hurting your knees. That former $350.00 monthly cost could become a $4,200.00 annual planning target if it stays out of your budget. Which planning target would you prefer, monthly or annual?" }
+      }
+    });
+    const request = { userId: "ended_baseball_user", conversationId: "baseball_chat" };
+    const first = await agent.respond({ ...request, message:
+      "hey i just chose to ditch playing baseball. It was costing me like $350 a month just to play and my knees hurt because of it. would this be a good idea to park this money somewhere?" });
+    expect(first.decision.classification.type).toBe("avoided_spend");
+    expect(first.decision.suggestion?.amountCents).toBe(35000);
+    expect(first.message).toContain("$350.00");
+    expect(first.message).toContain("$4,200.00");
+    expect(first.message).toMatch(/monthly or annual/i);
+    expect(first.message).not.toMatch(/What did you avoid spending on/i);
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+    const choice = await agent.respond({ ...request, message: "annual" });
+    expect(choice.message).toContain("this month's $350.00");
+    expect(choice.message).toContain("$4,200.00");
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+    const confirmed = await agent.respond({ ...request, message: "yes" });
+    expect(confirmed.decision.action).toBe("create_ledger_entry");
+    expect((await tools.listSavingsEntries(request.userId))[0]?.amountCents).toBe(35000);
+  });
+
+  it("does not treat a possible future cancellation as an avoided recurring cost", async () => {
+    const response = await createAgent([], new MockVictoriaTools()).respond({
+      userId: "possible_cancel_user",
+      message: "I might quit baseball; it costs me $350 a month. Should I park that money somewhere?"
+    });
+    expect(response.decision.action).not.toBe("suggest_savings");
+  });
+
+  it("refuses a real transfer even when an ended recurring cost is stated", async () => {
+    const tools = new MockVictoriaTools();
+    const response = await createAgent([], tools).respond({
+      userId: "ended_transfer_user",
+      message: "I quit baseball; it cost me $350 a month. Please transfer $350 from checking to savings."
+    });
+    expect(response.decision.action).toBe("refuse");
+    expect(await tools.listSavingsEntries("ended_transfer_user")).toEqual([]);
+  });
+
   it("treats a covered-expense money-redirection question as planning advice", async () => {
     const response = await createAgent([], new MockVictoriaTools()).respond({
       userId: "covered_budgeting_question_user",
@@ -50,7 +262,7 @@ describe("VictoriaAgent", () => {
     expect(first.message).toMatch(/monthly or annual/i);
     expect(first.decision.planningChoice).toMatchObject({ monthlyAmountCents: 3500, annualProjectionCents: 42000 });
     const annual = await agent.respond({ ...request, message: "annual" });
-    expect(annual.message).toContain("Would you like me to record");
+    expect(annual.message).toContain("Say yes to confirm");
     expect(annual.message).not.toMatch(/Which planning target/i);
   });
 
@@ -73,10 +285,10 @@ describe("VictoriaAgent", () => {
 
       expect(classify).toHaveBeenCalledTimes(callsAfterFirstTurn);
       expect(voice).toHaveBeenCalledTimes(1);
-      expect(answerResponse.message).toMatch(/Would you like me to record/);
+      expect(answerResponse.message).toMatch(/Say yes to confirm/);
       expect(answerResponse.message).not.toMatch(/which planning target/i);
       expect(answerResponse.message).toContain("$35.00");
-      expect(answerResponse.message).toContain("No real money has moved");
+      expect(answerResponse.message).toContain("No real money moves");
       if (/annual|yearly/i.test(answer)) expect(answerResponse.message).toContain("$420.00");
       expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
       const confirmation = await agent.respond({ ...request, message: "yes" });
@@ -125,11 +337,48 @@ describe("VictoriaAgent", () => {
     const request = { userId: "restored_choice_user", conversationId: "restored_choice_chat" };
     await createAgent().respond({ ...request, message: "I like basketball at a gym that costs $35 a month, but my company now covers it." });
     const chosen = await createAgent().respond({ ...request, message: "yearly" });
-    expect(chosen.message).toContain("Would you like me to record this month's $35.00");
+    expect(chosen.message).toContain("Say yes to confirm");
     const ambiguous = await createAgent().respond({ ...request, message: "sure I guess" });
     expect(ambiguous.decision.action).toBe("ask_follow_up");
     const approved = await createAgent().respond({ ...request, message: "yes" });
     expect(approved.decision.action).toBe("create_ledger_entry");
+    expect((await tools.listSavingsEntries(request.userId))[0]?.amountCents).toBe(3500);
+  });
+
+  it("keeps the annual target clear and asks for one approval of this month's amount", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    let stored: Awaited<ReturnType<PendingSavingsActionStore["getPending"]>> = null;
+    const pendingSavingsActions: PendingSavingsActionStore = {
+      async getPending() { return stored; },
+      async commit({ pendingAction, responseDecision }) {
+        if (!stored && pendingAction) stored = pendingAction;
+        if (responseDecision.proposalTransitions?.some((transition) => transition.to === "declined" || transition.to === "recorded")) stored = null;
+      }
+    };
+    const createAgent = () => new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools, pendingSavingsActions,
+      specialists: { ...base, companionVoice: { respond: async () =>
+        "Your promotion keeps basketball in your week and frees $35 monthly, or $420 over a year if coverage continues. Which planning target do you prefer?" } }
+    });
+    const request = { userId: "annual_insistence_user", conversationId: "annual_insistence_chat" };
+    await createAgent().respond({ ...request, message: "I play basketball at a $35/month gym, but my promotion means work now pays for it." });
+    await createAgent().respond({ ...request, message: "What about yearly, how much would that be?" });
+    const chosen = await createAgent().respond({ ...request, message: "I want to allocate how much it would be yearly" });
+    expect(chosen.decision.planningChoice?.selectedHorizon).toBe("annual");
+    expect(chosen.message).toContain("$420.00 is the yearly target");
+    expect(chosen.message).toContain("Say yes to confirm");
+    const repeated = await createAgent().respond({ ...request, message: "I want the yearly amount" });
+    expect(repeated.message).toContain("$420.00");
+    expect(repeated.message).toContain("Say yes to record it");
+    expect(repeated.decision.proposal?.status).toBe("pending");
+    const clarified = await createAgent().respond({ ...request, message: "future target" });
+    expect(clarified.message).toContain("$420.00 is a future yearly target");
+    expect(clarified.message).toContain("Say yes to confirm");
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+    const yes = await createAgent().respond({ ...request, message: "yes" });
+    expect(yes.decision.action).toBe("create_ledger_entry");
     expect((await tools.listSavingsEntries(request.userId))[0]?.amountCents).toBe(3500);
   });
 
