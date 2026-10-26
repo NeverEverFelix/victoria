@@ -101,6 +101,27 @@ describe("conversation response boundary", () => {
     expect(validateConversationReply("A simple meal could help tonight.", input)).toBe("A simple meal could help tonight.");
   });
 
+  it("allows only user-sourced or explicitly stated event amounts in conversational replies", () => {
+    const input = {
+      message: "What did I skip?", recentTurns: [], baselineReply: "It was $40.",
+      memories: [{ id: "memory-1", key: "spend", value: "$30", confidence: 0.95 }],
+      conversationSavingsEvents: [{
+        eventId: "event-1", type: "avoided_spend" as const, summary: "Skipped coffee", userProvidedAmountCents: 1200,
+        provenance: "user_reported_event" as const, occurredAt: "2026-10-26T12:00:00.000Z"
+      }]
+    };
+    expect(validateConversationReply("You skipped coffee, about $12.00.", input)).toBe("You skipped coffee, about $12.00.");
+    expect(validateConversationReply("You skipped coffee, about $30.", input)).toBeNull();
+    expect(validateConversationReply("You skipped coffee, about $40.", input)).toBeNull();
+  });
+
+  it.each(["I can send a bank transfer.", "I can wire the money.", "I can send it with Zelle.", "I can withdraw cash."])(
+    "rejects conversational drafts that promise real movement: %s", (reply) => {
+      const input = { message: "What can you do?", recentTurns: [], memories: [], baselineReply: "Tell me more." };
+      expect(validateConversationReply(reply, input)).toBeNull();
+    }
+  );
+
   it("falls back safely when a conversation draft claims an action", async () => {
     const tools = new MockVictoriaTools();
     const agent = new VictoriaAgent({

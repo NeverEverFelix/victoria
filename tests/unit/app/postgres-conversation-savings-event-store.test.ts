@@ -26,7 +26,7 @@ describe("PostgresConversationSavingsEventStore", () => {
     expect(query?.values).toEqual(["user-1", "conversation-1"]);
   });
 
-  it("appends idempotently and rejects a conflicting event ID or conversation", async () => {
+  it("appends idempotently within a conversation and scopes duplicate IDs by conversation", async () => {
     const calls: { sql: string; values?: readonly unknown[] }[] = [];
     let conversationId = "conversation-1";
     const store = new PostgresConversationSavingsEventStore(createPool(async (sql, values) => {
@@ -40,9 +40,12 @@ describe("PostgresConversationSavingsEventStore", () => {
     }));
 
     await expect(store.record({ event, conversationId: "conversation-1" })).resolves.toBeUndefined();
-    expect(calls[0]?.sql).toContain("ON CONFLICT (user_id, event_id) DO NOTHING");
+    expect(calls[0]?.sql).toContain("ON CONFLICT (user_id, conversation_id, event_id) DO NOTHING");
+    expect(calls[1]?.sql).toContain("WHERE user_id = $1 AND conversation_id = $2 AND event_id = $3");
+    expect(calls[1]?.values).toEqual(["user-1", "conversation-1", "event-1"]);
+
     conversationId = "conversation-2";
-    await expect(store.record({ event, conversationId: "conversation-1" })).rejects.toThrow("cannot be reused");
+    await expect(store.record({ event, conversationId: "conversation-2" })).resolves.toBeUndefined();
   });
 });
 

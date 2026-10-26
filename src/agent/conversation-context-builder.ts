@@ -179,15 +179,18 @@ function selectConversationSavingsEvents(events: readonly SavingsEvent[]): Conve
       (event.userProvidedAmountCents === undefined ||
         (Number.isSafeInteger(event.userProvidedAmountCents) && event.userProvidedAmountCents > 0)))
     .slice(-8)
-    .map((event) => Object.freeze({
-      eventId: event.id,
-      type: event.type,
-      summary: event.summary,
-      ...(event.merchantName ? { merchantName: event.merchantName } : {}),
-      ...(event.userProvidedAmountCents !== undefined ? { userProvidedAmountCents: event.userProvidedAmountCents } : {}),
-      provenance: "user_reported_event" as const,
-      occurredAt: event.createdAt
-    }));
+    .map((event) => {
+      const merchantName = event.merchantName?.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+      return Object.freeze({
+        eventId: event.id,
+        type: event.type,
+        summary: event.summary,
+        ...(merchantName ? { merchantName } : {}),
+        ...(event.userProvidedAmountCents !== undefined ? { userProvidedAmountCents: event.userProvidedAmountCents } : {}),
+        provenance: "user_reported_event" as const,
+        occurredAt: event.createdAt
+      });
+    });
 }
 
 function selectMemoryFacts(memories: readonly ConversationalMemory[]): SelectedMemoryContextFact[] {

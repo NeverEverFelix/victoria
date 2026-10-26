@@ -162,5 +162,7 @@ describe("conversation state manager", () => {
     });
     expect(resolveActiveSavingsProposalReference("I spent $8 on books.", state)).toBeUndefined();
     expect(resolveActiveSavingsProposalReference("$8 or $10", state)).toBeUndefined();
+    expect(resolveActiveSavingsProposalReference("About $8.", state)).toBeUndefined();
+    expect(resolveActiveSavingsProposalReference("Roughly $8.", state)).toBeUndefined();
   });
 });

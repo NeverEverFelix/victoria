@@ -26,7 +26,7 @@ export class PostgresConversationSavingsEventStore implements ConversationSaving
         (event_id, user_id, conversation_id, event_type, summary, merchant_name,
          user_provided_amount_cents, classification_confidence, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (user_id, event_id) DO NOTHING`,
+       ON CONFLICT (user_id, conversation_id, event_id) DO NOTHING`,
       [input.event.id, input.event.userId, input.conversationId, input.event.type, input.event.summary,
         input.event.merchantName ?? null, input.event.userProvidedAmountCents ?? null,
         input.event.classificationConfidence, input.event.createdAt]
@@ -34,12 +34,13 @@ export class PostgresConversationSavingsEventStore implements ConversationSaving
     const saved = await this.db.query<SavingsEventRow>(
       `SELECT event_id, user_id, conversation_id, event_type, summary, merchant_name,
          user_provided_amount_cents::text, classification_confidence, created_at::text
-       FROM victoria_local_savings_events WHERE user_id = $1 AND event_id = $2`,
-      [input.event.userId, input.event.id]
+       FROM victoria_local_savings_events
+       WHERE user_id = $1 AND conversation_id = $2 AND event_id = $3`,
+      [input.event.userId, input.conversationId, input.event.id]
     );
     const row = saved.rows[0];
     if (!row || row.conversation_id !== input.conversationId || !sameEvent(rowToEvent(row), input.event)) {
-      throw new Error("A savings event ID cannot be reused for a different event or conversation.");
+      throw new Error("A savings event ID cannot be reused for a different event in the same conversation.");
     }
   }
 

@@ -49,7 +49,8 @@ describe("buildVictoriaConversationContext", () => {
   it("passes only a bounded, provenance-labeled projection of authoritative conversation events", () => {
     const events = Array.from({ length: 10 }, (_, index) => ({
       id: `event-${index}`, userId: "user-1", type: "avoided_spend" as const,
-      summary: `Skipped takeout ${index}`, merchantName: "Takeout", userProvidedAmountCents: 1200,
+      summary: `Skipped takeout ${index}`,
+      merchantName: index === 2 ? `  Take\nout ${"x".repeat(130)} ` : "Takeout", userProvidedAmountCents: 1200,
       classificationConfidence: 0.9, createdAt: `2026-10-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`
     }));
     const context = buildVictoriaConversationContext({
@@ -58,10 +59,13 @@ describe("buildVictoriaConversationContext", () => {
     expect(context.conversationSavingsEvents).toHaveLength(8);
     expect(context.conversationSavingsEvents[0]).toMatchObject({
       eventId: "event-2", summary: "Skipped takeout 2", userProvidedAmountCents: 1200,
+      merchantName: `Take out ${"x".repeat(111)}`,
       provenance: "user_reported_event"
     });
-    expect(context.conversationSavingsEvents[0]).not.toHaveProperty("userId");
-    expect(context.conversationSavingsEvents).not.toHaveProperty("approval");
+    for (const event of context.conversationSavingsEvents) {
+      expect(event).not.toHaveProperty("userId");
+      expect(event).not.toHaveProperty("approval");
+    }
   });
 
   it("assembles bounded, provenance-aware facts and keeps a projection separate from the pending entry", () => {

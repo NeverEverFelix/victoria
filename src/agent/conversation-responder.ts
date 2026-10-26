@@ -26,16 +26,34 @@ export function validateConversationReply(reply: unknown, input: ConversationRes
       /\b(?:i|we|victoria)\s+(?:have\s+)?saved\s+(?:money|funds|savings)\b/i.test(text)) return null;
   if (/\b(?:your|the)\s+(?:bank|account|savings|ledger)\s+balance\s+(?:is|was|stands at)\b/i.test(text) ||
       /\byou\s+(?:have|currently have)\s+\$[\d,]+(?:\.\d{1,2})?\s+(?:in|available)\b/i.test(text)) return null;
-  if (/\b(?:i|we|victoria)\s+(?:can|will|would|shall|may)\s+(?:transfer|move|deposit|send)\s+(?:real\s+)?(?:money|funds|\$)/i.test(text)) return null;
+  if (/\b(?:i|we|victoria)\s+(?:can|will|would|shall|may)\s+(?:(?:make|initiate|complete)\s+)?(?:a\s+)?(?:bank\s+transfer|transfer|move|deposit|send|withdraw|wire|ach|zelle|cash\s+out)\b/i.test(text)) return null;
   if (/\b(?:record|log|add|save)\b[^.!?]{0,100}\b(?:ledger|savings entry|mocked entry)\b/i.test(text) ||
       /\b(?:ledger|savings entry|mocked entry)\b[^.!?]{0,100}\b(?:record|log|add|save)\b/i.test(text)) return null;
   // A conversational draft cannot introduce new dollar facts. Financial workflows
   // remain the only source for calculations, proposals, and ledger state.
-  const source = [input.message, ...input.recentTurns, input.baselineReply, ...input.memories.map((memory) => memory.value),
-    ...(input.conversationSavingsEvents ?? []).map((event) => event.summary)].join(" ");
+  const sourceAmounts = new Set<number>();
+  for (const source of [input.message, ...input.recentTurns]) {
+    for (const amount of source.match(/\$\s?\d[\d,]*(?:\.\d{1,2})?/g) ?? []) {
+      const cents = usdAmountCents(amount);
+      if (cents !== undefined) sourceAmounts.add(cents);
+    }
+  }
+  for (const event of input.conversationSavingsEvents ?? []) {
+    if (event.userProvidedAmountCents !== undefined) sourceAmounts.add(event.userProvidedAmountCents);
+  }
   const amounts = text.match(/\$\s?\d[\d,]*(?:\.\d{1,2})?/g) ?? [];
-  if (amounts.some((amount) => !source.includes(amount.replace(/\s/g, "")) && !source.includes(amount))) return null;
+  if (amounts.some((amount) => {
+    const cents = usdAmountCents(amount);
+    return cents === undefined || !sourceAmounts.has(cents);
+  })) return null;
   return text;
+}
+
+function usdAmountCents(amount: string): number | undefined {
+  const value = Number(amount.replace(/[$,\s]/g, ""));
+  if (!Number.isFinite(value) || value < 0 || value > Number.MAX_SAFE_INTEGER / 100) return undefined;
+  const cents = Math.round(value * 100);
+  return Number.isSafeInteger(cents) ? cents : undefined;
 }
 
 export class OpenAiConversationResponder implements ConversationResponder {

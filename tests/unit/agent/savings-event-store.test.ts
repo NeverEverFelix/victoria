@@ -28,7 +28,8 @@ describe("InMemoryConversationSavingsEventStore", () => {
     await expect(store.record({ event: { ...event }, conversationId: "conversation-1" })).resolves.toBeUndefined();
     await expect(store.record({ event: { ...event, summary: "Different event" }, conversationId: "conversation-1" }))
       .rejects.toThrow("cannot be reused");
-    await expect(store.record({ event, conversationId: "conversation-2" })).rejects.toThrow("cannot be reused");
+    await expect(store.record({ event, conversationId: "conversation-2" })).resolves.toBeUndefined();
+    await expect(store.list("user-1", "conversation-2")).resolves.toEqual([event]);
   });
 
   it("rejects unscoped or malformed event records", async () => {

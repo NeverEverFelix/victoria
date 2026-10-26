@@ -243,7 +243,7 @@ export function resolveActiveSavingsProposalReference(
 
 function isExplicitRevisionAmountReply(message: string): boolean {
   const amount = String.raw`\$\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?`;
-  return new RegExp(`^\\s*(?:(?:use|make it|set it to|it was|the amount is|about|around|roughly|approximately)\\s+)?${amount}[.!]?\\s*$`, "i")
+  return new RegExp(`^\\s*(?:(?:use|make it|set it to|it was|the amount is)\\s+)?${amount}[.!]?\\s*$`, "i")
     .test(message);
 }
 

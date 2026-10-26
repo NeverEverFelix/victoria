@@ -12,11 +12,11 @@ export class InMemoryConversationSavingsEventStore implements ConversationSaving
 
   async record(input: { readonly conversationId: string; readonly event: SavingsEvent }): Promise<void> {
     validateEvent(input.event, input.conversationId);
-    const key = eventKey(input.event.userId, input.event.id);
+    const key = eventKey(input.event.userId, input.conversationId, input.event.id);
     const current = this.events.get(key);
     if (current) {
       if (current.conversationId !== input.conversationId || !sameEvent(current.event, input.event)) {
-        throw new Error("A savings event ID cannot be reused for a different event or conversation.");
+        throw new Error("A savings event ID cannot be reused for a different event in the same conversation.");
       }
       return;
     }
@@ -55,6 +55,6 @@ export function sameEvent(left: SavingsEvent, right: SavingsEvent): boolean {
     Date.parse(left.createdAt) === Date.parse(right.createdAt);
 }
 
-function eventKey(userId: string, eventId: string): string {
-  return `${userId}\u0000${eventId}`;
+function eventKey(userId: string, conversationId: string, eventId: string): string {
+  return `${userId}\u0000${conversationId}\u0000${eventId}`;
 }
