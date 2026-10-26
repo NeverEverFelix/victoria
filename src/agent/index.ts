@@ -23,3 +23,5 @@ export * from "./tools/contracts.js";
 export * from "./tools/mock-tools.js";
 export * from "./prompts/system-prompt.js";
 export * from "./transaction-history-provider.js";
+export * from "./conversation-context-builder.js";
+export * from "./planning-reference-resolver.js";

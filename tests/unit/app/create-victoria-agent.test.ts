@@ -38,7 +38,7 @@ describe("createVictoriaAgent", () => {
       fetcher: async () => new Response(JSON.stringify({
         output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
           type: "avoided_spend", confidence: 0.91, merchantName: null, goalName: null,
-          revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+          revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Waited on a jacket", needsClarification: false
         }) }] }]
       }), { status: 200 })
     });
@@ -58,7 +58,7 @@ describe("createVictoriaAgent", () => {
     const outputs = [
       {
         type: "avoided_spend", confidence: 0.94, merchantName: null, goalName: null,
-        revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+        revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Waited on a jacket", needsClarification: false
       },
       {
         outcome: "suggest", confidence: 0.92, amountCents: 9000, source: "user_provided",
@@ -125,7 +125,7 @@ describe("createVictoriaAgent", () => {
     const outputs = [
       {
         type: "avoided_spend", confidence: 0.94, merchantName: null, goalName: null,
-        revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+        revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Waited on a jacket", needsClarification: false
       },
       {
         outcome: "suggest", confidence: 0.92, amountCents: 9500, source: "user_provided",
@@ -158,7 +158,7 @@ describe("createVictoriaAgent", () => {
         return callCount === 1
           ? jsonResponse({ output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
               type: "avoided_spend", confidence: 0.94, merchantName: null, goalName: null,
-              revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+              revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Waited on a jacket", needsClarification: false
             }) }] }] })
           : new Response("{}", { status: 503 });
       }
@@ -178,7 +178,7 @@ describe("createVictoriaAgent", () => {
     const outputs = [
       {
         type: "avoided_spend", confidence: 0.94, merchantName: null, goalName: null,
-        revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+        revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Waited on a jacket", needsClarification: false
       },
       {
         outcome: "suggest", confidence: 0.92, amountCents: 9000, source: "user_provided",
@@ -220,7 +220,7 @@ describe("createVictoriaAgent", () => {
         return jsonResponse({
           output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
             type: "real_money_movement_request", confidence: 0.98, merchantName: null, goalName: null,
-            revisionReason: null, summary: "Asked to transfer funds", needsClarification: false
+            revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Asked to transfer funds", needsClarification: false
           }) }] }]
         });
       }

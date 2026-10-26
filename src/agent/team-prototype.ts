@@ -2,10 +2,13 @@ import type { AgentMemory, ClassifiedMessage } from "./types.js";
 import { clarificationAfterSpecialistFailure, fallbackFinding, validateTeamAssessment, validateTeamFinding } from "./team-assessment-policy.js";
 import { applyClassificationConfidencePolicy } from "./confidence-policy.js";
 import { finalizeCompanionResponse, requiredDisclosures } from "./team-response-policy.js";
+import type { ResolvedFinancialReference, VictoriaConversationContext } from "./conversation-context-builder.js";
 
 /** Advisory result from the financial-moment specialist. */
 export interface FinancialMomentFinding {
   classification: ClassifiedMessage;
+  /** A validated context fact selected by Financial Moment; never an amount authority. */
+  resolvedReference?: ResolvedFinancialReference;
   /** Deterministically validated context for a dynamic voice response; never grants action authority. */
   responseContext?: {
     validatedAdditionalAmountsCents?: readonly number[];
@@ -32,10 +35,19 @@ export type SpecialistRole = "financialMoment" | "savingsReasoning" | "companion
 
 export interface AgentTeamSpecialists {
   financialMoment: {
-    analyze(input: { message: string; memory: AgentMemory; conversationContext?: readonly string[] }): Promise<FinancialMomentFinding>;
+    analyze(input: {
+      message: string;
+      memory: AgentMemory;
+      conversationContext?: readonly string[];
+      financialContext?: VictoriaConversationContext;
+    }): Promise<FinancialMomentFinding>;
   };
   savingsReasoning: {
-    assess(input: { finding: FinancialMomentFinding; memory: AgentMemory }): Promise<SavingsAssessment>;
+    assess(input: {
+      finding: FinancialMomentFinding;
+      memory: AgentMemory;
+      financialContext?: VictoriaConversationContext;
+    }): Promise<SavingsAssessment>;
   };
   companionVoice: {
     respond(input: {
@@ -82,13 +94,25 @@ export class AgentTeamPrototype {
     this.nowMs = options.nowMs ?? (() => performance.now());
   }
 
-  async respond(input: { message: string; memory: AgentMemory }): Promise<AgentTeamTurn> {
+  async respond(input: {
+    message: string;
+    memory: AgentMemory;
+    financialContext?: VictoriaConversationContext;
+  }): Promise<AgentTeamTurn> {
     const startedAt = this.nowMs();
     const timings: SpecialistTiming[] = [];
     const failedRoles: SpecialistRole[] = [];
 
-    const momentResult = await this.measure("financialMoment", timings, () => this.specialists.financialMoment.analyze(input));
-    const validatedFinding = momentResult.ok ? validateTeamFinding(momentResult.value) : null;
+    const momentResult = await this.measure("financialMoment", timings, () =>
+      this.specialists.financialMoment.analyze({
+        message: input.message,
+        memory: input.memory,
+        ...(input.financialContext ? { financialContext: input.financialContext } : {})
+      })
+    );
+    const validatedFinding = momentResult.ok
+      ? validateTeamFinding(momentResult.value, input.financialContext)
+      : null;
     if (!validatedFinding) {
       const failedRoles = ["financialMoment"] as SpecialistRole[];
       const finding = fallbackFinding(input.message);
@@ -101,7 +125,10 @@ export class AgentTeamPrototype {
       classification: applyClassificationConfidencePolicy(validatedFinding.classification)
     };
     const savingsResult = await this.measure("savingsReasoning", timings, () =>
-      this.specialists.savingsReasoning.assess({ finding, memory: input.memory })
+      this.specialists.savingsReasoning.assess({
+        finding, memory: input.memory,
+        ...(input.financialContext ? { financialContext: input.financialContext } : {})
+      })
     );
     let assessment: SavingsAssessment;
     if (!savingsResult.ok) {

@@ -7,8 +7,8 @@
   "environment": "local",
   "timeoutMs": 8000,
   "promptVersions": {
-    "financialMoment": "financial-moment-instructions-v1",
-    "savingsReasoning": "savings-assessment-instructions-v1",
+    "financialMoment": "financial-moment-instructions-v3",
+    "savingsReasoning": "savings-assessment-instructions-v2",
     "companionVoice": "companion-voice-instructions-v1"
   },
   "schemaVersions": {

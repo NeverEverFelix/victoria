@@ -2,12 +2,24 @@ import type { AgentMemory } from "./types.js";
 import { MIN_ACTIONABLE_CONFIDENCE } from "./confidence-policy.js";
 import type { FinancialMomentFinding, SavingsAssessment } from "./team-prototype.js";
 import { validateClassifiedMessage } from "./validation.js";
+import { resolveFinancialReferenceHint } from "./conversation-context-builder.js";
+import type { VictoriaConversationContext } from "./conversation-context-builder.js";
 
 /** Deterministic validation for financial evidence passed between specialists. */
-export function validateTeamFinding(candidate: unknown): FinancialMomentFinding | null {
+export function validateTeamFinding(
+  candidate: unknown,
+  financialContext?: VictoriaConversationContext
+): FinancialMomentFinding | null {
   if (!isRecord(candidate) || !isRecord(candidate.classification)) return null;
   const classification = validateClassifiedMessage(candidate.classification);
-  return classification ? Object.freeze({ classification }) : null;
+  if (!classification) return null;
+  const resolvedReference = resolveFinancialReferenceHint(financialContext, classification.referenceHint);
+  const validatedClassification = { ...classification };
+  delete validatedClassification.referenceHint;
+  return Object.freeze({
+    classification: validatedClassification,
+    ...(resolvedReference ? { resolvedReference } : {})
+  });
 }
 
 export function fallbackFinding(summary: string): FinancialMomentFinding {

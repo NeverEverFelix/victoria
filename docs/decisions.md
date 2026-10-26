@@ -6,6 +6,29 @@ Use it to keep future development honest. If a coding agent runs into an unresol
 
 ## Decided
 
+### Conversation Understanding Flows Through Explicit Context And Workflow State
+
+Decision: Confirmed on 2026-10-25. Victoria's agent direction is a single orchestrator coordinating advisory specialists through bounded typed context, explicit reference resolution, and structured conversation workflow state. This extends the orchestrated multi-agent direction in [ADR 0001](architecture/decisions/0001-orchestrated-multi-agent-architecture.md); it does not grant specialists authority over proposals, approvals, tools, or ledger writes.
+
+Implications:
+
+- Context assembly, intent/reference resolution, and workflow-state transitions are explicit orchestration responsibilities, not assumptions left to a single classifier or the transcript alone.
+- Resolved amounts and periods must be bound to grounded facts with provenance; arithmetic and validation remain deterministic.
+- A changed pending action must become a new/revised proposal and require confirmation of that exact action. A correction or period choice is not approval of a stale proposal.
+- The current implementation has a narrow read-only turn context and reference resolver. A general typed state manager and full specialist context handoff remain future work.
+- The architecture review's sample TypeScript contracts and durable storage design are proposals, not accepted implementation requirements. Implement in small, behavior-focused slices after reviewing existing repositories and safety contracts.
+
+### Annualized Savings Remain Planning Projections
+
+Decision: Confirmed on 2026-10-25. An annualized amount derived from a monthly avoided expense is a conditional planning projection, not realized savings and not an amount the current MVP can record in its savings ledger. A monthly or annual planning choice is scoped to the current expense and does not approve a ledger action.
+
+Implications:
+
+- The current MVP may offer only the explicitly stated current-period amount for a mocked ledger entry, after asking for explicit confirmation of that exact amount.
+- Repeating or clarifying an annual target does not convert the projection into an already-saved amount or authorize recording it.
+- A future annual goal/projection record requires an explicit product and domain decision, distinct storage/reporting semantics, and its own approval behavior.
+- This reaffirms the existing employer-covered and ended-recurring-expense behavior in [Story 22 and related stories](user-stories.md) and [MVP scope](mvp.md).
+
 ### MVP Uses A Mocked Savings Ledger
 
 Decision:

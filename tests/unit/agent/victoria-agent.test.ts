@@ -373,13 +373,70 @@ describe("VictoriaAgent", () => {
     expect(repeated.message).toContain("$420.00");
     expect(repeated.message).toContain("Say yes to record it");
     expect(repeated.decision.proposal?.status).toBe("pending");
+    const yearlyRecordRequest = await createAgent().respond({ ...request, message: "bruh record the yearly amount" });
+    expect(yearlyRecordRequest.message).toContain("$420.00 a year");
+    expect(yearlyRecordRequest.message).toContain("$35.00 toward that target");
+    expect(yearlyRecordRequest.message).toContain("Say yes to record it");
+    expect(yearlyRecordRequest.decision.action).toBe("ask_follow_up");
+    expect(yearlyRecordRequest.decision.proposal?.suggestion.amountCents).toBe(3500);
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
     const clarified = await createAgent().respond({ ...request, message: "future target" });
     expect(clarified.message).toContain("$420.00 is a future yearly target");
     expect(clarified.message).toContain("Say yes to confirm");
     expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+    const changedToMonthly = await createAgent().respond({ ...request, message: "actually, use monthly" });
+    expect(changedToMonthly.decision.planningChoice?.selectedHorizon).toBe("monthly");
+    expect(changedToMonthly.message).toContain("$35.00 is the monthly target");
+    expect(changedToMonthly.message).toContain("$35.00 in your Victoria savings ledger");
+    expect(changedToMonthly.decision.proposal?.suggestion.amountCents).toBe(3500);
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
     const yes = await createAgent().respond({ ...request, message: "yes" });
     expect(yes.decision.action).toBe("create_ledger_entry");
     expect((await tools.listSavingsEntries(request.userId))[0]?.amountCents).toBe(3500);
+  });
+
+  it("uses a validated annual fact reference to explain a pending projection request without revising or recording it", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const request = { userId: "annual_fact_reference_user", conversationId: "annual_fact_reference_chat" };
+    const referenceRequest = "Please record the longer projection in the savings ledger.";
+    const analyze = vi.fn(async (input) => input.message === referenceRequest
+      ? { classification: {
+          type: "proposal_revision" as const,
+          confidence: 0.95,
+          summary: "The user asks to record the annual projection.",
+          needsClarification: false,
+          referenceHint: { factId: "turn:0:annual-projection", period: "annual" as const }
+        } }
+      : base.financialMoment.analyze(input));
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools,
+      specialists: { ...base, financialMoment: { analyze } }
+    });
+
+    const initial = await agent.respond({
+      ...request,
+      message: "I play basketball at a $35/month gym, but my employer now covers it."
+    });
+    const selected = await agent.respond({ ...request, message: "annual" });
+    const response = await agent.respond({ ...request, message: referenceRequest });
+
+    expect(selected.decision.planningChoice?.selectedHorizon).toBe("annual");
+    expect(response.message).toContain("$420.00 annual projection");
+    expect(response.message).toContain("pending entry is still this month's $35.00");
+    expect(response.message).toContain("say yes only if you'd like me to record that");
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.proposal?.id).toBe(initial.decision.proposal?.id);
+    expect(response.decision.proposal?.suggestion.amountCents).toBe(3500);
+    expect(response.decision.planningChoice?.selectedHorizon).toBe("annual");
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+
+    const twelveMonthReference = await agent.respond({ ...request, message: "Please record the 12-month projection." });
+    expect(twelveMonthReference.message).toContain("$420.00");
+    expect(twelveMonthReference.decision.proposal?.id).toBe(initial.decision.proposal?.id);
+    expect(twelveMonthReference.decision.proposal?.suggestion.amountCents).toBe(3500);
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
   });
 
   it("declines a pending entry and continues with the user's separate question", async () => {
@@ -2257,6 +2314,49 @@ describe("VictoriaAgent", () => {
     expect(response.decision.suggestion).toBeUndefined();
     expect(response.decision.proposal).toBeUndefined();
     expect(await tools.listSavingsEntries("user_123")).toEqual([]);
+  });
+
+  it("builds grounded recurring-cost context for Savings Reasoning without exposing unrelated turns", async () => {
+    const tools = new MockVictoriaTools();
+    const memory = new MockMemoryProvider();
+    const request = { userId: "context_builder_user", conversationId: "context_builder_chat" };
+    await memory.setConversationContext(request.userId, request.conversationId, [
+      "My employer now covers the $35/month gym where I play basketball.",
+      "Victoria: Which planning target do you prefer?",
+      "I am also thinking about a weekend trip to see my sister."
+    ]);
+    const base = createMockAgentTeamSpecialists();
+    const analyze = vi.fn((input) => base.financialMoment.analyze(input));
+    const assess = vi.fn((input) => base.savingsReasoning.assess(input));
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools,
+      specialists: { ...base, financialMoment: { analyze }, savingsReasoning: { assess } }
+    });
+
+    await agent.respond({ ...request, message: "I almost bought a $20 book but decided to wait." });
+
+    expect(analyze).toHaveBeenCalledWith(expect.objectContaining({
+      financialContext: expect.objectContaining({
+        financialFacts: expect.arrayContaining([
+          expect.objectContaining({ amountCents: 3_500, period: "monthly" }),
+          expect.objectContaining({ amountCents: 42_000, period: "annual", provenance: "derived" })
+        ])
+      })
+    }));
+    expect(assess).toHaveBeenCalledWith(expect.objectContaining({
+      financialContext: expect.objectContaining({
+        relevantUserTurns: [{
+          sourceTurnIndex: 0,
+          text: "My employer now covers the $35/month gym where I play basketball."
+        }],
+        financialFacts: expect.arrayContaining([
+          expect.objectContaining({ amountCents: 3_500, period: "monthly", provenance: "user_statement" }),
+          expect.objectContaining({ amountCents: 42_000, period: "annual", provenance: "derived" })
+        ])
+      })
+    }));
+    expect(assess.mock.calls[0]?.[0].financialContext?.relevantUserTurns)
+      .not.toEqual(expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining("weekend trip") })]));
   });
 
   it("runs the specialist team for an avoided-spend turn, but approval still bypasses the team", async () => {

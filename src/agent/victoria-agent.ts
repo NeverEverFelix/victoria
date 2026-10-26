@@ -45,6 +45,9 @@ import {
 } from "./memory/extract-preference.js";
 import { selectFinancialContextSource } from "./context-source-policy.js";
 import { buildTurnContext, projectionFromResolvedReferences } from "./turn-context.js";
+import { resolvePlanningReference } from "./planning-reference-resolver.js";
+import { buildVictoriaConversationContext, resolveFinancialReferenceHint } from "./conversation-context-builder.js";
+import type { ResolvedFinancialReference, VictoriaConversationContext } from "./conversation-context-builder.js";
 import type { ContextReferenceResolver } from "./context-reference-resolver.js";
 import { validateConversationReply, type ConversationResponder, type ConversationResponderInput } from "./conversation-responder.js";
 import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } from "./transaction-history-provider.js";
@@ -459,12 +462,13 @@ export class VictoriaAgent {
       }
 
       const choice = pendingAction.decision.planningChoice;
-      const horizon = allocationTargetChoice(request.message);
-      const statedAmount = parseExplicitDollarAmount(request.message);
-      if (choice && horizon && !choice.selectedHorizon &&
-          (statedAmount.status !== "valid" || statedAmount.amountCents ===
-            (horizon === "annual" ? choice.annualProjectionCents : choice.monthlyAmountCents))) {
-        const selectedAmount = horizon === "annual" ? choice.annualProjectionCents : choice.monthlyAmountCents;
+      const planningReference = choice
+        ? resolvePlanningReference({ message: request.message, choice })
+        : undefined;
+      const horizon = planningReference?.kind === "resolved" ? planningReference.period : undefined;
+      if (choice && planningReference?.kind === "resolved" && horizon &&
+          (!choice.selectedHorizon || choice.selectedHorizon !== horizon || horizon === "monthly")) {
+        const selectedAmount = planningReference.amountCents;
         const message = horizon === "annual"
           ? `Got it: ${formatUsd(selectedAmount)} is the yearly target you'd like to work toward, based on ${formatUsd(choice.monthlyAmountCents)} a month if your gym stays covered. I can start by recording this month's ${formatUsd(choice.monthlyAmountCents)} in your Victoria savings ledger. Say yes to confirm. No real money moves.`
           : `Got it: ${formatUsd(selectedAmount)} is the monthly target. I can record this month's ${formatUsd(choice.monthlyAmountCents)} in your Victoria savings ledger. Say yes to confirm. No real money moves.`;
@@ -478,7 +482,7 @@ export class VictoriaAgent {
       }
 
       if (choice && horizon === "annual" && choice.selectedHorizon === "annual" &&
-          (statedAmount.status !== "valid" || statedAmount.amountCents === choice.annualProjectionCents)) {
+          planningReference?.kind === "resolved") {
         const message = `Right, you're planning around ${formatUsd(choice.annualProjectionCents)} a year. That assumes ${formatUsd(choice.monthlyAmountCents)} stays freed up each month for 12 months. I can record this month's ${formatUsd(choice.monthlyAmountCents)} toward that target after you confirm. Say yes to record it in your Victoria savings ledger; no real money moves.`;
         return { message, decision: {
           ...pendingAction.decision,
@@ -755,17 +759,41 @@ export class VictoriaAgent {
     const parsedReplyAmount = parseExplicitDollarAmount(request.message);
     const isPendingAmountAnswer = pendingClarification !== undefined &&
       parsedReplyAmount.status === "valid" && isSimpleAmountReply(request.message);
-    const { classification: classifiedMessage, teamAdvice } = isPendingAmountAnswer
+    const financialContext = buildVictoriaConversationContext({
+      priorTurns: conversationContext,
+      turnContext,
+      ...(pendingAction?.decision.proposal?.status === "pending" ? {
+        activeWorkflow: {
+          pendingRecordableAmountCents: pendingAction.decision.proposal.suggestion.amountCents,
+          ...(pendingAction.decision.planningChoice ? { planningChoice: pendingAction.decision.planningChoice } : {})
+        }
+      } : {})
+    });
+    const { classification: classifiedMessage, teamAdvice, resolvedReference } = isPendingAmountAnswer
       ? {
           classification: {
             ...pendingClarification.classification,
             ...(parsedReplyAmount.status === "valid" ? { amountCents: parsedReplyAmount.amountCents } : {}),
             needsClarification: false
           },
-          teamAdvice: undefined
+          teamAdvice: undefined,
+          resolvedReference: undefined
         }
-      : await this.classifyWithTeam(request.message, memory, conversationContext);
+      : await this.classifyWithTeam(request.message, memory, conversationContext, financialContext);
     const classification = resolveCoveredSpendPeriodAnswer(classifiedMessage, request.message, conversationContext);
+    const planningChoice = pendingAction?.decision.planningChoice;
+    if (pendingAction && pendingActionId && pendingAction.decision.proposal?.status === "pending" &&
+        planningChoice?.selectedHorizon === "annual" && resolvedReference?.period === "annual" &&
+        resolvedReference.meaning === "conditional_projection" &&
+        resolvedReference.amountCents === planningChoice.annualProjectionCents &&
+        /\b(?:record|log|save|add)\b/i.test(request.message)) {
+      const message = `I understand you mean the ${formatUsd(resolvedReference.amountCents)} annual projection, based on ${formatUsd(planningChoice.monthlyAmountCents)} a month if coverage continues for 12 months. I can't record a projection as savings. The pending entry is still this month's ${formatUsd(planningChoice.monthlyAmountCents)}; say yes only if you'd like me to record that in your Victoria savings ledger. No real money moves.`;
+      return { message, decision: {
+        ...pendingAction.decision,
+        action: "ask_follow_up",
+        userFacingMessage: message
+      } };
+    }
     let memoryAcknowledgement: string | undefined;
     const memoryLearningTurn = classification.type === "general_finance" || classification.type === "pattern_reflection" ||
       classification.type === "avoided_spend" || classification.type === "regretful_spend" ||
@@ -1215,24 +1243,36 @@ export class VictoriaAgent {
   private async classifyWithTeam(
     message: string,
     memory: Awaited<ReturnType<MemoryProvider["getMemoryForUser"]>>,
-    conversationContext: readonly string[] = []
+    conversationContext: readonly string[] = [],
+    financialContext?: VictoriaConversationContext
   ): Promise<{
     classification: ClassifiedMessage;
     teamAdvice?: TeamAdvice;
+    resolvedReference?: ResolvedFinancialReference;
   }> {
     const specialists = this.dependencies.specialists;
     if (!specialists) {
-      const candidate = await this.dependencies.llm.classifyMessage({ userMessage: message, memory, conversationContext });
-      const classification = enforceMoneyMovementBoundary(message,
-        validateClassifiedMessage(candidate) ?? fallbackFinding(message).classification);
-      return { classification: applyClassificationConfidencePolicy(classification) };
+      const candidate = await this.dependencies.llm.classifyMessage({
+        userMessage: message, memory, conversationContext, ...(financialContext ? { financialContext } : {})
+      });
+      const validated = validateClassifiedMessage(candidate) ?? fallbackFinding(message).classification;
+      const resolvedReference = resolveFinancialReferenceHint(financialContext, validated.referenceHint);
+      const cleanClassification = { ...validated };
+      delete cleanClassification.referenceHint;
+      const classification = enforceMoneyMovementBoundary(message, cleanClassification);
+      return {
+        classification: applyClassificationConfidencePolicy(classification),
+        ...(resolvedReference ? { resolvedReference } : {})
+      };
     }
 
     let finding;
     let financialMomentValid = false;
     try {
-      const candidate = await specialists.financialMoment.analyze({ message, memory, conversationContext });
-      const validated = validateTeamFinding(candidate);
+      const candidate = await specialists.financialMoment.analyze({
+        message, memory, conversationContext, ...(financialContext ? { financialContext } : {})
+      });
+      const validated = validateTeamFinding(candidate, financialContext);
       finding = validated ?? fallbackFinding(message);
       financialMomentValid = validated !== null;
     } catch {
@@ -1242,7 +1282,10 @@ export class VictoriaAgent {
     const coveredSpend = freedRecurringSpend(message);
     const periodAnswer = resolveCoveredSpendPeriodAnswer(classification, message, conversationContext);
     if (periodAnswer !== classification) {
-      return { classification: periodAnswer };
+      return {
+        classification: periodAnswer,
+        ...(finding.resolvedReference ? { resolvedReference: finding.resolvedReference } : {})
+      };
     }
     if (coveredSpend && classification.type === "avoided_spend" &&
         classification.amountCents === coveredSpend.amountCents && classification.amountIssue === undefined) {
@@ -1273,9 +1316,13 @@ export class VictoriaAgent {
     };
     finding = {
       classification,
+      ...(finding.resolvedReference ? { resolvedReference: finding.resolvedReference } : {}),
       ...(Object.keys(responseContext).length === 0 ? {} : { responseContext })
     };
-    if (!financialMomentValid || !isTeamSupportedClassification(classification)) return { classification };
+    if (!financialMomentValid || !isTeamSupportedClassification(classification)) return {
+      classification,
+      ...(finding.resolvedReference ? { resolvedReference: finding.resolvedReference } : {})
+    };
 
     let assessment: SavingsAssessment;
     const groundedCoveredSpend = coveredSpend && classification.type === "avoided_spend" &&
@@ -1290,7 +1337,9 @@ export class VictoriaAgent {
       };
     } else {
       try {
-        const candidate = await specialists.savingsReasoning.assess({ finding, memory });
+        const candidate = await specialists.savingsReasoning.assess({
+          finding, memory, ...(financialContext ? { financialContext } : {})
+        });
         assessment = validateTeamAssessment(candidate, finding, memory);
       } catch {
         assessment = clarificationAfterSpecialistFailure("savingsReasoning");
@@ -1299,7 +1348,11 @@ export class VictoriaAgent {
     // Keep the clarification selected by Savings Reasoning intact. Companion
     // Voice is reserved for suggestion and reflection wording.
     if (assessment.outcome === "ask") {
-      return { classification, teamAdvice: { assessment, message: assessment.question } };
+      return {
+        classification,
+        teamAdvice: { assessment, message: assessment.question },
+        ...(finding.resolvedReference ? { resolvedReference: finding.resolvedReference } : {})
+      };
     }
     const disclosures = requiredDisclosures(finding, assessment);
     let draft: unknown;
@@ -1340,6 +1393,7 @@ export class VictoriaAgent {
     }
     return {
       classification,
+      ...(finding.resolvedReference ? { resolvedReference: finding.resolvedReference } : {}),
       teamAdvice: {
         assessment,
         message: finalized.message,

@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { readFileSync } from "node:fs";
-import { OpenAiFinancialMomentAdapter } from "../../src/agent/llm/openai-financial-moment.js";
-import { createOpenAiAgentTeamSpecialists } from "../../src/agent/team/openai-specialists.js";
+import { FINANCIAL_MOMENT_PROMPT_VERSION, OpenAiFinancialMomentAdapter } from "../../src/agent/llm/openai-financial-moment.js";
+import { createOpenAiAgentTeamSpecialists, SAVINGS_REASONING_PROMPT_VERSION } from "../../src/agent/team/openai-specialists.js";
 import { MockMemoryProvider } from "../../src/agent/memory/mock-memory.js";
 import { MockVictoriaTools } from "../../src/agent/tools/mock-tools.js";
 import { VictoriaAgent } from "../../src/agent/victoria-agent.js";
@@ -86,8 +86,8 @@ export interface ProviderComparisonReport {
   environment: "local";
   timeoutMs: 8_000;
   promptVersions: {
-    financialMoment: "financial-moment-instructions-v1";
-    savingsReasoning: "savings-assessment-instructions-v1";
+    financialMoment: typeof FINANCIAL_MOMENT_PROMPT_VERSION;
+    savingsReasoning: typeof SAVINGS_REASONING_PROMPT_VERSION;
     companionVoice: "companion-voice-instructions-v1";
   };
   schemaVersions: {
@@ -126,8 +126,8 @@ export async function runProviderComparison(options: ProviderComparisonOptions):
     environment: "local",
     timeoutMs: 8_000,
     promptVersions: {
-      financialMoment: "financial-moment-instructions-v1",
-      savingsReasoning: "savings-assessment-instructions-v1",
+      financialMoment: FINANCIAL_MOMENT_PROMPT_VERSION,
+      savingsReasoning: SAVINGS_REASONING_PROMPT_VERSION,
       companionVoice: "companion-voice-instructions-v1"
     },
     schemaVersions: {

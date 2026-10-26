@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 import { applyClassificationConfidencePolicy } from "../../src/agent/confidence-policy.js";
-import { OpenAiFinancialMomentAdapter } from "../../src/agent/llm/openai-financial-moment.js";
+import { FINANCIAL_MOMENT_PROMPT_VERSION, OpenAiFinancialMomentAdapter } from "../../src/agent/llm/openai-financial-moment.js";
 import { ProviderUsageReporter } from "../../src/agent/telemetry/provider-usage-reporter.js";
 import { summarizeLatencies } from "./metrics.js";
 import { multiAgentReadinessScenarios } from "./fixtures/multi-agent-scenarios.js";
@@ -47,7 +47,7 @@ describe.skipIf(!enabled)("provider-backed Financial Moment evaluation", () => {
     const report = {
       model,
       schemaVersion: "financial_moment_v1",
-      promptVersion: "financial-moment-instructions-v1",
+      promptVersion: FINANCIAL_MOMENT_PROMPT_VERSION,
       corpusSize: results.length,
       classificationPasses: results.filter((result) => result.expected === result.actual).length,
       amountPasses: results.filter((result) => result.amountMatches).length,

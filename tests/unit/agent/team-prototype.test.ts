@@ -32,6 +32,55 @@ describe("AgentTeamPrototype", () => {
     expect(specialists.financialMoment.analyze).toHaveBeenCalledTimes(1);
   });
 
+  it("validates a model fact reference against the supplied context before Savings Reasoning sees it", async () => {
+    const financialContext = {
+      relevantUserTurns: [],
+      financialFacts: [{
+        id: "turn:0:annual-projection", amountCents: 42_000, currency: "USD" as const,
+        period: "annual" as const, meaning: "conditional_projection" as const,
+        provenance: "derived" as const, evidenceTurnIndexes: [0], condition: "Only if it remains covered for 12 months."
+      }]
+    };
+    const specialists = team({
+      classification: {
+        type: "avoided_spend", confidence: 0.9, summary: "Asked about the annual amount",
+        needsClarification: true, referenceHint: { factId: "turn:0:annual-projection", period: "annual" }
+      }
+    });
+    specialists.savingsReasoning.assess = vi.fn(async ({ finding }) => {
+      expect(finding.resolvedReference).toEqual({
+        factId: "turn:0:annual-projection", amountCents: 42_000, currency: "USD",
+        period: "annual", meaning: "conditional_projection", provenance: "derived",
+        condition: "Only if it remains covered for 12 months."
+      });
+      return { outcome: "ask" as const, confidence: 0.95, question: "Would you like to plan with that projection?" };
+    });
+    await new AgentTeamPrototype(specialists).respond({
+      message: "record the yearly amount", memory, financialContext
+    });
+    expect(specialists.savingsReasoning.assess).toHaveBeenCalledOnce();
+  });
+
+  it("drops a fact reference that is absent from the supplied context", async () => {
+    const specialists = team({
+      classification: {
+        type: "avoided_spend", confidence: 0.9, summary: "Asked about an annual amount",
+        needsClarification: true, referenceHint: { factId: "turn:999:annual-projection", period: "annual" }
+      }
+    });
+    specialists.savingsReasoning.assess = vi.fn(async ({ finding }) => {
+      expect(finding.resolvedReference).toBeUndefined();
+      expect(finding.classification.referenceHint).toBeUndefined();
+      return { outcome: "ask" as const, confidence: 0.95, question: "Which amount do you mean?" };
+    });
+    await new AgentTeamPrototype(specialists).respond({
+      message: "record the yearly amount",
+      memory,
+      financialContext: { relevantUserTurns: [], financialFacts: [] }
+    });
+    expect(specialists.savingsReasoning.assess).toHaveBeenCalledOnce();
+  });
+
   it("rejects malformed moment output before routing to savings reasoning", async () => {
     const specialists = team({ classification: { ...avoided, type: "nonsense" } as unknown as ClassifiedMessage });
     const turn = await new AgentTeamPrototype(specialists).respond({ message: "anything", memory });

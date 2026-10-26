@@ -125,3 +125,18 @@ The prototype records raw local elapsed times only. Percentiles are calculated a
 Production readiness gates are tracked in [`multi-agent-readiness.md`](../multi-agent-readiness.md). The scripted evaluation corpus is a contract-parity smoke test only; provider quality and cost remain unmeasured.
 
 Proposed provider-evaluation criteria are in [`multi-agent-evaluation-protocol.md`](../multi-agent-evaluation-protocol.md). Its numeric latency and cost thresholds remain proposals pending review and measurement.
+
+## Conversation Context Direction (2026-10-25)
+
+The product owner confirmed the direction of the [conversation context architecture review](../../VICTORIA_CONVERSATION_CONTEXT_ARCHITECTURE_REVIEW.md): retain a single Victoria orchestrator and advisory specialists, and give the orchestration path explicit context assembly, reference resolution, and structured workflow-state management. These are orchestration capabilities, not additional agents with financial authority.
+
+The intended responsibilities are:
+
+- **Context Builder:** assemble a bounded, provenance-aware view of recent dialogue, relevant memory, grounded financial facts, and the active workflow.
+- **Intent and Reference Resolver:** map the user's current wording to typed intent and references in that context. Model output may propose references, but application code validates them.
+- **Conversation State Manager:** apply validated choices and revisions to scoped workflow state, preserving proposal identity/version and invalidating stale approval when the proposed action changes.
+- **Victoria Orchestrator and deterministic policy/domain layer:** route specialists, validate handoffs, own proposal transitions, require exact-action confirmation, and retain exclusive authority over ledger/tool mutations.
+
+The repository has a bounded [conversation context builder](../../src/agent/conversation-context-builder.ts) that assembles relevant user turns, provenance-labeled recurring-cost facts, deterministic annual projections, and a read-only active-workflow summary for Financial Moment and Savings Reasoning. Financial Moment may propose a fact ID and period; application code validates that pair against the supplied facts and passes the resolved fact downstream with provenance and conditions. For a pending monthly proposal, a validated reference to the selected annual projection can produce a safe explanation while preserving the proposal identity and recordable amount. “12-month projection” and “projection for the next twelve months” resolve as annual by deterministic reference resolution. This is a first slice of the proposed Context Builder and Intent/Reference Resolver: selected memory assembly, durable event identity, and a general typed conversation state manager remain future work. The specialists can interpret this context but cannot authorize or mutate an action. The specialist prototype is not a replacement for the runtime's deterministic action authority. This direction does not accept the review's illustrative interfaces, persistence schema, or production rollout plan as final decisions. Those require narrow design slices and the existing product/safety contracts remain controlling.
+
+For the MVP, an annualized amount remains a conditional planning projection. Choosing an annual target does not create a projection ledger entry or count projected money as realized savings. Only the current-period amount may be proposed for the mocked savings ledger, and it still requires explicit confirmation. A future projection or goal record needs its own product/domain decision and separate reporting semantics.

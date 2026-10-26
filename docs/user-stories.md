@@ -597,6 +597,8 @@ Expected behavior:
 - If I provide an amount in a follow-up, Victoria uses the conversation context and asks for confirmation instead of asking what the amount was for again.
 - If I choose monthly or annual as the planning target, that choice applies to this expense only and is not saved as a general preference.
 - An intervening projection question does not erase that choice. If I repeat that I want the annual amount or clarify that it is a future target, she acknowledges the $420/year target and offers to record only this month's $35 toward it. A clear “yes” approves that specifically stated monthly ledger entry; the annual projection itself is never recorded as already saved.
+- If I say “record the yearly amount” while the monthly entry is pending, Victoria resolves “yearly amount” to the selected planning target, explains that it is a projection, and asks for confirmation only for this month's entry. That wording alone does not approve or replace the pending action.
+- If I change my planning choice from annual to monthly while the proposal is pending, Victoria updates the scoped planning choice without changing the proposed current-month amount or treating my correction as approval.
 - After I confirm recording the covered recurring expense, Victoria may remember a compact, evidence-linked observation of the choice and the planning horizon. This is an observed example, not a permanent preference.
 - In a later similar conversation, Victoria may recall the prior choice as a gentle cue; she must still leave the current choice open. A tendency may be described only after multiple observed choices support it.
 - No real money moves, and a direct instruction to transfer or withdraw money remains blocked.

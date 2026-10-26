@@ -73,6 +73,11 @@ export interface ClassifiedMessage {
   amountCents?: number;
   goalName?: string;
   revisionReason?: string;
+  /** Model-selected context reference; application code must validate fact membership before use. */
+  referenceHint?: {
+    factId: string;
+    period: "monthly" | "annual";
+  };
   amountIssue?: "invalid_value" | "multiple_amounts" | "invalid_precision" | "unsupported_currency";
   summary: string;
   needsClarification: boolean;
