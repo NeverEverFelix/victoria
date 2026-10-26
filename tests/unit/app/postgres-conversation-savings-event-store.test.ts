@@ -47,6 +47,16 @@ describe("PostgresConversationSavingsEventStore", () => {
     conversationId = "conversation-2";
     await expect(store.record({ event, conversationId: "conversation-2" })).resolves.toBeUndefined();
   });
+
+  it("rejects stored amounts outside the safe cents range", async () => {
+    const store = new PostgresConversationSavingsEventStore(createPool(async () => ({ rows: [{
+      event_id: event.id, user_id: event.userId, conversation_id: "conversation-1", event_type: event.type,
+      summary: event.summary, merchant_name: null, user_provided_amount_cents: "9007199254740992",
+      classification_confidence: event.classificationConfidence, created_at: event.createdAt
+    }], rowCount: 1 })));
+
+    await expect(store.list("user-1", "conversation-1")).rejects.toThrow("invalid user-provided amount");
+  });
 });
 
 function createPool(

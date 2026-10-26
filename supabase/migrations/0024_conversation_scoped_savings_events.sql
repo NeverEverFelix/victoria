@@ -32,4 +32,5 @@ CREATE POLICY victoria_local_savings_events_owner_policy ON victoria_local_savin
   FOR SELECT TO authenticated USING (user_id = (SELECT auth.uid()::text));
 REVOKE ALL ON victoria_local_savings_events FROM PUBLIC, anon;
 GRANT SELECT ON victoria_local_savings_events TO authenticated;
-GRANT ALL ON victoria_local_savings_events TO service_role;
+REVOKE ALL ON victoria_local_savings_events FROM service_role;
+GRANT SELECT, INSERT ON victoria_local_savings_events TO service_role;

@@ -181,16 +181,17 @@ function selectConversationSavingsEvents(events: readonly SavingsEvent[]): Conve
     .slice(-8)
     .map((event) => {
       const merchantName = event.merchantName?.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+      const summary = event.summary.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
       return Object.freeze({
         eventId: event.id,
         type: event.type,
-        summary: event.summary,
+        summary,
         ...(merchantName ? { merchantName } : {}),
         ...(event.userProvidedAmountCents !== undefined ? { userProvidedAmountCents: event.userProvidedAmountCents } : {}),
         provenance: "user_reported_event" as const,
         occurredAt: event.createdAt
       });
-    });
+    }).filter((event) => event.summary.length > 0);
 }
 
 function selectMemoryFacts(memories: readonly ConversationalMemory[]): SelectedMemoryContextFact[] {
@@ -293,15 +294,14 @@ function validSourceEvent(sourceEvent: ActiveSavingsConversationState["sourceEve
   if (!sourceEvent || !sourceEvent.id.trim() || sourceEvent.id.length > 120 ||
       sourceEvent.summaryProvenance !== "validated_event_summary") return {};
   const summary = sourceEvent.summary.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
+  const merchantName = sourceEvent.merchantName?.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
   if (!summary) return {};
   return {
     sourceEvent: {
       id: sourceEvent.id,
       summary,
       summaryProvenance: "validated_event_summary",
-      ...(sourceEvent.merchantName?.trim()
-        ? { merchantName: sourceEvent.merchantName.trim().slice(0, 120) }
-        : {}),
+      ...(merchantName ? { merchantName } : {}),
       ...(Number.isSafeInteger(sourceEvent.userProvidedAmountCents) && sourceEvent.userProvidedAmountCents! > 0
         ? { userProvidedAmountCents: sourceEvent.userProvidedAmountCents }
         : {})

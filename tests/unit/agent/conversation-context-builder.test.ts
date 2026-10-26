@@ -49,7 +49,7 @@ describe("buildVictoriaConversationContext", () => {
   it("passes only a bounded, provenance-labeled projection of authoritative conversation events", () => {
     const events = Array.from({ length: 10 }, (_, index) => ({
       id: `event-${index}`, userId: "user-1", type: "avoided_spend" as const,
-      summary: `Skipped takeout ${index}`,
+      summary: index === 2 ? "Skipped\u0000takeout 2" : `Skipped takeout ${index}`,
       merchantName: index === 2 ? `  Take\nout ${"x".repeat(130)} ` : "Takeout", userProvidedAmountCents: 1200,
       classificationConfidence: 0.9, createdAt: `2026-10-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`
     }));

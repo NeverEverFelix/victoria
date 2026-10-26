@@ -60,14 +60,26 @@ export class PostgresConversationSavingsEventStore implements ConversationSaving
 
 function rowToEvent(row: SavingsEventRow): SavingsEvent {
   if (row.event_type !== "avoided_spend") throw new Error("Stored savings event has an unsupported type.");
+  const userProvidedAmountCents = row.user_provided_amount_cents === null
+    ? undefined
+    : parseStoredAmountCents(row.user_provided_amount_cents);
   return Object.freeze({
     id: row.event_id,
     userId: row.user_id,
     type: "avoided_spend",
     summary: row.summary,
     ...(row.merchant_name ? { merchantName: row.merchant_name } : {}),
-    ...(row.user_provided_amount_cents === null ? {} : { userProvidedAmountCents: Number(row.user_provided_amount_cents) }),
+    ...(userProvidedAmountCents === undefined ? {} : { userProvidedAmountCents }),
     classificationConfidence: row.classification_confidence,
     createdAt: new Date(row.created_at).toISOString()
   });
+}
+
+function parseStoredAmountCents(value: string): number {
+  if (!/^\d+$/.test(value)) throw new Error("Stored savings event has an invalid user-provided amount.");
+  const amount = Number(value);
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    throw new Error("Stored savings event has an invalid user-provided amount.");
+  }
+  return amount;
 }

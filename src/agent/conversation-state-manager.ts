@@ -75,6 +75,7 @@ export function buildAwaitingAmountConversationState(
       event?.type !== "avoided_spend" || event.userId !== userId || !event.id.trim() || !event.summary.trim() ||
       (event.userProvidedAmountCents !== undefined &&
         (!Number.isSafeInteger(event.userProvidedAmountCents) || event.userProvidedAmountCents <= 0))) return undefined;
+  const merchantName = event.merchantName?.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
   return Object.freeze({
     status: "awaiting_amount",
     eventId: event.id,
@@ -83,7 +84,7 @@ export function buildAwaitingAmountConversationState(
       id: event.id,
       summary: event.summary.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 500),
       summaryProvenance: "validated_event_summary",
-      ...(event.merchantName ? { merchantName: event.merchantName.slice(0, 120) } : {})
+      ...(merchantName ? { merchantName } : {})
     })
   });
 }
@@ -107,6 +108,7 @@ export function buildActiveSavingsConversationState(
       !Number.isSafeInteger(choice.monthlyAmountCents * 12) ||
       choice.annualProjectionCents !== choice.monthlyAmountCents * 12 ||
       choice.monthlyAmountCents !== recordableAmount)) return undefined;
+  const merchantName = event.merchantName?.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
 
   return Object.freeze({
     actionId,
@@ -120,7 +122,7 @@ export function buildActiveSavingsConversationState(
       id: event.id,
       summary: event.summary.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 500),
       summaryProvenance: "validated_event_summary",
-      ...(event.merchantName ? { merchantName: event.merchantName.slice(0, 120) } : {}),
+      ...(merchantName ? { merchantName } : {}),
       ...(Number.isSafeInteger(event.userProvidedAmountCents) && event.userProvidedAmountCents! > 0
         ? { userProvidedAmountCents: event.userProvidedAmountCents }
         : {})

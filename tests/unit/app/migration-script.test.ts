@@ -17,6 +17,13 @@ describe("database migration runner safety gates", () => {
     }
   );
 
+  it("limits service-role access to append-only savings event operations", () => {
+    const migration = readFileSync(new URL("../../../db/migrations/0024_conversation_scoped_savings_events.sql", import.meta.url), "utf8");
+    expect(migration).toContain("REVOKE ALL ON victoria_local_savings_events FROM service_role");
+    expect(migration).toContain("GRANT SELECT, INSERT ON victoria_local_savings_events TO service_role");
+    expect(migration).not.toContain("GRANT ALL ON victoria_local_savings_events TO service_role");
+  });
+
   it("requires explicit opt-in before opening a database connection", () => {
     const result = spawnSync(process.execPath, [migrationScript.pathname], {
       cwd: process.cwd(),
