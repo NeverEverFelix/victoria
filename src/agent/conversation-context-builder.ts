@@ -252,8 +252,7 @@ function buildActiveWorkflow(
     eventId: input.eventId,
     status: input.status,
     pendingRecordableAmountCents: pendingAmount,
-    ...(input.awaitingValidRevision ? { awaitingValidRevision: true } : {}),
-    ...(input.planningChoice ? { planningChoice: input.planningChoice } : {})
+    ...(input.awaitingValidRevision ? { awaitingValidRevision: true } : {})
   };
   if (!choice) {
     return {
@@ -278,6 +277,7 @@ function buildActiveWorkflow(
   return {
     ...identityContext,
     ...sourceContext,
+    ...(input.planningChoice ? { planningChoice: input.planningChoice } : {}),
     ...(selectedPlanningPeriod ? { selectedPlanningPeriod } : {}),
     ...(selectedPlanningAmountCents === undefined ? {} : {
       selectedPlanningAmountCents,

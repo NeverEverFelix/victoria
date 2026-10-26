@@ -99,7 +99,7 @@ export function buildActiveSavingsConversationState(
   const event = decision.savingsEvent;
   const recordableAmount = proposal?.suggestion.amountCents;
   if (!actionId || decision.toolCall?.actionId !== actionId || proposal?.status !== "pending" ||
-      !proposal.id || !proposal.eventId || !event || event.id !== proposal.eventId ||
+      proposal.suggestion.movementMode !== "mock_ledger" || !proposal.id || !proposal.eventId || !event || event.id !== proposal.eventId ||
       !event.summary.trim() || !Number.isSafeInteger(recordableAmount) || recordableAmount! <= 0) return undefined;
 
   const choice = decision.planningChoice;

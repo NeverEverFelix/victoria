@@ -65,6 +65,17 @@ describe("conversation state manager", () => {
     });
   });
 
+  it("does not expose a non-mocked pending proposal as active conversation state", () => {
+    const unsafeDecision = {
+      ...pendingDecision,
+      proposal: {
+        ...pendingDecision.proposal!,
+        suggestion: { ...pendingDecision.proposal!.suggestion, movementMode: "real_transfer" }
+      }
+    } as unknown as AgentDecision;
+    expect(buildActiveSavingsConversationState("action-1", unsafeDecision)).toBeUndefined();
+  });
+
   it("rejects amount-clarification state whose event belongs to another user", () => {
     expect(buildAwaitingAmountConversationState("user-2", {
       classification: { type: "avoided_spend", confidence: 0.9, summary: "Skipped gym cost", needsClarification: true },

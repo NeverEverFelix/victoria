@@ -127,7 +127,21 @@ describe("buildVictoriaConversationContext", () => {
       pendingRecordableAmountCents: 4_200,
       integrity: "amount_mismatch"
     });
+    expect(context.workflowState).not.toHaveProperty("planningChoice");
     expect(context.selectedMemoryFacts).toEqual([]);
+  });
+
+  it("withholds an invalid planning choice from specialist context", () => {
+    const context = buildVictoriaConversationContext({
+      priorTurns: [],
+      turnContext: buildTurnContext({ message: "annual", priorTurns: [] }),
+      workflowState: activeWorkflow({ planningChoice: {
+        monthlyAmountCents: 3_500, annualProjectionCents: 41_000,
+        selectedPeriod: "annual", selectedAmountCents: 41_000, targetType: "conditional_projection"
+      } })
+    });
+    expect(context.workflowState).toMatchObject({ status: "awaiting_confirmation", integrity: "invalid_choice" });
+    expect(context.workflowState).not.toHaveProperty("planningChoice");
   });
 
   it("passes the structured missing-amount workflow state to specialists without adding an amount", () => {
