@@ -35,6 +35,8 @@ describe("AgentTeamPrototype", () => {
   it("validates a model fact reference against the supplied context before Savings Reasoning sees it", async () => {
     const financialContext = {
       relevantUserTurns: [],
+      selectedMemoryFacts: [],
+      conversationSavingsEvents: [],
       financialFacts: [{
         id: "turn:0:annual-projection", amountCents: 42_000, currency: "USD" as const,
         period: "annual" as const, meaning: "conditional_projection" as const,
@@ -76,7 +78,7 @@ describe("AgentTeamPrototype", () => {
     await new AgentTeamPrototype(specialists).respond({
       message: "record the yearly amount",
       memory,
-      financialContext: { relevantUserTurns: [], financialFacts: [] }
+      financialContext: { relevantUserTurns: [], selectedMemoryFacts: [], conversationSavingsEvents: [], financialFacts: [] }
     });
     expect(specialists.savingsReasoning.assess).toHaveBeenCalledOnce();
   });

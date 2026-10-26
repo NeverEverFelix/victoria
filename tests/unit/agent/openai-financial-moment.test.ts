@@ -85,6 +85,8 @@ describe("OpenAiFinancialMomentAdapter", () => {
     });
     const financialContext = {
       relevantUserTurns: [{ sourceTurnIndex: 0, text: "My employer covers a $35/month gym cost." }],
+      selectedMemoryFacts: [],
+      conversationSavingsEvents: [],
       financialFacts: [{
         id: "turn:0:annual-projection", amountCents: 42_000, currency: "USD" as const,
         period: "annual" as const, meaning: "conditional_projection" as const,

@@ -17,6 +17,8 @@ describe("OpenAI Savings Reasoning context handoff", () => {
     };
     const financialContext: VictoriaConversationContext = {
       relevantUserTurns: [{ sourceTurnIndex: 0, text: "My employer covers a $35/month gym cost." }],
+      selectedMemoryFacts: [],
+      conversationSavingsEvents: [],
       financialFacts: [
         {
           id: "turn:0:monthly-recurring-cost", amountCents: 3_500, currency: "USD", period: "monthly",
@@ -28,8 +30,14 @@ describe("OpenAI Savings Reasoning context handoff", () => {
           derivedFromFactId: "turn:0:monthly-recurring-cost", condition: "Only if the cost remains out of the budget for 12 months."
         }
       ],
-      activeSavingsWorkflow: {
-        status: "awaiting_confirmation", pendingRecordableAmountCents: 3_500,
+      workflowState: {
+        status: "awaiting_confirmation", actionId: "action-1", proposalId: "proposal-1", eventId: "event-1",
+        pendingRecordableAmountCents: 3_500,
+        sourceEvent: {
+          id: "event-1", summary: "Employer covers a $35/month gym membership.",
+          summaryProvenance: "validated_event_summary", merchantName: "gym", userProvidedAmountCents: 3_500
+        },
+        currentMessageReference: { eventId: "event-1", matchedBy: "merchant_name" },
         selectedPlanningPeriod: "annual", selectedPlanningAmountCents: 42_000,
         selectedPlanningMeaning: "conditional_projection", integrity: "consistent"
       }
@@ -65,13 +73,20 @@ describe("OpenAI Financial Moment context handoff", () => {
     };
     const financialContext: VictoriaConversationContext = {
       relevantUserTurns: [{ sourceTurnIndex: 0, text: "My employer covers a $35/month gym cost." }],
+      selectedMemoryFacts: [],
+      conversationSavingsEvents: [],
       financialFacts: [{
         id: "turn:0:annual-projection", amountCents: 42_000, currency: "USD", period: "annual",
         meaning: "conditional_projection", provenance: "derived", evidenceTurnIndexes: [0],
         condition: "Only if the cost remains out of the budget for 12 months."
       }],
-      activeSavingsWorkflow: {
-        status: "awaiting_confirmation", pendingRecordableAmountCents: 3_500,
+      workflowState: {
+        status: "awaiting_confirmation", actionId: "action-1", proposalId: "proposal-1", eventId: "event-1",
+        pendingRecordableAmountCents: 3_500,
+        sourceEvent: {
+          id: "event-1", summary: "Employer covers a $35/month gym membership.",
+          summaryProvenance: "validated_event_summary", merchantName: "gym", userProvidedAmountCents: 3_500
+        },
         selectedPlanningPeriod: "annual", selectedPlanningAmountCents: 42_000,
         selectedPlanningMeaning: "conditional_projection", integrity: "consistent"
       }

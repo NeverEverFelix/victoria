@@ -1,8 +1,34 @@
 import { describe, expect, it, vi } from "vitest";
 import { MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
-import { validateConversationReply } from "../../../src/agent/conversation-responder.js";
+import { OpenAiConversationResponder, validateConversationReply } from "../../../src/agent/conversation-responder.js";
 
 describe("conversation response boundary", () => {
+  it("supplies only scoped historical event context to a read-only conversation response", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const responder = new OpenAiConversationResponder({
+      apiKey: "test-key", model: "test-model", fetcher: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ output: [{ type: "message", content: [{
+          type: "output_text", text: JSON.stringify({ text: "You first mentioned skipping the purchase." })
+        }] }] }), { status: 200 });
+      }
+    });
+    const events = [{
+      eventId: "event-1", type: "avoided_spend" as const, summary: "I skipped a $35 purchase.",
+      userProvidedAmountCents: 3_500, provenance: "user_reported_event" as const,
+      occurredAt: "2026-10-26T12:00:00.000Z"
+    }];
+    const reply = await responder.respond({
+      message: "Which event did I mention first?", recentTurns: [], memories: [], baselineReply: "The pending action is unchanged.",
+      pendingAction: "savings_entry", conversationSavingsEvents: events
+    });
+
+    expect(reply).toBe("You first mentioned skipping the purchase.");
+    expect(requestBody?.instructions).toContain("exact user and conversation");
+    const providerInput = JSON.parse(String(requestBody?.input)) as { conversationSavingsEvents?: unknown };
+    expect(providerInput.conversationSavingsEvents).toEqual(events);
+  });
+
   it("answers a question while learning a user-stated preference", async () => {
     const memory = new MockMemoryProvider();
     const respond = vi.fn(async () => "Try a short walk or an easy meal tonight; a low-effort plan fits how tired you feel.");

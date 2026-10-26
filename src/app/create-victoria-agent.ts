@@ -21,6 +21,7 @@ import type { PendingAmountClarificationStore } from "../agent/pending-amount-cl
 import type { PendingSavingsActionStore } from "../agent/pending-savings-action-store.js";
 import type { PendingGoalAllocationActionStore } from "../agent/pending-goal-allocation-store.js";
 import type { PendingEntryCorrectionStore } from "../agent/pending-entry-correction-store.js";
+import type { ConversationSavingsEventStore } from "../agent/savings-event-store.js";
 import type { VoiceDraftIssue } from "../agent/team-response-policy.js";
 
 export interface CreateVictoriaAgentOptions {
@@ -38,6 +39,7 @@ export interface CreateVictoriaAgentOptions {
   pendingSavingsActions?: PendingSavingsActionStore;
   pendingGoalAllocationActions?: PendingGoalAllocationActionStore;
   pendingEntryCorrections?: PendingEntryCorrectionStore;
+  savingsEvents?: ConversationSavingsEventStore;
   idFactory?: () => string;
 }
 
@@ -89,6 +91,7 @@ export function createVictoriaAgent(options: CreateVictoriaAgentOptions): Victor
     ...(options.pendingSavingsActions ? { pendingSavingsActions: options.pendingSavingsActions } : {}),
     ...(options.pendingGoalAllocationActions ? { pendingGoalAllocationActions: options.pendingGoalAllocationActions } : {}),
     ...(options.pendingEntryCorrections ? { pendingEntryCorrections: options.pendingEntryCorrections } : {}),
+    ...(options.savingsEvents ? { savingsEvents: options.savingsEvents } : {}),
     ...(options.idFactory ? { idFactory: options.idFactory } : {})
   });
 }

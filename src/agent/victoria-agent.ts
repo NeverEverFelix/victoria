@@ -46,6 +46,12 @@ import {
 import { selectFinancialContextSource } from "./context-source-policy.js";
 import { buildTurnContext, projectionFromResolvedReferences } from "./turn-context.js";
 import { resolvePlanningReference } from "./planning-reference-resolver.js";
+import {
+  buildActiveSavingsConversationState,
+  buildAwaitingAmountConversationState,
+  revisePlanningState,
+  selectConversationWorkflowState
+} from "./conversation-state-manager.js";
 import { buildVictoriaConversationContext, resolveFinancialReferenceHint } from "./conversation-context-builder.js";
 import type { ResolvedFinancialReference, VictoriaConversationContext } from "./conversation-context-builder.js";
 import type { ContextReferenceResolver } from "./context-reference-resolver.js";
@@ -59,6 +65,8 @@ import type { PendingAmountClarification, PendingAmountClarificationStore } from
 import type { PendingSavingsActionStore } from "./pending-savings-action-store.js";
 import type { PendingGoalAllocationActionStore } from "./pending-goal-allocation-store.js";
 import type { PendingEntryCorrectionStore } from "./pending-entry-correction-store.js";
+import { InMemoryConversationSavingsEventStore } from "./savings-event-store.js";
+import type { ConversationSavingsEventStore } from "./savings-event-store.js";
 
 export interface VictoriaAgentDependencies {
   llm: LlmAdapter;
@@ -82,6 +90,7 @@ export interface VictoriaAgentDependencies {
   pendingSavingsActions?: PendingSavingsActionStore;
   pendingGoalAllocationActions?: PendingGoalAllocationActionStore;
   pendingEntryCorrections?: PendingEntryCorrectionStore;
+  savingsEvents?: ConversationSavingsEventStore;
   idFactory?: () => string;
 }
 
@@ -93,9 +102,10 @@ interface TeamAdvice {
 
 export class VictoriaAgent {
   private readonly dependencies: VictoriaAgentDependencies;
+  private readonly savingsEvents: ConversationSavingsEventStore;
   private readonly pendingSavingsActions = new Map<
     string,
-    { userId: string; conversationKey: string; decision: AgentDecision; awaitingValidRevision?: boolean; approval?: SavingsApproval }
+    { userId: string; conversationKey: string; decision: AgentDecision; awaitingValidRevision?: boolean; awaitingRevisionTarget?: boolean; approval?: SavingsApproval }
   >();
   private readonly pendingActionIdsByConversation = new Map<string, string>();
   private readonly pendingGoalAllocationActions = new Map<
@@ -119,6 +129,7 @@ export class VictoriaAgent {
   private nextProposalTransitionNumber = 1;
 
   constructor(dependencies: VictoriaAgentDependencies) {
+    this.savingsEvents = dependencies.savingsEvents ?? new InMemoryConversationSavingsEventStore();
     this.dependencies = {
       ...dependencies,
       memory: dependencies.memory instanceof MemoryOrchestrator
@@ -144,6 +155,12 @@ export class VictoriaAgent {
     const withUserMessage = [...priorContext, request.message].slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT);
     await this.dependencies.memory.setConversationContext(request.userId, conversationId, withUserMessage);
     const response = immutableSnapshot(await this.respondTurn(request, priorContext));
+    if (response.decision.savingsEvent) {
+      await this.savingsEvents.record({
+        conversationId,
+        event: response.decision.savingsEvent
+      });
+    }
     await this.persistPendingSavingsAction(request, response.decision);
     await this.persistPendingGoalAllocationAction(request, response.decision, priorPendingGoalActionId, priorPendingGoalDecision);
     await this.persistPendingEntryCorrection(request, response.decision, priorCorrectionId, priorCorrection?.decision);
@@ -304,6 +321,13 @@ export class VictoriaAgent {
       }
     }
 
+    const pendingSavingsConversationState = pendingAction && pendingActionId
+      ? buildActiveSavingsConversationState(pendingActionId, pendingAction.decision, {
+          ...(pendingAction.awaitingValidRevision ? { awaitingValidRevision: true } : {}),
+          ...(pendingAction.awaitingRevisionTarget ? { awaitingRevisionTarget: true } : {})
+        })
+      : undefined;
+
     if (pendingAction && pendingActionId) {
       const approvalResponse = interpretApprovalResponse(request.message, pendingAction.decision.suggestion?.amountCents);
 
@@ -317,10 +341,12 @@ export class VictoriaAgent {
       }
 
       if (
-        pendingAction.awaitingValidRevision &&
+        (pendingAction.awaitingValidRevision || pendingAction.awaitingRevisionTarget) &&
         (approvalResponse === "explicit_approval" || approvalResponse === "ambiguous")
       ) {
-        const message = "I need a valid USD amount for that correction before asking you to confirm. Please provide one unambiguous amount or decline the pending suggestion.";
+        const message = pendingAction.awaitingRevisionTarget
+          ? "I couldn't match that change to the active savings suggestion. I can't target an older event from this request. Please decline the current suggestion before starting a separate savings request; nothing has been changed or recorded."
+          : "I need a valid USD amount for that correction before asking you to confirm. Please provide one unambiguous amount or decline the pending suggestion.";
         return {
           message,
           decision: {
@@ -461,14 +487,36 @@ export class VictoriaAgent {
         };
       }
 
+      if (approvalResponse === "not_approval" && !pendingAction.awaitingValidRevision &&
+          !pendingAction.awaitingRevisionTarget && this.dependencies.conversationResponder &&
+          isReadOnlyEventHistoryQuestion(request.message)) {
+        const savingsEvents = await this.savingsEvents.list(request.userId, request.conversationId ?? "default");
+        const financialContext = buildVictoriaConversationContext({
+          priorTurns: conversationContext,
+          turnContext,
+          message: request.message,
+          savingsEvents,
+          ...(pendingSavingsConversationState ? { workflowState: pendingSavingsConversationState } : {})
+        });
+        return this.respondConversationalTurn(
+          request,
+          conversationContext,
+          "I can answer from the savings events in this conversation. The pending suggestion remains unchanged and has not been recorded.",
+          "savings_entry",
+          financialContext.conversationSavingsEvents
+        );
+      }
+
       const choice = pendingAction.decision.planningChoice;
       const planningReference = choice
         ? resolvePlanningReference({ message: request.message, choice })
         : undefined;
       const horizon = planningReference?.kind === "resolved" ? planningReference.period : undefined;
+      const planningTransition = revisePlanningState(pendingSavingsConversationState, planningReference);
       if (choice && planningReference?.kind === "resolved" && horizon &&
-          (!choice.selectedHorizon || choice.selectedHorizon !== horizon || horizon === "monthly")) {
-        const selectedAmount = planningReference.amountCents;
+          (planningTransition.kind === "revised" ||
+            (planningTransition.kind === "unchanged" && horizon === "monthly"))) {
+        const selectedAmount = planningTransition.state.planningChoice?.selectedAmountCents ?? planningReference.amountCents;
         const message = horizon === "annual"
           ? `Got it: ${formatUsd(selectedAmount)} is the yearly target you'd like to work toward, based on ${formatUsd(choice.monthlyAmountCents)} a month if your gym stays covered. I can start by recording this month's ${formatUsd(choice.monthlyAmountCents)} in your Victoria savings ledger. Say yes to confirm. No real money moves.`
           : `Got it: ${formatUsd(selectedAmount)} is the monthly target. I can record this month's ${formatUsd(choice.monthlyAmountCents)} in your Victoria savings ledger. Say yes to confirm. No real money moves.`;
@@ -759,17 +807,70 @@ export class VictoriaAgent {
     const parsedReplyAmount = parseExplicitDollarAmount(request.message);
     const isPendingAmountAnswer = pendingClarification !== undefined &&
       parsedReplyAmount.status === "valid" && isSimpleAmountReply(request.message);
+    const isPendingRevisionAmountAnswer = pendingAction?.awaitingValidRevision === true &&
+      parsedReplyAmount.status === "valid" && isSimpleAmountReply(request.message);
+    if (pendingAction?.awaitingRevisionTarget) {
+      const message = "I couldn't match that change to the active savings suggestion. I can't target an older event from this request. Please decline the current suggestion before starting a separate savings request; nothing has been changed or recorded.";
+      return { message, decision: {
+        ...pendingAction.decision, action: "ask_follow_up", userFacingMessage: message
+      } };
+    }
+    const pendingAmountWorkflowState = buildAwaitingAmountConversationState(request.userId, pendingClarification);
+    const conversationWorkflowState = selectConversationWorkflowState({
+      ...(pendingAmountWorkflowState ? { awaitingAmount: pendingAmountWorkflowState } : {}),
+      ...(pendingSavingsConversationState ? { awaitingConfirmation: pendingSavingsConversationState } : {})
+    });
+    const conversationSavingsEvents = await this.savingsEvents.list(request.userId, request.conversationId ?? "default");
     const financialContext = buildVictoriaConversationContext({
       priorTurns: conversationContext,
       turnContext,
-      ...(pendingAction?.decision.proposal?.status === "pending" ? {
-        activeWorkflow: {
-          pendingRecordableAmountCents: pendingAction.decision.proposal.suggestion.amountCents,
-          ...(pendingAction.decision.planningChoice ? { planningChoice: pendingAction.decision.planningChoice } : {})
-        }
-      } : {})
+      message: request.message,
+      selectedMemories: memory.conversationalMemories ?? [],
+      savingsEvents: conversationSavingsEvents,
+      ...(conversationWorkflowState ? { workflowState: conversationWorkflowState } : {})
     });
-    const { classification: classifiedMessage, teamAdvice, resolvedReference } = isPendingAmountAnswer
+    const activeProposalReference = financialContext.workflowState?.status === "awaiting_confirmation"
+      ? financialContext.workflowState.currentMessageProposalReference
+      : undefined;
+    const amountRevisionIssue = parsedReplyAmount.status === "multiple_amounts" ? "multiple_amounts"
+      : parsedReplyAmount.status === "invalid_precision" ? "invalid_precision"
+      : parsedReplyAmount.status === "unsupported_currency" ? "unsupported_currency"
+      : parsedReplyAmount.status === "invalid_value" ? "invalid_value"
+      : undefined;
+    if (pendingAction && pendingActionId && pendingAction.userId === request.userId && amountRevisionIssue &&
+        activeProposalReference && activeProposalReference.actionId === pendingSavingsConversationState?.actionId &&
+        activeProposalReference.proposalId === pendingSavingsConversationState?.proposalId &&
+        activeProposalReference.eventId === pendingSavingsConversationState?.eventId) {
+      this.pendingSavingsActions.set(pendingActionId, { ...pendingAction, awaitingValidRevision: true });
+      const message = amountRevisionIssue === "multiple_amounts"
+        ? "I found more than one dollar amount, so I haven't changed the pending suggestion. Which single amount in USD should I use?"
+        : amountRevisionIssue === "invalid_precision"
+          ? "That revised amount has more than two decimal places, so I haven't changed the pending suggestion. What amount in USD should I use?"
+          : amountRevisionIssue === "unsupported_currency"
+            ? "I can only record USD amounts, so I haven't changed the pending suggestion. What amount in USD should I use?"
+            : "A savings amount must be positive, so I haven't changed the pending suggestion. What positive amount in USD should I use?";
+      const classification: ClassifiedMessage = {
+        type: "proposal_revision", confidence: 1, amountIssue: amountRevisionIssue,
+        summary: request.message.slice(0, 500), needsClarification: true
+      };
+      return {
+        message,
+        decision: { ...pendingAction.decision, action: "ask_follow_up", classification, userFacingMessage: message }
+      };
+    }
+    const { classification: classifiedMessage, teamAdvice, resolvedReference } = isPendingRevisionAmountAnswer
+      ? {
+          classification: {
+            type: "proposal_revision" as const,
+            confidence: 1,
+            ...(parsedReplyAmount.status === "valid" ? { amountCents: parsedReplyAmount.amountCents } : {}),
+            summary: request.message.slice(0, 500),
+            needsClarification: false
+          },
+          teamAdvice: undefined,
+          resolvedReference: undefined
+        }
+      : isPendingAmountAnswer
       ? {
           classification: {
             ...pendingClarification.classification,
@@ -906,6 +1007,27 @@ export class VictoriaAgent {
       pendingAction.userId === request.userId &&
       classification.type === "proposal_revision"
     ) {
+      const proposalReference = financialContext?.workflowState?.status === "awaiting_confirmation"
+        ? financialContext.workflowState.currentMessageProposalReference
+        : undefined;
+      if (!pendingSavingsConversationState || proposalReference?.actionId !== pendingSavingsConversationState.actionId ||
+          proposalReference.proposalId !== pendingSavingsConversationState.proposalId ||
+          proposalReference.eventId !== pendingSavingsConversationState.eventId) {
+        this.pendingSavingsActions.set(pendingActionId, {
+          ...pendingAction,
+          awaitingRevisionTarget: true
+        });
+        const message = "I couldn't match that change to the active savings suggestion. I can't target an older event from this request. Please decline the current suggestion before starting a separate savings request; nothing has been changed or recorded.";
+        return {
+          message,
+          decision: {
+            ...pendingAction.decision,
+            action: "ask_follow_up",
+            classification,
+            userFacingMessage: message
+          }
+        };
+      }
       if (classification.amountIssue) {
         this.pendingSavingsActions.set(pendingActionId, {
           ...pendingAction,
@@ -963,18 +1085,52 @@ export class VictoriaAgent {
       };
     }
 
+    const readOnlyFollowUp = /\?/.test(request.message) &&
+      (classification.type === "general_finance" || classification.type === "pattern_reflection" ||
+        classification.type === "savings_progress");
+    const uncertainPendingRevision = classification.type === "unclear" &&
+      classification.uncertainIntent === "proposal_revision";
+    const groundedRevisionAmountReply = pendingAction?.awaitingValidRevision &&
+      classification.amountCents !== undefined;
+    if (pendingAction && !readOnlyFollowUp && classification.type !== "proposal_revision" &&
+        !groundedRevisionAmountReply && !uncertainPendingRevision) {
+      const amountCents = pendingAction.decision.proposal?.suggestion.amountCents;
+      const message = amountCents === undefined
+        ? "A savings suggestion is still pending. Please confirm or decline it before starting another savings action."
+        : `The ${formatUsd(amountCents)} savings suggestion is still pending. Please confirm or decline it before starting another savings action.`;
+      return {
+        message,
+        decision: {
+          ...pendingAction.decision,
+          action: "ask_follow_up",
+          classification,
+          userFacingMessage: message
+        }
+      };
+    }
+
     if (pendingAction?.awaitingValidRevision && classification.amountCents !== undefined) {
+      const proposalReference = financialContext?.workflowState?.status === "awaiting_confirmation"
+        ? financialContext.workflowState.currentMessageProposalReference
+        : undefined;
+      if (!pendingSavingsConversationState || proposalReference?.actionId !== pendingSavingsConversationState.actionId ||
+          proposalReference.proposalId !== pendingSavingsConversationState.proposalId ||
+          proposalReference.eventId !== pendingSavingsConversationState.eventId ||
+          proposalReference.matchedBy !== "revision_follow_up") {
+        const message = "Please provide one clear USD amount for the pending suggestion revision, or decline the pending suggestion. I haven't changed or recorded it.";
+        return { message, decision: {
+          ...pendingAction.decision,
+          action: "ask_follow_up",
+          classification,
+          userFacingMessage: message
+        } };
+      }
       return this.replacePendingSavingsProposal(request, pendingAction.decision, {
         ...classification,
         type: "proposal_revision"
       });
     }
 
-    const uncertainPendingRevision = classification.type === "unclear" &&
-      classification.uncertainIntent === "proposal_revision";
-    const readOnlyFollowUp = /\?/.test(request.message) &&
-      (classification.type === "general_finance" || classification.type === "pattern_reflection" ||
-        classification.type === "savings_progress");
     if (pendingAction && ((!answerToRecentQuestion && !readOnlyFollowUp) || uncertainPendingRevision)) {
       const amountCents = pendingAction.decision.proposal?.suggestion.amountCents;
       const message = classification.type === "unclear" && classification.uncertainIntent === "proposal_revision"
@@ -1177,7 +1333,8 @@ export class VictoriaAgent {
     request: AgentRequest,
     recentTurns: readonly string[],
     baselineReply: string,
-    pendingAction?: ConversationResponderInput["pendingAction"]
+    pendingAction?: ConversationResponderInput["pendingAction"],
+    conversationSavingsEvents?: ConversationResponderInput["conversationSavingsEvents"]
   ): Promise<AgentResponse> {
     const memory = await this.dependencies.memory.getMemoryForUser(request.userId, request.message);
     const message = await this.generateConversationReply({
@@ -1186,7 +1343,8 @@ export class VictoriaAgent {
       memories: (memory.conversationalMemories ?? []).map(({ id, key, value, confidence, sourceType }) =>
         ({ id, key, value, confidence, ...(sourceType ? { sourceType } : {}) })),
       baselineReply,
-      ...(pendingAction ? { pendingAction } : {})
+      ...(pendingAction ? { pendingAction } : {}),
+      ...(conversationSavingsEvents ? { conversationSavingsEvents } : {})
     });
     return { message, decision: {
       action: "reflect",
@@ -2384,7 +2542,9 @@ export class VictoriaAgent {
     this.pendingSavingsActions.set(pending.actionId, {
       userId: request.userId,
       conversationKey,
-      decision: pending.decision
+      decision: pending.decision,
+      ...(pending.awaitingValidRevision ? { awaitingValidRevision: true } : {}),
+      ...(pending.awaitingRevisionTarget ? { awaitingRevisionTarget: true } : {})
     });
     this.pendingActionIdsByConversation.set(conversationKey, pending.actionId);
   }
@@ -2437,7 +2597,12 @@ export class VictoriaAgent {
     await store.commit({
       userId: request.userId,
       conversationId: request.conversationId ?? "default",
-      ...(pending ? { pendingAction: { actionId: actionId!, decision: pending.decision } } : {}),
+      ...(pending ? { pendingAction: {
+        actionId: actionId!,
+        decision: pending.decision,
+        ...(pending.awaitingValidRevision ? { awaitingValidRevision: true } : {}),
+        ...(pending.awaitingRevisionTarget ? { awaitingRevisionTarget: true } : {})
+      } } : {}),
       responseDecision
     });
   }
@@ -2658,6 +2823,16 @@ function isOrdinaryQuestion(message: string): boolean {
     !/\b(?:record|log|add|transfer|deposit|move)\b[^?]*\b(?:savings|money|funds|ledger|entry)\b/i.test(message);
 }
 
+function isReadOnlyEventHistoryQuestion(message: string): boolean {
+  if (/^\s*(?:yes|no|nope|nah|sure|confirm|approve)\b/i.test(message)) return false;
+  const question = message.replace(/\b(?:not|never|don't|do not)\s+(?:to\s+)?(?:record|log|save|add|transfer|move)\b/gi, " ");
+  return /\?/.test(question) &&
+    !/\b(?:should i|can you|could you|please)\s+(?:record|log|save|add|transfer|move|revise|change|approve|confirm|decline)\b/i.test(question) &&
+    !/\b(?:record|log|save|add|transfer|move|revise|change|approve|confirm|decline)\b/i.test(question) &&
+    /\b(?:what|which|when|where|list|summari[sz]e|remind me|tell me)\b/i.test(question) &&
+    /\b(?:event|thing|moment|purchase|spend|spent|avoid|avoided|skip|skipped|mentioned|told you|conversation|earlier|before)\b/i.test(question);
+}
+
 function isConversationTopicTurn(message: string): boolean {
   return isOrdinaryQuestion(message) ||
     /\b(?:let'?s|can we|i(?:'d| would) like to)\s+(?:talk|discuss|think)\s+about\b/i.test(message) ||
@@ -2867,7 +3042,7 @@ function isTeamSupportedClassification(classification: ClassifiedMessage): boole
 }
 
 function isSimpleAmountReply(message: string): boolean {
-  return /^\s*(?:(?:it's|its|about|around|the amount is|that is)\s*)?\$\s*\d[\d,]*(?:\.\d{1,2})?\s*[.!?]*\s*$/i.test(message);
+  return /^\s*(?:(?:it's|its|about|around|the amount is|that is|use|make it|set it to)\s*)?\$\s*\d[\d,]*(?:\.\d{1,2})?\s*[.!?]*\s*$/i.test(message);
 }
 
 function questionAfterDecline(message: string): string | undefined {

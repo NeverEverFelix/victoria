@@ -25,7 +25,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - On the first employer-covered expense response, Victoria asks which amount the user wants as an allocation target—the monthly amount or annual projection—without introducing a separate destination choice or asking to record anything; after the user chooses, she acknowledges that target and asks confirmation only for the current month's amount.
 - Recover an annual choice after an intervening math question and durable proposal restore. If the user repeats the annual choice or clarifies that it is a future target, reaffirm the annual target and state that “yes” would record only this month's explicitly named monthly amount; retain the pending proposal, and never treat the annual projection as already saved.
 - Resolve “record the yearly amount” against the selected annual planning target while a monthly proposal is pending; explain the current-period confirmation clearly, keep the proposal amount unchanged, and create no entry until a separate explicit confirmation.
-- Resolve period changes such as “actually, use monthly” against the same pending planning choice; update only its selected horizon, preserve the current-month proposal amount and ID, and create no entry until exact confirmation.
+- Resolve period changes such as “actually, use monthly” through typed pending-workflow state; preserve its source event ID, action ID, proposal ID, status, and current-month recordable amount while updating only the selected period/target type. Create no entry until exact confirmation, and reject a reference whose amount or meaning does not match its period.
 - A user's short answer to Victoria's prior monthly-versus-annual planning question is resolved against that exchange, remains a planning preference rather than a goal allocation unless an allocation action is explicit, and is answered using the recent conversation rather than repeating an unrelated goal question.
 - A period-based follow-up during a covered monthly expense is not treated as a proposal revision without a clear amount or reason; the conversational model can use the validated annual projection while keeping it distinct from the current monthly ledger suggestion.
 - If a user refers to the calculated annual projection during a pending monthly ledger suggestion, Victoria recognizes it as a planning preference, not a replacement ledger amount or approval; the pending monthly suggestion remains approval-gated.
@@ -129,6 +129,8 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Against a dedicated disposable local PostgreSQL database, a memory written through one local chat runtime is recalled by a fresh runtime for the same user, and is not recalled for another user.
 - In local persistent chat, an unanswered avoided-spend amount clarification survives a fresh runtime for the same user and conversation; a new amount yields a fresh suggestion requiring explicit approval, and another user cannot retrieve or answer that clarification.
 - In local persistent chat, a pending savings proposal survives a fresh runtime; exact confirmation records one immutable `mock_ledger` entry, and weekly progress still includes that entry after another runtime restart. Repeating confirmation cannot create a second entry.
+- While a proposal is pending, an amount answer to an older clarification cannot start a new savings action; Victoria reminds the user the current suggestion remains pending, except for grounded revisions, explicit approval/decline, and read-only questions.
+- A revision clarification survives a fresh runtime; stale approval cannot record the old amount, a clear revision creates a linked proposal, and only fresh explicit approval records the revised amount.
 - In local persistent chat, `GET /api/memories` returns only the signed-in local user’s current facts; invalid or absent sessions cannot inspect memory, forget suppresses listing/retrieval immediately, and scheduled retention physically removes the forgotten lineage and embeddings after 30 days; local correction appends a linked current fact and future retrieval uses the correction.
 - Retention jobs delete expired PostgreSQL short-term context, 90-day transaction-profile data, 24-month-old unrefreshed user memories, and forgotten memory lineages plus embeddings; job outcomes are auditable and a protected scheduled handler rejects unauthenticated calls.
 - In local persistent chat, concurrent approval and decline attempts for one proposal serialize to one terminal outcome; a recorded entry cannot coexist with a declined or superseded transition.
@@ -221,7 +223,11 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 ## Agentic Coding Setup
 
 - The headless agent-team prototype routes a turn through typed Financial Moment, Savings Reasoning, and Companion Voice handoffs in order.
-- Financial Moment and Savings Reasoning receive bounded relevant user turns, provenance-labeled recurring-cost facts, deterministic conditional projections, and a read-only summary of any active pending savings workflow; they cannot use context as approval or as authority to suggest a projected amount.
+- Financial Moment and Savings Reasoning receive bounded relevant user turns, explicitly sourced retrieved memories, provenance-labeled recurring-cost facts, deterministic conditional projections, and a read-only active pending workflow including its linked source-event summary after the source turn leaves the recent dialogue window; they cannot use context as approval or as authority to suggest a projected amount.
+- When an avoided-spend amount is missing, specialist context carries a typed `awaiting_amount` state with the validated source event and missing field; it carries no inferred amount, and the orchestrator alone decides whether a user reply resolves it.
+- Specialist context receives one selected workflow state; if inconsistent stores expose both a missing-amount clarification and a pending proposal, the confirmation workflow takes precedence.
+- Financial Moment and Savings Reasoning receive the same single discriminated `workflowState` field; it is either `awaiting_amount` or `awaiting_confirmation`, with no parallel pending-workflow fields.
+- A deterministic reference resolver links an explicit source label such as “that gym membership” only to the active proposal's linked source event; vague pronouns, competing references, and unrelated mentions remain unresolved. The pointer alone cannot approve, revise, or record the pending action.
 - A Financial Moment fact-reference hint is accepted only when its exact fact ID and period exist in the supplied typed context; the validated fact reaches Savings Reasoning with provenance and conditions, while the hint alone never supplies a ledger amount or approval.
 - While a monthly proposal is pending, a validated reference to its selected annual projection receives an explicit explanation that only the current-month amount is recordable; “12-month projection” and “projection for the next twelve months” resolve as annual, leave the proposal ID and amount intact, and create no entry.
 - Orchestration is separated from deterministic handoff validation and final response wording policy.
@@ -251,6 +257,10 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Low-confidence classification asks for clarification before proposing; a later clear turn can proceed to a pending proposal and requires exact approval.
 - A low-confidence clarification retains short-lived context for the next reply, while a clear new intent replaces and clears that context.
 - Low-confidence proposal edits leave the pending proposal unchanged; a clear revision creates a superseding proposal that requires fresh explicit approval.
+- A classified pending-proposal revision must carry a deterministic reference matching the active action, proposal, and source event; unresolved revisions leave the proposal unchanged, and accepted revisions create a linked replacement requiring fresh exact-action approval.
+- A reply to an outstanding revision clarification may use a clear amount-only answer, but an unrelated sentence containing an amount and an ambiguous multi-amount reply must not revise or approve the pending proposal.
+- Persistent pending-action storage restores the append-only revision-clarification marker after a VictoriaAgent restart; approval remains blocked until a valid revision amount is supplied or the proposal is declined.
+- A revision that appears to target a non-active/older event receives an unsupported-target clarification; an amount-only reply or “yes” cannot retarget or approve the active proposal, including after a runtime restart, and decline remains available.
 - Low-confidence goal requests create no allocation; a clarified goal creates a pending allocation that requires explicit approval.
 - When a low-confidence goal target is clarified with a different target, the current message takes precedence over stale unresolved context, and only the clarified target is proposed.
 - When specialist and core estimates disagree, Victoria asks, accepts the user's clarified amount as a new supported basis, and records only after approval.
@@ -382,5 +392,15 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 
 - A turn that states a stable preference and asks a question stores only validated user evidence while directly answering the question; it does not return only an acknowledgment.
 - An unrelated question during a pending mocked ledger action reaches read-only conversation; the pending action remains unchanged and a later explicit approval is still required.
+- A clearly read-only question about prior avoided-spend events during a pending suggestion receives only the bounded event list for the exact user and conversation; it neither approves nor changes the pending proposal. Questions that also ask whether to record, revise, confirm, decline, or otherwise act do not receive this event-history path.
 - Conversation response drafts that claim an action, offer to record savings, or introduce an unsupported dollar amount are rejected. Provider failure retains a safe baseline and cannot create a ledger entry.
 - A configured provider model and key automatically enable financial understanding and conversational generation on the chat route; mock adapters remain test doubles. No user-facing mode selection is needed.
+
+
+### Conversation-scoped savings event lookup
+
+- A recognized avoided-spend event is stored append-only with its user and conversation identity, including while an amount clarification is pending.
+- Reads return events only for the exact user and conversation and preserve stable event identity.
+- The Context Builder passes a bounded, provenance-labeled, read-only projection to specialists without treating it as approval or ledger proof.
+- PostgreSQL lookup is covered across fresh store instances; cross-user and cross-conversation reads return no events.
+- Historical natural-language references remain unresolved until a deterministic unique/ambiguous/no-match resolver is implemented.

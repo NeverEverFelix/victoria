@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import { PostgresPendingAmountClarificationStore } from "../clarifications/postgres-pending-amount-clarification-store.js";
 import { PostgresPendingSavingsActionStore } from "../savings/postgres-pending-savings-action-store.js";
 import { PostgresMockSavingsTools } from "../savings/postgres-mock-savings-tools.js";
+import { PostgresConversationSavingsEventStore } from "../savings/postgres-conversation-savings-event-store.js";
 import { PostgresPendingGoalAllocationActionStore } from "../savings/postgres-pending-goal-allocation-store.js";
 import { PostgresPendingEntryCorrectionStore } from "../savings/postgres-pending-entry-correction-store.js";
 import { PostgresConversationCoordinator } from "../turns/postgres-conversation-coordinator.js";
@@ -59,6 +60,7 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
   let pendingGoalAllocationActionStore: PostgresPendingGoalAllocationActionStore | undefined;
   let pendingEntryCorrectionStore: PostgresPendingEntryCorrectionStore | undefined;
   let persistentSavingsTools: PostgresMockSavingsTools | undefined;
+  let savingsEventStore: PostgresConversationSavingsEventStore | undefined;
   let conversationCoordinator: PostgresConversationCoordinator | undefined;
   let persistentMemoryKey = "mock-memory";
   if (persistentMemoryEnabled) {
@@ -89,6 +91,7 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
       pendingGoalAllocationActionStore = new PostgresPendingGoalAllocationActionStore(pool);
       pendingEntryCorrectionStore = new PostgresPendingEntryCorrectionStore(pool);
       persistentSavingsTools = new PostgresMockSavingsTools(pool);
+      savingsEventStore = new PostgresConversationSavingsEventStore(pool);
       conversationCoordinator = new PostgresConversationCoordinator(pool);
     } catch {
       return null;
@@ -121,6 +124,7 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
     llm: new MockLlmAdapter(),
     memory: persistentMemory ?? new MockMemoryProvider(),
     tools: persistentSavingsTools ?? new MockVictoriaTools(),
+    ...(savingsEventStore ? { savingsEvents: savingsEventStore } : {}),
     ...(pendingAmountClarificationStore ? { pendingAmountClarifications: pendingAmountClarificationStore } : {}),
     ...(pendingSavingsActionStore ? { pendingSavingsActions: pendingSavingsActionStore, idFactory: randomUUID } : {}),
     ...(pendingGoalAllocationActionStore ? { pendingGoalAllocationActions: pendingGoalAllocationActionStore } : {}),

@@ -14,6 +14,7 @@ import { PostgresPendingGoalAllocationActionStore } from "../savings/postgres-pe
 import { PostgresPendingEntryCorrectionStore } from "../savings/postgres-pending-entry-correction-store.js";
 import { PostgresPendingSavingsActionStore } from "../savings/postgres-pending-savings-action-store.js";
 import { PostgresMockSavingsTools } from "../savings/postgres-mock-savings-tools.js";
+import { PostgresConversationSavingsEventStore } from "../savings/postgres-conversation-savings-event-store.js";
 import { PostgresConversationCoordinator } from "../turns/postgres-conversation-coordinator.js";
 import { createPostgresTurnStore } from "../turns/postgres-pool.js";
 import { createSupabaseBearerAuthenticator } from "../auth/supabase-bearer-auth.js";
@@ -61,10 +62,12 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
     const memory = new MemoryOrchestrator(repository, { financialProfiles: repository });
     const pendingAmountClarifications = new PostgresPendingAmountClarificationStore(pool);
     const pendingSavingsActions = new PostgresPendingSavingsActionStore(pool);
+    const savingsEvents = new PostgresConversationSavingsEventStore(pool);
     const pendingGoalAllocationActions = new PostgresPendingGoalAllocationActionStore(pool);
     const pendingEntryCorrections = new PostgresPendingEntryCorrectionStore(pool);
     const agent = createVictoriaAgent({
       env: { ...env, openAiAgentTeamEnabled: true }, memory, tools: new PostgresMockSavingsTools(pool), pendingAmountClarifications,
+      savingsEvents,
       pendingSavingsActions, pendingGoalAllocationActions, pendingEntryCorrections, idFactory: randomUUID,
       ...(source.OPENAI_MEMORY_EXTRACTION_ENABLED !== "false" ? {
         conversationalMemoryExtractor: new OpenAiConversationalMemoryExtractor({

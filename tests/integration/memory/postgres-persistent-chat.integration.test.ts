@@ -9,6 +9,7 @@ import { PostgresConversationCoordinator } from "../../../src/app/turns/postgres
 import { createPostgresTurnStore } from "../../../src/app/turns/postgres-pool.js";
 import { PostgresMockSavingsTools } from "../../../src/app/savings/postgres-mock-savings-tools.js";
 import { PostgresPendingGoalAllocationActionStore } from "../../../src/app/savings/postgres-pending-goal-allocation-store.js";
+import { PostgresConversationSavingsEventStore } from "../../../src/app/savings/postgres-conversation-savings-event-store.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_POSTGRES_MEMORY_CHAT_INTEGRATION === "true" && isSafeLocalDatabase(databaseUrl);
@@ -32,6 +33,27 @@ const baseEnv = {
 describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
   afterAll(async () => {
     await closeLocalPersistentMemoryPools();
+  });
+
+  it("persists savings events and scopes lookup to the exact user and conversation", async () => {
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    const events = new PostgresConversationSavingsEventStore(store.pool);
+    const conversationId = `event-lookup-${randomUUID()}`;
+    const event = {
+      id: `event-${randomUUID()}`, userId, type: "avoided_spend" as const,
+      summary: "Cooked instead of ordering takeout", merchantName: "takeout",
+      userProvidedAmountCents: 2400, classificationConfidence: 0.95,
+      createdAt: new Date().toISOString()
+    };
+    try {
+      await events.record({ conversationId, event });
+      const freshStore = new PostgresConversationSavingsEventStore(store.pool);
+      await expect(freshStore.list(userId, conversationId)).resolves.toEqual([event]);
+      await expect(freshStore.list(userId, `${conversationId}-other`)).resolves.toEqual([]);
+      await expect(freshStore.list(otherUserId, conversationId)).resolves.toEqual([]);
+    } finally {
+      await store.pool.end();
+    }
   });
 
   it("keeps turn and Plaid consent tables server-only", async () => {
@@ -165,6 +187,122 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
     expect(replayedBody.decision.action).toBe("ask_follow_up");
     expect(replayedBody.message).toContain("$18.00 savings suggestion is still pending");
     expect(replayedBody.message).toContain("confirm or decline");
+  });
+
+  it("restores a revision clarification across fresh runtimes and still requires new approval", async () => {
+    const revisionUserId = `memory-check-${randomUUID()}`;
+    const conversationId = `revision-${randomUUID()}`;
+    const firstRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: firstSecret });
+    expect(firstRuntime).not.toBeNull();
+    const token = signVictoriaSession({ userId: revisionUserId, secret: firstSecret });
+    const proposed = await firstRuntime!.handler(chatRequest(
+      token,
+      conversationId,
+      "I almost bought a $20 pastry but decided to wait."
+    ), { conversationId });
+    expect((await proposed.json() as { message: string }).message).toContain("$20.00");
+
+    const unclearRevision = await firstRuntime!.handler(chatRequest(
+      token,
+      conversationId,
+      "Actually, make that $6 or $8."
+    ), { conversationId });
+    expect((await unclearRevision.json() as { message: string }).message).toContain("haven't changed the pending suggestion");
+
+    const restartedRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: secondSecret });
+    expect(restartedRuntime).not.toBeNull();
+    const restartedToken = signVictoriaSession({ userId: revisionUserId, secret: secondSecret });
+    const staleApproval = await restartedRuntime!.handler(chatRequest(
+      restartedToken,
+      conversationId,
+      "Yes"
+    ), { conversationId });
+    expect((await staleApproval.json() as { message: string }).message).toContain("unambiguous amount");
+
+    const revised = await restartedRuntime!.handler(chatRequest(
+      restartedToken,
+      conversationId,
+      "Use $8."
+    ), { conversationId });
+    expect((await revised.json() as { message: string }).message).toContain("$8.00");
+
+    const approved = await restartedRuntime!.handler(chatRequest(
+      restartedToken,
+      conversationId,
+      "Yes"
+    ), { conversationId });
+    expect((await approved.json() as { message: string }).message).toContain("recorded $8.00");
+
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    try {
+      const revisions = await store.pool.query<{ amount_cents: number; proposal_id: string; supersedes_proposal_id: string | null; status: string }>(
+        `SELECT (p.decision #>> '{proposal,suggestion,amountCents}')::integer AS amount_cents,
+           p.proposal_id,
+           p.decision #>> '{proposal,supersedesProposalId}' AS supersedes_proposal_id,
+           t.to_status AS status
+         FROM victoria_local_savings_proposals p
+         JOIN LATERAL (
+           SELECT to_status FROM victoria_local_savings_proposal_transitions
+           WHERE user_id = p.user_id AND proposal_id = p.proposal_id
+           ORDER BY created_at DESC, transition_id DESC LIMIT 1
+         ) t ON true
+         WHERE p.user_id = $1 AND p.conversation_id = $2
+         ORDER BY p.created_at, p.proposal_id`,
+        [revisionUserId, conversationId]
+      );
+      expect(revisions.rows).toHaveLength(2);
+      expect(revisions.rows[1]).toMatchObject({ amount_cents: 800, status: "recorded" });
+      expect(revisions.rows[1]?.supersedes_proposal_id).toBe(revisions.rows[0]?.proposal_id);
+    } finally {
+      await store.pool.end();
+    }
+  });
+
+  it("persists a non-active revision-target clarification and blocks amount-only follow-up after restart", async () => {
+    const targetUserId = `memory-check-${randomUUID()}`;
+    const conversationId = `revision-target-${randomUUID()}`;
+    const firstRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: firstSecret });
+    expect(firstRuntime).not.toBeNull();
+    const firstToken = signVictoriaSession({ userId: targetUserId, secret: firstSecret });
+    const proposed = await firstRuntime!.handler(chatRequest(
+      firstToken, conversationId, "I almost bought a $20 pastry but decided to wait."
+    ), { conversationId });
+    expect((await proposed.json() as { message: string }).message).toContain("$20.00");
+
+    const wrongTarget = await firstRuntime!.handler(chatRequest(
+      firstToken, conversationId, "Actually revise my coffee-shop purchase to $8."
+    ), { conversationId });
+    expect((await wrongTarget.json() as { message: string }).message).toContain("can't target an older event");
+
+    const restartedRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: secondSecret });
+    expect(restartedRuntime).not.toBeNull();
+    const restartedToken = signVictoriaSession({ userId: targetUserId, secret: secondSecret });
+    const amountOnly = await restartedRuntime!.handler(chatRequest(
+      restartedToken, conversationId, "Use $8."
+    ), { conversationId });
+    expect((await amountOnly.json() as { message: string }).message).toContain("decline the current suggestion");
+
+    const staleApproval = await restartedRuntime!.handler(chatRequest(
+      restartedToken, conversationId, "Yes"
+    ), { conversationId });
+    expect((await staleApproval.json() as { message: string }).message).toContain("can't target an older event");
+
+    const declined = await restartedRuntime!.handler(chatRequest(
+      restartedToken, conversationId, "No"
+    ), { conversationId });
+    expect((await declined.json() as { message: string }).message).toContain("won't record it");
+
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    try {
+      const marker = await store.pool.query<{ clarification_id: string }>(
+        `SELECT clarification_id FROM victoria_local_savings_revision_target_clarifications
+         WHERE user_id = $1 AND conversation_id = $2`,
+        [targetUserId, conversationId]
+      );
+      expect(marker.rows).toEqual([{ clarification_id: expect.stringContaining(":revision-target") }]);
+    } finally {
+      await store.pool.end();
+    }
   });
 
   it("forgets a local memory from listing and retrieval while retaining its linked history", async () => {

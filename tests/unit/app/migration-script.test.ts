@@ -1,9 +1,22 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const migrationScript = new URL("../../../scripts/migrate-database.mjs", import.meta.url);
 
 describe("database migration runner safety gates", () => {
+  it.each([
+    "0022_persist_revision_clarifications.sql",
+    "0023_persist_revision_target_clarifications.sql",
+    "0024_conversation_scoped_savings_events.sql"
+  ])(
+    "keeps the local and Supabase copies of migration %s identical", (filename) => {
+      const localMigration = new URL(`../../../db/migrations/${filename}`, import.meta.url);
+      const supabaseMigration = new URL(`../../../supabase/migrations/${filename}`, import.meta.url);
+      expect(readFileSync(localMigration, "utf8")).toBe(readFileSync(supabaseMigration, "utf8"));
+    }
+  );
+
   it("requires explicit opt-in before opening a database connection", () => {
     const result = spawnSync(process.execPath, [migrationScript.pathname], {
       cwd: process.cwd(),

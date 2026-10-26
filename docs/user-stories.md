@@ -168,6 +168,8 @@ Acceptance criteria:
 - Given an approved action was already completed, replaying that approval creates no second entry.
 - Given the entry is created, it includes amount, reason, timestamp, and mocked status.
 - Given the event, suggestion, approval, and entry have been recorded, later learning does not rewrite them.
+- Given the user revises a pending suggestion, Victoria must match the revision to the active proposal; an unresolved revision leaves it unchanged, while an accepted amount or reason change creates a linked proposal that needs fresh confirmation.
+- Given a revision refers to an older or non-active event, Victoria must resolve it against the exact user-and-conversation event history before applying it. Until a unique historical target is resolved, it must not apply the revision to the active proposal and asks the user to decline the active suggestion before starting a separate request.
 - Given a recorded amount needs correction, Victoria preserves the original history and creates a new linked correction record.
 - Given the entry is created, Victoria returns a confirmation message.
 
@@ -650,4 +652,5 @@ Expected behavior:
 - A validated user-stated memory may be saved during an ordinary turn, but it does not end a turn that also asks a question.
 - With the configured provider, Victoria uses the current question, recent ordered dialogue, and relevant memories to give a read-only answer. Retrieved memories are optional context, not facts to recite.
 - A separate question can be answered while a mocked savings entry, goal allocation, or entry correction is pending. That question does not approve, change, or cancel the pending action.
+- A clearly read-only question about avoided-spend events in the current conversation can be answered while a savings entry is pending, using only the authoritative events scoped to that user and conversation. Mixed approval, decline, revision, or action questions do not use this exception.
 - Generated conversation text cannot claim a ledger write or real transfer, offer a new ledger action, or invent dollar amounts. A rejected or unavailable response falls back to a safe reply.

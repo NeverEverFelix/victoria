@@ -1,6 +1,7 @@
 export * from "./types.js";
 export * from "./pending-amount-clarification-store.js";
 export * from "./pending-savings-action-store.js";
+export * from "./savings-event-store.js";
 export * from "./policy.js";
 export * from "./validation.js";
 export * from "./confidence-policy.js";
