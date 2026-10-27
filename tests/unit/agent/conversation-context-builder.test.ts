@@ -46,6 +46,35 @@ describe("buildVictoriaConversationContext", () => {
     expect(context.financialFacts).toEqual([]);
   });
 
+  it("ranks relevant durable memories before applying the context cap and prefers the current correction", () => {
+    const context = buildVictoriaConversationContext({
+      priorTurns: [],
+      message: "How does my hiking routine fit with planning for trail trips?",
+      turnContext: buildTurnContext({ message: "How does my hiking routine fit with planning for trail trips?", priorTurns: [] }),
+      selectedMemories: [
+        ...Array.from({ length: 7 }, (_, index) => ({
+          id: `unrelated-${index}`, category: "preference" as const, key: `unrelated_${index}`,
+          value: `Prefers topic ${index}.`, evidence: `I prefer topic ${index}.`, confidence: 0.95,
+          createdAt: `2026-10-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`, sourceType: "user_statement" as const
+        })),
+        {
+          id: "hiking-old", category: "habit" as const, key: "hiking_routine", value: "Hikes on weekends.",
+          evidence: "I go hiking most weekends.", confidence: 0.95,
+          createdAt: "2026-01-01T00:00:00.000Z", sourceType: "user_statement" as const
+        },
+        {
+          id: "hiking-current", category: "habit" as const, key: "hiking_routine", value: "Hikes twice a month.",
+          evidence: "Correction: I hike twice a month now.", confidence: 0.98,
+          createdAt: "2026-10-20T00:00:00.000Z", sourceType: "user_correction" as const
+        }
+      ]
+    });
+
+    expect(context.selectedMemoryFacts).toHaveLength(6);
+    expect(context.selectedMemoryFacts[0]).toMatchObject({ id: "hiking-current", value: "Hikes twice a month." });
+    expect(context.selectedMemoryFacts.filter((fact) => fact.key === "hiking_routine")).toHaveLength(1);
+  });
+
   it("passes only a bounded, provenance-labeled projection of authoritative conversation events", () => {
     const events = Array.from({ length: 10 }, (_, index) => ({
       id: `event-${index}`, userId: "user-1", type: "avoided_spend" as const,

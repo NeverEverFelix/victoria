@@ -7,6 +7,8 @@ import {
   resolveActiveSavingsEventReference,
   resolveActiveSavingsProposalReference
 } from "./conversation-state-manager.js";
+import { resolveHistoricalEventReference, type HistoricalEventReferenceResolution } from "./historical-event-reference-resolver.js";
+import { planMemoryRetrieval } from "./memory/retrieval-planner.js";
 
 export interface ContextFinancialFact {
   readonly id: string;
@@ -87,6 +89,8 @@ export interface VictoriaConversationContext {
   readonly selectedMemoryFacts: readonly SelectedMemoryContextFact[];
   /** Authoritative events recorded for this exact user and conversation; read-only context, never approval. */
   readonly conversationSavingsEvents: readonly ConversationSavingsEventContext[];
+  /** Read-only event lookup result over the exact scoped event list. */
+  readonly historicalEventReference?: HistoricalEventReferenceResolution;
   /** Read-only state for an avoided-spend event waiting on a user-provided amount. */
   readonly workflowState?: ConversationWorkflowContext;
 }
@@ -163,12 +167,19 @@ export function buildVictoriaConversationContext(input: {
   const workflowState = input.workflowState?.status === "awaiting_confirmation"
     ? buildActiveWorkflow(input.workflowState, input.message ?? "")
     : input.workflowState;
+  const conversationSavingsEvents = Object.freeze(selectConversationSavingsEvents(input.savingsEvents ?? []));
+  const historicalEventReference = input.message
+    ? resolveHistoricalEventReference(input.message, conversationSavingsEvents)
+    : undefined;
 
   return Object.freeze({
     relevantUserTurns: Object.freeze(relevantUserTurns),
     financialFacts: Object.freeze(facts),
-    selectedMemoryFacts: Object.freeze(selectMemoryFacts(input.selectedMemories ?? [])),
-    conversationSavingsEvents: Object.freeze(selectConversationSavingsEvents(input.savingsEvents ?? [])),
+    selectedMemoryFacts: Object.freeze(selectMemoryFacts(
+      input.selectedMemories ?? [], input.message ?? "", workflowState
+    )),
+    conversationSavingsEvents,
+    ...(historicalEventReference && historicalEventReference.kind !== "not_requested" ? { historicalEventReference } : {}),
     ...(workflowState ? { workflowState } : {})
   });
 }
@@ -194,26 +205,31 @@ function selectConversationSavingsEvents(events: readonly SavingsEvent[]): Conve
     }).filter((event) => event.summary.length > 0);
 }
 
-function selectMemoryFacts(memories: readonly ConversationalMemory[]): SelectedMemoryContextFact[] {
-  return memories.flatMap((memory) => {
+function selectMemoryFacts(
+  memories: readonly ConversationalMemory[],
+  message: string,
+  workflowState: ConversationWorkflowContext | undefined
+): SelectedMemoryContextFact[] {
+  const activeContext = workflowState?.status === "awaiting_confirmation" && workflowState.sourceEvent
+    ? `${workflowState.sourceEvent.summary} ${workflowState.sourceEvent.merchantName ?? ""}`
+    : workflowState?.status === "awaiting_amount"
+      ? `${workflowState.sourceEvent.summary} ${workflowState.sourceEvent.merchantName ?? ""}` : "";
+  const eligible = memories.filter((memory) => {
     if ((memory.sourceType !== "user_statement" && memory.sourceType !== "user_correction") ||
         memory.sourceMetadata?.interestStatus === "inactive" ||
-        !Number.isFinite(memory.confidence) || memory.confidence < 0.85) return [];
+        !Number.isFinite(memory.confidence) || memory.confidence < 0.85) return false;
     const id = memory.id.trim();
     const key = memory.key.trim();
     const value = memory.value.trim();
     const evidence = memory.evidence.trim();
-    if (!id || id.length > 120 || !key || key.length > 80 || !value || value.length > 240 ||
-        !evidence || evidence.length > 240) return [];
-    return [{
-      id,
-      category: memory.category,
-      key,
-      value,
-      evidence,
-      provenance: memory.sourceType
-    }];
-  }).slice(0, 6);
+    return Boolean(id && id.length <= 120 && key && key.length <= 80 && value && value.length <= 240 &&
+      evidence && evidence.length <= 240);
+  });
+  return planMemoryRetrieval({ memories: eligible, query: message, additionalContext: activeContext, limit: 6 })
+    .map((memory) => ({
+      id: memory.id.trim(), category: memory.category, key: memory.key.trim(), value: memory.value.trim(),
+      evidence: memory.evidence.trim(), provenance: memory.sourceType as "user_statement" | "user_correction"
+    } satisfies SelectedMemoryContextFact));
 }
 
 function buildActiveWorkflow(

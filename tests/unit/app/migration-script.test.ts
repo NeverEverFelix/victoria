@@ -8,7 +8,8 @@ describe("database migration runner safety gates", () => {
   it.each([
     "0022_persist_revision_clarifications.sql",
     "0023_persist_revision_target_clarifications.sql",
-    "0024_conversation_scoped_savings_events.sql"
+    "0024_conversation_scoped_savings_events.sql",
+    "0025_correct_conversation_event_identity.sql"
   ])(
     "keeps the local and Supabase copies of migration %s identical", (filename) => {
       const localMigration = new URL(`../../../db/migrations/${filename}`, import.meta.url);
@@ -22,6 +23,12 @@ describe("database migration runner safety gates", () => {
     expect(migration).toContain("REVOKE ALL ON victoria_local_savings_events FROM service_role");
     expect(migration).toContain("GRANT SELECT, INSERT ON victoria_local_savings_events TO service_role");
     expect(migration).not.toContain("GRANT ALL ON victoria_local_savings_events TO service_role");
+  });
+
+  it("repairs the conversation-scoped savings event primary key for already-migrated databases", () => {
+    const migration = readFileSync(new URL("../../../db/migrations/0025_correct_conversation_event_identity.sql", import.meta.url), "utf8");
+    expect(migration).toContain("DROP CONSTRAINT IF EXISTS victoria_local_savings_events_pkey");
+    expect(migration).toContain("PRIMARY KEY (user_id, conversation_id, event_id)");
   });
 
   it("requires explicit opt-in before opening a database connection", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
-import { EPISODIC_MEMORY_MAX_AGE_MS, isUsableEpisodicSummary, SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY, validateEpisodicSummary } from "../../../src/agent/memory/episodic-summary.js";
+import { authoritativeEpisodeOutcome, EPISODIC_MEMORY_MAX_AGE_MS, isUsableEpisodicSummary, SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY, suppressLifecycleConflictingEpisodes, validateEpisodicSummary } from "../../../src/agent/memory/episodic-summary.js";
 
 describe("episodic memory summaries", () => {
   it("summarizes context before the short-term window rolls over and retrieves the episode later", async () => {
@@ -10,11 +10,13 @@ describe("episodic memory summaries", () => {
       type: "general_finance", confidence: 0.9, summary: userMessage, needsClarification: false
     });
     const summarizedChunks: string[][] = [];
+    let summarizedPairs: readonly { precedingAssistantMessage?: string; userMessage: string }[] = [];
     const agent = new VictoriaAgent({
       llm, memory, tools: new MockVictoriaTools(),
       episodicMemorySummarizer: {
-        async summarize({ userMessages }) {
+        async summarize({ userMessages, turnPairs }) {
           summarizedChunks.push([...userMessages]);
+          summarizedPairs = turnPairs ?? [];
           return {
             summary: "The user is exploring a steady weekend savings routine.",
             evidenceQuotes: [userMessages[0]!],
@@ -31,7 +33,9 @@ describe("episodic memory summaries", () => {
     }
 
     expect(summarizedChunks).toHaveLength(1);
-    expect(summarizedChunks[0]).toHaveLength(4);
+    expect(summarizedChunks[0]).toHaveLength(8);
+    expect(summarizedPairs.some((pair) => Boolean(pair.precedingAssistantMessage) &&
+      pair.userMessage.includes("weekend budgeting routine"))).toBe(true);
     const saved = await memory.listConversationalMemories(userId);
     expect(saved).toMatchObject([{
       category: "other", key: expect.stringMatching(/^episode:/),
@@ -70,6 +74,48 @@ describe("episodic memory summaries", () => {
     expect(validateEpisodicSummary({ ...valid, evidenceQuotes: [longMessage, longMessage] }, [longMessage])).toBeNull();
     expect(validateEpisodicSummary({ ...valid, sensitivity: "sensitive" }, messages)).toBeNull();
     expect(validateEpisodicSummary({ ...valid, confidence: 0.6 }, messages)).toBeNull();
+  });
+
+  it("stores workflow outcomes separately and only from a completed mocked ledger entry", () => {
+    const entry = {
+      id: "entry_authoritative", userId: "episode_user", eventId: "event_1", proposalId: "proposal_1",
+      approvalId: "approval_1", approvedActionId: "action_1", amountCents: 2_500, currency: "USD" as const,
+      reason: "Skipped takeout", movementMode: "mock_ledger" as const, status: "completed" as const,
+      createdAt: "2026-10-27T16:00:00.000Z"
+    };
+    const outcome = authoritativeEpisodeOutcome(entry);
+    const userMessage = "I am trying to cook at home on weeknights.";
+    const candidate = validateEpisodicSummary({
+      summary: "The user is trying to cook at home on weeknights.",
+      evidenceQuotes: [userMessage], confidence: 0.93, sensitivity: "ordinary",
+      authoritativeWorkflowOutcomes: [{ kind: "forged_model_claim", amountCents: 99_999 }]
+    }, [userMessage], outcome ? [outcome] : []);
+
+    expect(outcome).toMatchObject({ kind: "mocked_ledger_entry_recorded", entryId: entry.id, amountCents: 2_500 });
+    expect(candidate?.value).toBe("The user is trying to cook at home on weeknights.");
+    expect(candidate?.sourceMetadata?.authoritativeWorkflowOutcomes).toEqual([outcome]);
+    expect(authoritativeEpisodeOutcome({ ...entry, status: "pending" })).toBeNull();
+    expect(authoritativeEpisodeOutcome({ ...entry, movementMode: "real_transfer" as never })).toBeNull();
+  });
+
+  it("suppresses an episode when a user fact inside it was corrected or forgotten", () => {
+    const userMessage = "I love hiking on weekends.";
+    const episodeCandidate = validateEpisodicSummary({
+      summary: "The user enjoys hiking on weekends and wants more trail time.",
+      evidenceQuotes: [userMessage], confidence: 0.93, sensitivity: "ordinary"
+    }, [userMessage])!;
+    const episode = { ...episodeCandidate, id: "episode-hiking", createdAt: new Date().toISOString() };
+    const forgotten = {
+      id: "forgot-hiking", category: "other" as const, key: "interest:hiking", value: "Forgotten",
+      evidence: "Forget hiking", confidence: 1, createdAt: new Date().toISOString(), sourceType: "user_correction" as const,
+      sourceMetadata: { memoryStatus: "forgotten" }
+    };
+
+    expect(suppressLifecycleConflictingEpisodes([episode], [forgotten])).toEqual([]);
+    expect(suppressLifecycleConflictingEpisodes([episode], [{
+      ...forgotten, id: "correct-hiking", value: "No longer enjoys hiking.", sourceMetadata: { interestStatus: "inactive" }
+    }])).toEqual([]);
+    expect(suppressLifecycleConflictingEpisodes([episode], [{ ...forgotten, key: "goal:emergency_fund" }])).toEqual([episode]);
   });
 
   it("stores a grounded episode when an authenticated caller explicitly finishes a conversation", async () => {

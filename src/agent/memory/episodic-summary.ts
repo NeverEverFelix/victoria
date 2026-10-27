@@ -1,5 +1,57 @@
 import type { ConversationalMemory } from "./types.js";
 import { isExplicitUserEvidence } from "./conversational-memory-extractor.js";
+import type { SavingsEntry } from "../../domain/savings/types.js";
+
+export interface AuthoritativeEpisodeOutcome {
+  readonly kind: "mocked_ledger_entry_recorded";
+  readonly userId: string;
+  readonly eventId: string;
+  readonly entryId: string;
+  readonly proposalId: string;
+  readonly amountCents: number;
+  readonly currency: "USD";
+  readonly recordedAt: string;
+}
+
+/** Project only a completed mocked-ledger result returned by the domain tool. */
+export function authoritativeEpisodeOutcome(entry: SavingsEntry): AuthoritativeEpisodeOutcome | null {
+  if (!entry.userId.trim() || !entry.eventId.trim() || !entry.id.trim() || !entry.proposalId.trim() ||
+      entry.status !== "completed" || entry.movementMode !== "mock_ledger" || entry.currency !== "USD" ||
+      !Number.isSafeInteger(entry.amountCents) || entry.amountCents <= 0 ||
+      !Number.isFinite(Date.parse(entry.createdAt))) return null;
+  return Object.freeze({
+    kind: "mocked_ledger_entry_recorded", userId: entry.userId, eventId: entry.eventId,
+    entryId: entry.id, proposalId: entry.proposalId, amountCents: entry.amountCents,
+    currency: entry.currency, recordedAt: entry.createdAt
+  });
+}
+
+/** Suppress episode text that would reintroduce a corrected or forgotten user fact. */
+export function suppressLifecycleConflictingEpisodes(
+  memories: readonly ConversationalMemory[],
+  lifecycleMemories: readonly ConversationalMemory[]
+): readonly ConversationalMemory[] {
+  const retiredTopics = lifecycleMemories
+    .filter((memory) => memory.sourceType === "user_correction" ||
+      memory.sourceMetadata?.memoryStatus === "forgotten" || memory.sourceMetadata?.interestStatus === "inactive")
+    .map((memory) => topicTokens(memory.key))
+    .filter((terms) => terms.size > 0);
+  if (retiredTopics.length === 0) return memories;
+  return memories.filter((memory) => {
+    if (memory.sourceMetadata?.memoryKind !== "episodic_summary") return true;
+    const episodeTerms = new Set([...topicTokens(`${memory.value} ${memory.evidence}`)]);
+    return !retiredTopics.some((topic) => {
+      const overlap = [...topic].filter((term) => episodeTerms.has(term)).length;
+      return overlap >= (topic.size === 1 ? 1 : 2);
+    });
+  });
+}
+
+function topicTokens(value: string): Set<string> {
+  const ignored = new Set(["interest", "preference", "goal", "habit", "other", "financial", "pattern", "episodic", "summary"]);
+  return new Set(value.toLocaleLowerCase("en-US").match(/[a-z0-9]{4,}/g)?.map(normalizeEpisodeTerm)
+    .filter((term) => !ignored.has(term)) ?? []);
+}
 
 export interface EpisodicSummaryCandidate {
   readonly summary: string;
@@ -9,7 +61,11 @@ export interface EpisodicSummaryCandidate {
 }
 
 export interface EpisodicMemorySummarizer {
-  summarize(input: { readonly userMessages: readonly string[] }): Promise<unknown>;
+  summarize(input: {
+    readonly userMessages: readonly string[];
+    /** Adjacent assistant prompt context is included only to interpret user replies. */
+    readonly turnPairs?: readonly { readonly precedingAssistantMessage?: string; readonly userMessage: string }[];
+  }): Promise<unknown>;
 }
 
 export const EPISODIC_MEMORY_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
@@ -42,7 +98,8 @@ export function isUsableEpisodicSummary(
 /** Accepts only concise summaries grounded in exact user-authored excerpts. */
 export function validateEpisodicSummary(
   value: unknown,
-  userMessages: readonly string[]
+  userMessages: readonly string[],
+  authoritativeOutcomes: readonly AuthoritativeEpisodeOutcome[] = []
 ): Omit<ConversationalMemory, "id" | "createdAt" | "supersedesId"> | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<EpisodicSummaryCandidate>;
@@ -53,7 +110,10 @@ export function validateEpisodicSummary(
       !candidate.evidenceQuotes.every((quote) => typeof quote === "string" && quote.trim().length > 0 && quote.length <= 200 &&
         userMessages.some((message) => isExplicitUserEvidence(message, quote)))) return null;
   const evidence = candidate.evidenceQuotes.map((quote) => quote.trim()).join(" | ");
-  if (evidence.length > 240) return null;
+  if (evidence.length > 240 || authoritativeOutcomes.length > 8 || authoritativeOutcomes.some((outcome) =>
+    outcome.kind !== "mocked_ledger_entry_recorded" || !outcome.userId.trim() || !outcome.eventId.trim() ||
+    !outcome.entryId.trim() || !outcome.proposalId.trim() || !Number.isSafeInteger(outcome.amountCents) ||
+    outcome.amountCents <= 0 || !Number.isFinite(Date.parse(outcome.recordedAt)))) return null;
   return Object.freeze({
     category: "other",
     key: "episodic_summary",
@@ -61,7 +121,11 @@ export function validateEpisodicSummary(
     evidence,
     confidence: candidate.confidence as number,
     sourceType: "system_inference",
-    sourceMetadata: { memoryKind: "episodic_summary", evidenceCount: candidate.evidenceQuotes.length }
+    sourceMetadata: {
+      memoryKind: "episodic_summary",
+      evidenceCount: candidate.evidenceQuotes.length,
+      ...(authoritativeOutcomes.length > 0 ? { authoritativeWorkflowOutcomes: Object.freeze([...authoritativeOutcomes]) } : {})
+    }
   });
 }
 

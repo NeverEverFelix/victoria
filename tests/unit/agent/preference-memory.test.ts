@@ -495,6 +495,35 @@ describe("general conversational memory extraction", () => {
     expect(await memory.listConversationalMemories("user_learning_avoided")).toMatchObject([{ key: "weeknight_meals" }]);
   });
 
+  it("runs guarded extraction on a read-only savings-progress turn", async () => {
+    const memory = new MockMemoryProvider();
+    const evidence = "I find it useful when weekly money recaps use one brief paragraph.";
+    let extractionCalls = 0;
+    const agent = new VictoriaAgent({
+      llm: {
+        async classifyMessage() {
+          return { type: "savings_progress", confidence: 0.9, summary: "Progress question", needsClarification: false };
+        },
+        async draftResponse() { return "Your recorded savings total is available in the ledger summary."; }
+      },
+      memory,
+      tools: new MockVictoriaTools(),
+      conversationalMemoryExtractor: {
+        async extract() {
+          extractionCalls += 1;
+          return [{ category: "preference", key: "summary_length", value: "Prefers short summaries.",
+            evidence, confidence: 0.95, subject: "user", assertion: "affirmed", stability: "stable", sensitivity: "ordinary" }];
+        }
+      }
+    });
+
+    const response = await agent.respond({ userId: "user_learning_progress", message: evidence });
+
+    expect(extractionCalls).toBe(1);
+    expect(response.message).toContain("No savings have been recorded");
+    expect(await memory.listConversationalMemories("user_learning_progress")).toMatchObject([{ key: "summary_length" }]);
+  });
+
   it("reports provider extraction failures without replacing the normal response", async () => {
     const memory = new MockMemoryProvider();
     const failures: string[] = [];

@@ -54,12 +54,21 @@ import {
 } from "./conversation-state-manager.js";
 import { buildVictoriaConversationContext, resolveFinancialReferenceHint } from "./conversation-context-builder.js";
 import type { ResolvedFinancialReference, VictoriaConversationContext } from "./conversation-context-builder.js";
+import { planMemoryRetrieval } from "./memory/retrieval-planner.js";
+import { isMemoryLearningEligibleTurn } from "./memory/memory-learning-policy.js";
 import type { ContextReferenceResolver } from "./context-reference-resolver.js";
 import { validateConversationReply, type ConversationResponder, type ConversationResponderInput } from "./conversation-responder.js";
+import {
+  hasFinancialActionSignal,
+  isConversationTopicTurn,
+  isExplicitFinancialActionQuestion,
+  isOrdinaryQuestion,
+  isReadOnlyEventHistoryQuestion
+} from "./conversation-routing.js";
 import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } from "./transaction-history-provider.js";
 import { employerCoveredRecurringSpend, freedRecurringSpend, isBudgetingAdviceQuestion, isExplicitRealMoneyMovementRequest, isRealMoneyMovementRequest } from "./money-movement-intent.js";
 import { isExplicitInterestCorrectionEvidence, isExplicitUserEvidence, validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
-import { isUsableEpisodicSummary, SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY, validateEpisodicSummary, type EpisodicMemorySummarizer } from "./memory/episodic-summary.js";
+import { authoritativeEpisodeOutcome, isUsableEpisodicSummary, SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY, suppressLifecycleConflictingEpisodes, validateEpisodicSummary, type AuthoritativeEpisodeOutcome, type EpisodicMemorySummarizer } from "./memory/episodic-summary.js";
 import { validatePersonalizedReply, type ConversationalReplyPersonalizer } from "./memory/personalized-reply.js";
 import type { PendingAmountClarification, PendingAmountClarificationStore } from "./pending-amount-clarification-store.js";
 import type { PendingSavingsActionStore } from "./pending-savings-action-store.js";
@@ -151,7 +160,7 @@ export class VictoriaAgent {
     const priorCorrectionId = this.pendingEntryCorrectionIdsByConversation.get(conversationKey);
     const priorCorrection = priorCorrectionId ? this.pendingEntryCorrections.get(priorCorrectionId) : undefined;
     const priorContext = await this.dependencies.memory.getConversationContext(request.userId, conversationId);
-    await this.summarizeOverflowingConversation(request.userId, priorContext);
+    await this.summarizeOverflowingConversation(request.userId, conversationId, priorContext);
     const withUserMessage = [...priorContext, request.message].slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT);
     await this.dependencies.memory.setConversationContext(request.userId, conversationId, withUserMessage);
     const response = immutableSnapshot(await this.respondTurn(request, priorContext));
@@ -173,26 +182,59 @@ export class VictoriaAgent {
   async finishConversation(userId: string, conversationId: string): Promise<boolean> {
     if (!userId.trim() || !conversationId.trim()) return false;
     const context = await this.dependencies.memory.getConversationContext(userId, conversationId);
-    return this.summarizeConversation(userId, context, true);
+    const outcome = this.recentSavingsEntriesByConversation.get(this.conversationKey({ userId, conversationId, message: "" }));
+    return this.summarizeConversation(userId, context, true, outcome ? [outcome] : []);
   }
 
-  private async summarizeOverflowingConversation(userId: string, context: readonly string[]): Promise<void> {
-    await this.summarizeConversation(userId, context, false);
+  private async summarizeOverflowingConversation(userId: string, conversationId: string, context: readonly string[]): Promise<void> {
+    const outcome = this.recentSavingsEntriesByConversation.get(this.conversationKey({ userId, conversationId, message: "" }));
+    await this.summarizeConversation(userId, context, false, outcome ? [outcome] : []);
   }
 
-  private async summarizeConversation(userId: string, context: readonly string[], finishing: boolean): Promise<boolean> {
+  private async summarizeConversation(
+    userId: string,
+    context: readonly string[],
+    finishing: boolean,
+    entries: readonly SavingsEntry[] = []
+  ): Promise<boolean> {
     const summarizer = this.dependencies.episodicMemorySummarizer;
     if (!summarizer || (!finishing && context.length < DEFAULT_CONVERSATION_CONTEXT_LIMIT)) return false;
-    const userMessages = context.slice(-8)
+    const recentTurns = context.slice(-16);
+    const userMessages = recentTurns
       .filter((message) => !/^Victoria:/i.test(message))
       .filter(isEpisodicSummaryEligible)
-      .slice(0, 8);
+      .slice(-8);
     if (userMessages.length < 2) return false;
-    const digest = createHash("sha256").update(userId).update("\0").update(userMessages.join("\0")).digest("hex").slice(0, 24);
+    const selectedUsers = new Set(userMessages);
+    let precedingAssistantMessage: string | undefined;
+    const turnPairs = recentTurns.flatMap((message) => {
+      if (/^Victoria:/i.test(message)) {
+        precedingAssistantMessage = message.replace(/^Victoria:\s*/i, "").slice(0, 2_000);
+        return [];
+      }
+      const pair = selectedUsers.has(message) ? [{
+        ...(precedingAssistantMessage ? { precedingAssistantMessage } : {}),
+        userMessage: message
+      }] : [];
+      precedingAssistantMessage = undefined;
+      return pair;
+    }).slice(-8);
+    const digest = createHash("sha256").update(userId).update("\0")
+      .update(JSON.stringify(turnPairs)).digest("hex").slice(0, 24);
     const key = `episode:${digest}`;
     if ((await this.dependencies.memory.listConversationalMemories(userId)).some((memory) => memory.key === key)) return true;
     try {
-      const candidate = validateEpisodicSummary(await summarizer.summarize({ userMessages }), userMessages);
+      // Only domain-tool results enter the workflow outcome projection. Assistant prose
+      // may help interpret a user reply, but is never proof that an entry was recorded.
+      const authoritativeOutcomes: AuthoritativeEpisodeOutcome[] = entries
+        .filter((entry) => entry.userId === userId)
+        .flatMap((entry) => {
+          const outcome = authoritativeEpisodeOutcome(entry);
+          return outcome ? [outcome] : [];
+        });
+      const candidate = validateEpisodicSummary(
+        await summarizer.summarize({ userMessages, turnPairs }), userMessages, authoritativeOutcomes
+      );
       if (!candidate) return false;
       await this.dependencies.memory.rememberConversationalMemory(userId, {
         ...candidate,
@@ -246,6 +288,7 @@ export class VictoriaAgent {
         return { message, decision: { ...pendingCorrection.decision, action: "ask_follow_up", userFacingMessage: message } };
       }
       if (isConversationTopicTurn(request.message) && this.dependencies.conversationResponder) {
+        await this.learnFromReadOnlyTopicTurn(request);
         return this.respondConversationalTurn(request, conversationContext,
           "I can help think that through. What part would be most useful to start with? The correction remains pending and the entry is unchanged.", "entry_correction");
       }
@@ -290,6 +333,7 @@ export class VictoriaAgent {
         };
       }
       if (isConversationTopicTurn(request.message) && this.dependencies.conversationResponder) {
+        await this.learnFromReadOnlyTopicTurn(request);
         return this.respondConversationalTurn(request, conversationContext,
           "I can help think that through. What part would be most useful to start with? The goal allocation remains pending and has not been recorded.", "goal_allocation");
       }
@@ -498,12 +542,26 @@ export class VictoriaAgent {
           savingsEvents,
           ...(pendingSavingsConversationState ? { workflowState: pendingSavingsConversationState } : {})
         });
+        const historicalReference = financialContext.historicalEventReference;
+        if (historicalReference?.kind === "ambiguous" || historicalReference?.kind === "not_found") {
+          const message = historicalReference.kind === "ambiguous"
+            ? "I found more than one matching moment in this conversation. Which merchant or detail should I use?"
+            : financialContext.conversationSavingsEvents.length === 0
+              ? "I don't have an avoided-spend moment recorded in this conversation yet."
+              : "I couldn't match that description to an avoided-spend moment in this conversation. Which merchant or detail do you mean?";
+          return { message, decision: {
+            action: "reflect",
+            classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false },
+            userFacingMessage: message
+          } };
+        }
         return this.respondConversationalTurn(
           request,
           conversationContext,
           "I can answer from the savings events in this conversation. The pending suggestion remains unchanged and has not been recorded.",
           "savings_entry",
-          financialContext.conversationSavingsEvents
+          financialContext.conversationSavingsEvents,
+          financialContext
         );
       }
 
@@ -580,9 +638,20 @@ export class VictoriaAgent {
       }
       if (isConversationTopicTurn(request.message) && this.dependencies.conversationResponder &&
           !/\b(?:revise|correct)\b/i.test(request.message) &&
+          !isExplicitFinancialActionQuestion(request.message) &&
           (!/\b(?:change|instead)\b/i.test(request.message) || !hasFinancialActionSignal(request.message))) {
+        await this.learnFromReadOnlyTopicTurn(request);
+        const conversationEvents = await this.savingsEvents.list(request.userId, request.conversationId ?? "default");
+        const readOnlyContext = buildVictoriaConversationContext({
+          priorTurns: conversationContext,
+          turnContext,
+          message: request.message,
+          savingsEvents: conversationEvents,
+          ...(pendingSavingsConversationState ? { workflowState: pendingSavingsConversationState } : {})
+        });
         return this.respondConversationalTurn(request, conversationContext,
-          "I can help think that through. What part would be most useful to start with? The savings suggestion remains pending and has not been recorded.", "savings_entry");
+          "I can help think that through. What part would be most useful to start with? The savings suggestion remains pending and has not been recorded.",
+          "savings_entry", readOnlyContext.conversationSavingsEvents, readOnlyContext);
       }
     }
 
@@ -792,6 +861,13 @@ export class VictoriaAgent {
     }
 
     let memory = await this.dependencies.memory.getMemoryForUser(request.userId, request.message);
+    if (memory.conversationalMemories?.some((item) => item.sourceMetadata?.memoryKind === "episodic_summary")) {
+      const lifecycleMemories = await this.dependencies.memory.listCurrentConversationalMemories?.(request.userId, true) ?? [];
+      memory = {
+        ...memory,
+        conversationalMemories: [...suppressLifecycleConflictingEpisodes(memory.conversationalMemories, lifecycleMemories)]
+      };
+    }
     const activityMapping = (memory.conversationalMemories ?? []).find((item) =>
       item.key.startsWith("activity_mapping:") && isSpendingQuestion(request.message) &&
       isMemoryTopicMatched(item, request.message) && typeof item.sourceMetadata?.profileKey === "string");
@@ -896,9 +972,11 @@ export class VictoriaAgent {
       } };
     }
     let memoryAcknowledgement: string | undefined;
-    const memoryLearningTurn = classification.type === "general_finance" || classification.type === "pattern_reflection" ||
-      classification.type === "avoided_spend" || classification.type === "regretful_spend" ||
-      (classification.type === "unclear" && classification.uncertainIntent === undefined);
+    const memoryLearningTurn = isMemoryLearningEligibleTurn({
+      message: request.message,
+      intent: classification.type,
+      ...(classification.uncertainIntent ? { uncertainIntent: classification.uncertainIntent } : {})
+    });
     if (memoryLearningTurn && !scopedAllocationTargetChoice && !interestSavedThisTurn && !extractedMemory && this.dependencies.conversationalMemoryExtractor &&
         !pendingCorrection && !pendingGoalAction && !pendingAction) {
       try {
@@ -929,7 +1007,7 @@ export class VictoriaAgent {
     if (this.dependencies.conversationResponder && isOrdinaryQuestion(request.message) &&
         !hasFinancialActionSignal(request.message)) {
       return this.respondConversationalTurn(request, conversationContext,
-        "I can help think that through. What would be most useful to focus on first?");
+        "I can help think that through. What would be most useful to focus on first?", undefined, undefined, financialContext);
     }
     if (["avoided_spend", "regretful_spend", "pattern_reflection"].includes(classification.type)) {
       await this.dependencies.memory.rememberDecision(request.userId, {
@@ -1085,9 +1163,12 @@ export class VictoriaAgent {
       };
     }
 
-    const readOnlyFollowUp = /\?/.test(request.message) &&
-      (classification.type === "general_finance" || classification.type === "pattern_reflection" ||
-        classification.type === "savings_progress");
+    // A read-only reflection is still a topic shift when the user states it
+    // without a question mark (for example, “I've been anxious about money”).
+    // The responder has no mutation authority, so it can answer while leaving
+    // the exact pending proposal untouched.
+    const readOnlyFollowUp = classification.type === "general_finance" ||
+      classification.type === "pattern_reflection" || classification.type === "savings_progress";
     const uncertainPendingRevision = classification.type === "unclear" &&
       classification.uncertainIntent === "proposal_revision";
     const groundedRevisionAmountReply = pendingAction?.awaitingValidRevision &&
@@ -1251,12 +1332,18 @@ export class VictoriaAgent {
         (resolvedClassification.type === "general_finance" || resolvedClassification.type === "pattern_reflection" ||
           (resolvedClassification.type === "unclear" && !resolvedClassification.uncertainIntent)) &&
         this.dependencies.conversationResponder) {
+      const canUseEventHistory = isReadOnlyEventHistoryQuestion(request.message);
+      const responderContext: VictoriaConversationContext = canUseEventHistory
+        ? financialContext
+        : { ...financialContext, conversationSavingsEvents: [] };
       userFacingMessage = await this.generateConversationReply({
         message: request.message,
         recentTurns: conversationContext,
         memories: (memory.conversationalMemories ?? []).map(({ id, key, value, confidence, sourceType }) =>
           ({ id, key, value, confidence, ...(sourceType ? { sourceType } : {}) })),
-        baselineReply: userFacingMessage
+        baselineReply: userFacingMessage,
+        ...(canUseEventHistory ? { conversationSavingsEvents: responderContext.conversationSavingsEvents } : {}),
+        financialContext: responderContext
       });
       decision = { ...decision, userFacingMessage };
     }
@@ -1334,7 +1421,8 @@ export class VictoriaAgent {
     recentTurns: readonly string[],
     baselineReply: string,
     pendingAction?: ConversationResponderInput["pendingAction"],
-    conversationSavingsEvents?: ConversationResponderInput["conversationSavingsEvents"]
+    conversationSavingsEvents?: ConversationResponderInput["conversationSavingsEvents"],
+    financialContext?: VictoriaConversationContext
   ): Promise<AgentResponse> {
     const memory = await this.dependencies.memory.getMemoryForUser(request.userId, request.message);
     const message = await this.generateConversationReply({
@@ -1344,7 +1432,8 @@ export class VictoriaAgent {
         ({ id, key, value, confidence, ...(sourceType ? { sourceType } : {}) })),
       baselineReply,
       ...(pendingAction ? { pendingAction } : {}),
-      ...(conversationSavingsEvents ? { conversationSavingsEvents } : {})
+      ...(conversationSavingsEvents ? { conversationSavingsEvents } : {}),
+      ...(financialContext ? { financialContext } : {})
     });
     return { message, decision: {
       action: "reflect",
@@ -1357,9 +1446,37 @@ export class VictoriaAgent {
     if (!this.dependencies.conversationResponder) return input.baselineReply;
     try {
       const candidate = await this.dependencies.conversationResponder.respond(input);
-      return validateConversationReply(candidate, input) ?? input.baselineReply;
+      const validated = validateConversationReply(candidate, input);
+      if (validated) return validated;
+
+      // A malformed or ungrounded read-only draft should not immediately erase
+      // the user's question. Give the responder one chance to correct its draft;
+      // this path has no tools and cannot approve or mutate a financial action.
+      const retryInput: ConversationResponderInput = {
+        ...input,
+        baselineReply: `Your previous draft was not safe to show. Answer the user's current request directly, using only supported facts and no unsupported dollar amounts. Keep the pending ${input.pendingAction ?? "financial action"} unchanged. If you cannot answer safely, use this fallback: ${input.baselineReply}`
+      };
+      const retry = await this.dependencies.conversationResponder.respond(retryInput);
+      return validateConversationReply(retry, retryInput) ?? input.baselineReply;
     } catch {
       return input.baselineReply;
+    }
+  }
+
+  private async learnFromReadOnlyTopicTurn(request: AgentRequest): Promise<void> {
+    const extractor = this.dependencies.conversationalMemoryExtractor;
+    if (!extractor) return;
+    try {
+      const candidates = await extractor.extract({ userMessage: request.message });
+      for (const candidate of validateMemoryCandidates(candidates, request.message)) {
+        await this.dependencies.memory.rememberConversationalMemory(request.userId, candidate);
+      }
+    } catch {
+      try {
+        this.dependencies.onConversationalMemoryExtractionFailure?.("provider_or_validation_error");
+      } catch {
+        // Best-effort telemetry cannot block the read-only response.
+      }
     }
   }
 
@@ -2817,34 +2934,6 @@ function personalizeOrdinaryReply(
     : fallbackMessage;
 }
 
-function isOrdinaryQuestion(message: string): boolean {
-  return /\?/.test(message) &&
-    !/^\s*(?:yes|no|nope|nah|sure|confirm|approve)\b/i.test(message) &&
-    !/\b(?:record|log|add|transfer|deposit|move)\b[^?]*\b(?:savings|money|funds|ledger|entry)\b/i.test(message);
-}
-
-function isReadOnlyEventHistoryQuestion(message: string): boolean {
-  if (/^\s*(?:yes|no|nope|nah|sure|confirm|approve)\b/i.test(message)) return false;
-  const question = message.replace(/\b(?:not|never|don't|do not)\s+(?:to\s+)?(?:record|log|save|add|transfer|move)\b/gi, " ");
-  return /\?/.test(question) &&
-    !/\b(?:should i|can you|could you|please)\s+(?:record|log|save|add|transfer|move|revise|change|approve|confirm|decline)\b/i.test(question) &&
-    !/\b(?:record|log|save|add|transfer|move|revise|change|approve|confirm|decline)\b/i.test(question) &&
-    /\b(?:what|which|when|where|list|summari[sz]e|remind me|tell me)\b/i.test(question) &&
-    /\b(?:event|thing|moment|purchase|spend|spent|avoid|avoided|skip|skipped|mentioned|told you|conversation|earlier|before)\b/i.test(question);
-}
-
-function isConversationTopicTurn(message: string): boolean {
-  return isOrdinaryQuestion(message) ||
-    /\b(?:let'?s|can we|i(?:'d| would) like to)\s+(?:talk|discuss|think)\s+about\b/i.test(message) ||
-    /\b(?:switch|change)\s+(?:the\s+)?(?:topic|subject)\b/i.test(message) ||
-    (!hasFinancialActionSignal(message) && message.trim().split(/\s+/).length >= 4 &&
-      !/^\s*(?:yes|no|nope|nah|sure|confirm|approve|maybe)\b/i.test(message));
-}
-
-function hasFinancialActionSignal(message: string): boolean {
-  return /\$|\b(?:dollars?|bucks|savings?|save|spent|spend|spending|purchase|bought|buy|budget|bill|fee|cost|price|ledger|transfer|deposit|withdraw|goal allocation)\b/i.test(message);
-}
-
 function isSpendingQuestion(message: string): boolean {
   return /\b(?:how much|what do i spend|what's my spend|what is my spend|cost|budget|spend(?:ing)?|spent)\b/i.test(message);
 }
@@ -2919,6 +3008,15 @@ function isStrongSemanticMatch(similarity: number | undefined): boolean {
   return Number.isFinite(similarity) && (similarity as number) >= SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY;
 }
 
+function normalizeRoutineTerm(term: string): string {
+  return term.length > 4 ? term.replace(/s$/, "") : term;
+}
+
+const ROUTINE_STOP_WORDS = new Set([
+  "usually", "often", "typically", "routinely", "regularly", "every", "each", "weekdays", "weekday",
+  "weekends", "weekend", "during", "before", "after", "from", "with", "your", "have", "make"
+]);
+
 function isRelevantRecurringRoutine(
   memory: import("./memory/types.js").ConversationalMemory,
   userMessage: string
@@ -2944,18 +3042,20 @@ function selectPersonalizationMemories(
   userMessage: string,
   conversationContext: readonly string[]
 ): readonly Pick<ConversationalMemory, "id" | "category" | "key" | "value">[] {
-  const context = `${userMessage} ${conversationContext.slice(-6).join(" ")}`.toLocaleLowerCase("en-US");
-  return memories.filter((memory) => {
+  const eligible = memories.filter((memory) => {
     if (memory.sourceType !== undefined && memory.sourceType !== "user_statement" && memory.sourceType !== "user_correction") return false;
     if (memory.category !== "preference" && memory.category !== "goal" && memory.category !== "habit" &&
         !(memory.category === "other" && memory.key.startsWith("interest:"))) return false;
     if (memory.sourceMetadata?.interestStatus === "inactive") return false;
-    if (isCommunicationStylePreference(memory)) return true;
-    if (isStrongSemanticMatch(memory.semanticSimilarity)) return true;
-    const terms = `${memory.key.replace(/[:_-]/g, " ")} ${memory.value}`.toLocaleLowerCase("en-US")
-      .match(/[a-z]{4,}/g)?.map(normalizeRoutineTerm).filter((term) => !ROUTINE_STOP_WORDS.has(term)) ?? [];
-    return terms.some((term) => context.includes(term));
-  }).slice(0, 6).map(({ id, category, key, value }) => ({ id, category, key, value }));
+    return Number.isFinite(memory.confidence) && memory.confidence >= 0.85;
+  });
+  return planMemoryRetrieval({
+    memories: eligible,
+    query: userMessage,
+    additionalContext: conversationContext.slice(-6).join(" "),
+    limit: 6,
+    alwaysRelevant: isCommunicationStylePreference
+  }).map(({ id, category, key, value }) => ({ id, category, key, value }));
 }
 
 function isCommunicationStylePreference(memory: ConversationalMemory): boolean {
@@ -2980,15 +3080,6 @@ function describeRecurringRoutine(key: string): string | undefined {
     starbucks: "Starbucks"
   };
   return brandNames[merchant] ?? merchant.replace(/\b[a-z]/g, (letter) => letter.toLocaleUpperCase("en-US"));
-}
-
-const ROUTINE_STOP_WORDS = new Set([
-  "usually", "often", "typically", "routinely", "regularly", "every", "each", "weekdays", "weekday",
-  "weekends", "weekend", "during", "before", "after", "from", "with", "your", "have", "make"
-]);
-
-function normalizeRoutineTerm(term: string): string {
-  return term.length > 4 ? term.replace(/s$/, "") : term;
 }
 
 function formatRememberedGoalTarget(key: string): string {

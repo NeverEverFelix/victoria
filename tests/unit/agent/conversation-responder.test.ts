@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
 import { OpenAiConversationResponder, validateConversationReply } from "../../../src/agent/conversation-responder.js";
+import type { ConversationResponderInput } from "../../../src/agent/conversation-responder.js";
 
 describe("conversation response boundary", () => {
   it("supplies only scoped historical event context to a read-only conversation response", async () => {
@@ -27,6 +28,71 @@ describe("conversation response boundary", () => {
     expect(requestBody?.instructions).toContain("exact user and conversation");
     const providerInput = JSON.parse(String(requestBody?.input)) as { conversationSavingsEvents?: unknown };
     expect(providerInput.conversationSavingsEvents).toEqual(events);
+  });
+
+  it("passes provenance-aware financial facts into the read-only responder", async () => {
+    let providerInput: Record<string, unknown> | undefined;
+    const financialContext = {
+      relevantUserTurns: [{ sourceTurnIndex: 0, text: "Work now covers my $35/month gym." }],
+      financialFacts: [{
+        id: "turn:0:annual-projection", amountCents: 42_000, currency: "USD" as const,
+        period: "annual" as const, meaning: "conditional_projection" as const,
+        provenance: "derived" as const, evidenceTurnIndexes: [0],
+        derivedFromFactId: "turn:0:monthly-recurring-cost",
+        condition: "Only if this monthly cost remains out of the budget for 12 months."
+      }],
+      selectedMemoryFacts: [],
+      conversationSavingsEvents: []
+    };
+    const responder = new OpenAiConversationResponder({
+      apiKey: "test-key", model: "test-model", fetcher: async (_input, init) => {
+        providerInput = JSON.parse(String((JSON.parse(String(init?.body)) as { input: string }).input)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ output: [{ type: "message", content: [{
+          type: "output_text", text: JSON.stringify({ text: "That could be $420 a year if the gym stays covered." })
+        }] }] }), { status: 200 });
+      }
+    });
+    const input = {
+      message: "What would that be over a year?", recentTurns: ["User: Work now covers my $35/month gym."],
+      memories: [], baselineReply: "The projection is conditional.", financialContext
+    } satisfies ConversationResponderInput;
+
+    expect(await responder.respond(input)).toContain("$420");
+    expect(providerInput?.financialContext).toEqual(financialContext);
+    expect(validateConversationReply("That could be $420 a year if the gym stays covered.", input)).not.toBeNull();
+    expect(validateConversationReply("That is $420 a year.", input)).toBeNull();
+    expect(validateConversationReply("You could save $500 a year if the gym stays covered.", input)).toBeNull();
+  });
+
+  it("allows a more detailed read-only answer when the user explicitly asks for depth", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const responder = new OpenAiConversationResponder({
+      apiKey: "test-key", model: "test-model", fetcher: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ output: [{ type: "message", content: [{
+          type: "output_text", text: JSON.stringify({ text: "Here are a few options to consider." })
+        }] }] }), { status: 200 });
+      }
+    });
+    const input = {
+      message: "Can you explain in detail how I could make evenings easier?",
+      recentTurns: [], memories: [], baselineReply: "I can help think that through."
+    };
+
+    await responder.respond(input);
+
+    const providerInput = JSON.parse(String(requestBody?.input)) as { responseDepth?: string };
+    expect(providerInput.responseDepth).toBe("detailed");
+    expect(requestBody?.instructions).toContain("enough detail to be actionable");
+  });
+
+  it("uses a larger validation budget only for an explicitly detailed request", () => {
+    const detailed = {
+      message: "Please explain in detail.", recentTurns: [], memories: [], baselineReply: "Tell me more."
+    } satisfies ConversationResponderInput;
+    const brief = { ...detailed, message: "What do you think?" };
+    expect(validateConversationReply("A".repeat(2_000), detailed)).not.toBeNull();
+    expect(validateConversationReply("A".repeat(2_000), brief)).toBeNull();
   });
 
   it("answers a question while learning a user-stated preference", async () => {
@@ -132,5 +198,34 @@ describe("conversation response boundary", () => {
     expect(response.message).not.toContain("recorded $500");
     expect(response.decision.toolCall).toBeUndefined();
     expect(await tools.listSavingsEntries("invalid_draft_user")).toEqual([]);
+  });
+
+  it("retries an invalid detailed topic-shift draft while preserving a pending proposal", async () => {
+    const tools = new MockVictoriaTools();
+    const drafts = ["I recorded $19.95 for you."];
+    const respond = vi.fn(async (input: ConversationResponderInput) =>
+      input.baselineReply.includes("previous draft was not safe to show")
+        ? "For a rainy weekend, you could try a new recipe, visit a museum, or plan a cozy movie afternoon."
+        : drafts.shift() ?? "Tell me more about the weekend."
+    );
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      conversationResponder: { respond }
+    });
+    const request = { userId: "pending_detailed_topic_user", conversationId: "pending_detailed_topic_chat" };
+    await agent.respond({ ...request, message: "I almost bought a $19.95 book but decided to wait." });
+
+    const topicShift = await agent.respond({ ...request,
+      message: "Can you brainstorm a few practical things to do on a rainy weekend? Please give me options in detail." });
+
+    expect(topicShift.message).toContain("museum");
+    expect(topicShift.decision.action).toBe("reflect");
+    expect(respond).toHaveBeenCalledTimes(2);
+    expect(respond.mock.calls[1]?.[0].baselineReply).toContain("previous draft was not safe to show");
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+
+    const approval = await agent.respond({ ...request, message: "Yes" });
+    expect(approval.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries(request.userId)).toMatchObject([{ amountCents: 1_995 }]);
   });
 });

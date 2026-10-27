@@ -162,6 +162,61 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);
   });
 
+  it("[MEM-002] learns a stable volunteered fact during a read-only topic shift with an action pending", async () => {
+    const tools = new MockVictoriaTools();
+    const memory = new MockMemoryProvider();
+    const extractor = { extract: vi.fn(async () => [{
+      category: "other", key: "interest:hiking", value: "Enjoys hiking.", evidence: "I love hiking.",
+      confidence: 0.95, subject: "user", assertion: "affirmed", stability: "stable", sensitivity: "ordinary"
+    }]) };
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools,
+      conversationalMemoryExtractor: extractor,
+      conversationResponder: { async respond() { return "A local trail could make for an easy weekend outing."; } }
+    });
+    const request = { userId: "pending_memory_user", conversationId: "pending_memory_chat" };
+    await agent.respond({ ...request, message: "I almost bought a $19.95 book but decided to wait." });
+
+    const answer = await agent.respond({ ...request,
+      message: "I love hiking. Can you suggest a weekend plan?" });
+
+    expect(answer.message).toContain("local trail");
+    expect(extractor.extract).toHaveBeenCalledTimes(2);
+    expect((await memory.listConversationalMemories(request.userId)).map(({ key }) => key)).toContain("interest:hiking");
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+    const approval = await agent.respond({ ...request, message: "Yes" });
+    expect(approval.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);
+  });
+
+  it("[APR-004] lets a read-only financial reflection without question punctuation through a pending proposal", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const responder = vi.fn(async () => "A promotion can change your options while still leaving the choices to you. What feels most uncertain right now?");
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      conversationResponder: { respond: responder },
+      specialists: { ...base, financialMoment: { analyze: async ({ message }) => ({ classification: {
+        type: message.includes("anxious") ? "general_finance" : "avoided_spend",
+        confidence: 0.9, summary: message, needsClarification: false,
+        ...(message.includes("anxious") ? {} : { amountCents: 3_500 })
+      } }) } }
+    });
+    const request = { userId: "pending_reflection_user", conversationId: "pending_reflection_chat" };
+    await agent.respond({ ...request, message: "I skipped a $35 purchase." });
+
+    const reflection = await agent.respond({ ...request,
+      message: "I've been anxious about money ever since I got promoted." });
+
+    expect(reflection.message).toContain("promotion can change your options");
+    expect(reflection.decision.action).toBe("reflect");
+    expect(responder).toHaveBeenCalledOnce();
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+    const approved = await agent.respond({ ...request, message: "Yes" });
+    expect(approved.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);
+  });
+
   it("[APR-004] answers a clearly read-only event-history question while preserving a pending proposal", async () => {
     const tools = new MockVictoriaTools();
     const base = createMockAgentTeamSpecialists();

@@ -142,6 +142,8 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Direct automatic memory is limited to clear first-person ordinary preferences, recurring habits, stated goals, and clear answers to a typical-spend question. Sensitive health/political/religious/identity details and credentials/account identifiers fail the shared privacy gate; ambiguous, hypothetical, quoted, third-party, and temporary information is not retained.
 - Extraction rejects quoted/third-party, negated, and hypothetical facts even if the words appear in the user's message; memory-extraction failure does not block the chat turn or bypass proposal/approval policy.
 - When the 20-message short-term context is about to roll over, an injected episodic summarizer receives only bounded user-authored messages. It stores a compact append-only summary only when confidence and sensitivity checks pass and each supporting excerpt occurs in the supplied user messages.
+- Episode prose is grounded only in user-authored evidence; completed mocked-ledger outcomes are stored separately as typed provenance only when projected from a completed `SavingsEntry` returned by the domain tool. Pending entries, assistant acknowledgments, projections, and model-supplied workflow claims cannot establish persistence.
+- Episodic retrieval checks current correction and forget markers; an episode with a matching retired topic is suppressed while unrelated episodes remain available.
 - A relevant episode summary can shape an ordinary reflective reply only when it is well-formed, non-future, at most 90 days old, and meets either the 0.76 semantic similarity threshold or two meaningful shared terms across summary/evidence and query; unrelated and stale episodes are not surfaced. Episode creation remains limited to explicit finish or context rollover.
 - With a real provider model and API key, episodic summaries are enabled by default; `OPENAI_EPISODIC_SUMMARIES_ENABLED=false` disables them. The mock example uses a mock model and placeholder key, so it makes no summary calls regardless of the flag.
 - Episodic summary failures or unsupported/sensitive summaries do not block the current turn. Summarizer requests contain only bounded, eligible user-authored messages, and stored summaries require exact evidence quotes and sensitivity checks.
@@ -353,7 +355,7 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Corrections are append-only and target only the authenticated user's current fact; unknown and foreign IDs return the same not-found result.
 - Forgetting appends a non-embedded marker that suppresses the fact from list and retrieval; source records and embeddings remain retained, and the API states this clearly.
 - No bulk-delete endpoint is present. Memory-management routes use Postgres directly and do not depend on Vercel local filesystem persistence.
-- An authenticated conversation-finish route summarizes only eligible user-authored context, keeps raw short-term context on failure, and returns whether a summary was saved.
+- An authenticated conversation-finish route summarizes eligible user-authored facts with adjacent assistant prompts only to interpret short replies; assistant text never proves a ledger write. It keeps raw short-term context on failure and returns whether a summary was saved.
 - Finishing unchanged context is idempotent; repeated calls do not store duplicate episodes or call the summarizer again.
 - Episode summaries can influence only fresh, relevant ordinary reflections and never a financial estimate, approval, or ledger action.
 
@@ -374,7 +376,7 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - A bare approval to the planning-target question does not authorize a ledger entry. Ask the user to choose a target first.
 - A selected target survives restoration of the original append-only pending proposal in another server worker. An ambiguous ledger reply stays pending; a later explicit approval records only the current monthly amount.
 - A direct refusal of a pending ledger entry remains a decline when followed by a separate question. The declined proposal is recorded as terminal, no entry is made, and Victoria answers the question without reopening the proposal.
-- Ordinary conversational wording cannot offer a new ledger recording, promise real movement, or recommend an investment product; any dollar amount must be in the current message, recent turns, or an exact user-provided amount on a scoped savings event. Memories, event summaries without a structured user-provided amount, and model-written baselines do not authorize amounts. Rejected drafts fall back safely.
+- Ordinary conversational wording cannot offer a new ledger recording, promise real movement, or recommend an investment product; any dollar amount must be in the current message, recent turns, an exact user-provided event amount, or a validated financial fact in the canonical context. A derived projection must retain conditional wording. Memories, unstructured event summaries, and model-written baselines do not authorize amounts. Rejected drafts receive one validated retry, then fall back safely.
 - Provider-personalized wording accepts validated monthly cents even when the amount is absent from the text context, allows an empty used-memory list when no memory informed the wording, and rejects negative, non-USD, or over-precise monetary mentions.
 - Companion Voice drafts that attribute real transfer capability to Victoria, including second-person phrasing, are rejected while user-directed budgeting suggestions remain allowed.
 - Restored covered-expense planning choices require positive safe-integer monthly cents, an exact twelve-month projection, and agreement with the pending mocked-ledger proposal before they can continue toward approval.
@@ -391,9 +393,13 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 # Conversation response and memory continuity
 
 - A turn that states a stable preference and asks a question stores only validated user evidence while directly answering the question; it does not return only an acknowledgment.
-- An unrelated question during a pending mocked ledger action reaches read-only conversation; the pending action remains unchanged and a later explicit approval is still required.
+- An unrelated question or read-only financial reflection during a pending mocked ledger action reaches read-only conversation, including a statement without question punctuation; the pending action remains unchanged and a later explicit approval is still required.
+- The read-only responder receives the canonical provenance-aware financial context; it can use an annual projection only when the typed fact supports the amount and the reply preserves its conditional meaning.
+- A directly volunteered stable ordinary fact in a read-only topic shift may be stored even while a financial action is pending, but that learning neither replaces the reply nor changes the pending action.
 - A clearly read-only question about prior avoided-spend events during a pending suggestion receives only the bounded event list for the exact user and conversation; it neither approves nor changes the pending proposal. Questions that also ask whether to record, revise, confirm, decline, or otherwise act do not receive this event-history path.
-- Conversation response drafts that claim an action, offer to record savings, or introduce an unsupported dollar amount are rejected. Provider failure retains a safe baseline and cannot create a ledger entry.
+- Historical references resolve only over the exact scoped event list: a unique chronology/topic match is selected, ambiguous matches ask a focused question, and unmatched references ask for a merchant or detail. This result is read-only and cannot target corrections or approvals.
+- Conversation response drafts that claim an action, offer to record savings, or introduce an unsupported dollar amount are rejected. A rejected draft gets one validated retry; provider failure or a second rejection retains a safe baseline and cannot create a ledger entry.
+- Explicitly detailed requests may receive longer responses than ordinary replies; financial and action validation applies at both lengths.
 - A configured provider model and key automatically enable financial understanding and conversational generation on the chat route; mock adapters remain test doubles. No user-facing mode selection is needed.
 
 
@@ -402,5 +408,9 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - A recognized avoided-spend event is stored append-only with its user and conversation identity, including while an amount clarification is pending.
 - Reads return events only for the exact user and conversation and preserve stable event identity.
 - The Context Builder passes a bounded, provenance-labeled, read-only projection to specialists without treating it as approval or ledger proof.
+- Eligible retrieved memories are deduplicated to their newest current fact and ranked for the current message and active workflow before the six-fact context cap; a relevant older correction must outrank newer unrelated facts.
+- Prompt-context and personalization retrieval use the same deterministic relevance planner while retaining separate category, confidence, provenance, and lifecycle eligibility gates.
+- Optional stable-memory extraction runs for eligible read-only savings-progress turns, but skips uncertain, sensitive, forget/correction, and action-oriented intents; extraction never replaces the answer or changes action state.
+- Ordinary read-only replies stay concise, while an explicit request to explain, compare, or brainstorm can receive a more detailed response; both styles use the same financial-claim and action validation.
 - PostgreSQL lookup is covered across fresh store instances; cross-user and cross-conversation reads return no events.
-- Historical natural-language references remain unresolved until a deterministic unique/ambiguous/no-match resolver is implemented.
+- Historical natural-language references are resolved only against the exact scoped conversation event list; ambiguous and unmatched references request clarification without creating an action target.

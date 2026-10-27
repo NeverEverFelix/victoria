@@ -171,6 +171,19 @@ export class MemoryOrchestrator implements MemoryProvider {
     return Object.freeze(this.selectVisibleCurrent(candidates));
   }
 
+  /** Internal retrieval view that includes current correction/forget markers for episode suppression. */
+  async listCurrentConversationalMemories(
+    userId: string,
+    includeForgottenMarkers = false,
+    page?: ConversationalMemoryPage
+  ): Promise<readonly ConversationalMemory[]> {
+    if (this.storage.listCurrentConversationalMemories) {
+      return Object.freeze([...(await this.storage.listCurrentConversationalMemories(userId, includeForgottenMarkers, page))]);
+    }
+    const records = await this.storage.listConversationalMemories(userId, page);
+    return Object.freeze(includeForgottenMarkers ? this.selectCurrentRecords(records) : this.selectVisibleCurrent(records));
+  }
+
   async searchConversationalMemories(userId: string, query: string, limit = this.maxMemoriesPerTurn): Promise<readonly ConversationalMemory[]> {
     if (!userId.trim() || !query.trim()) return [];
     const candidates = await this.storage.searchConversationalMemories(userId, query, Math.max(limit, this.maxMemoriesPerTurn));
