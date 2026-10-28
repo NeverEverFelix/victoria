@@ -40,6 +40,12 @@ export class InMemoryTurnRepository implements TurnRepository {
     return turn;
   }
 
+  async listConversation(userId: string, conversationId: string): Promise<readonly TurnRecord[]> {
+    return Object.freeze([...this.turnsById.values()]
+      .filter((turn) => turn.userId === userId && turn.conversationId === conversationId)
+      .sort((left, right) => left.acceptedAt.localeCompare(right.acceptedAt) || left.id.localeCompare(right.id)));
+  }
+
   async compareAndTransition(input: {
     userId: string;
     conversationId: string;
@@ -65,7 +71,7 @@ export class InMemoryTurnRepository implements TurnRepository {
 function assertInitialTurn(turn: TurnRecord): void {
   if (
     turn.status !== "queued" || turn.attempt !== 0 || turn.revision !== 0 ||
-    "resultId" in turn || "failureCode" in turn ||
+    "resultId" in turn || "resultPayload" in turn || "failureCode" in turn ||
     !turn.id.trim() || !turn.userId.trim() || !turn.conversationId.trim() ||
     !turn.idempotencyKey.trim() || !turn.userMessage.trim() || !turn.requestFingerprint.trim()
   ) {

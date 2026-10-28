@@ -46,6 +46,8 @@ export interface AgentRequest {
   message: string;
   conversationId?: string;
   approvedActionId?: string;
+  /** Stable turn IDs and exact user text loaded from the authenticated turn repository. */
+  sourceTurnReferences?: readonly { readonly turnId: string; readonly userMessage: string }[];
 }
 
 export interface AgentMemory {
@@ -73,6 +75,11 @@ export interface ClassifiedMessage {
   amountCents?: number;
   goalName?: string;
   revisionReason?: string;
+  /** Model-selected context reference; application code must validate fact membership before use. */
+  referenceHint?: {
+    factId: string;
+    period: "monthly" | "annual";
+  };
   amountIssue?: "invalid_value" | "multiple_amounts" | "invalid_precision" | "unsupported_currency";
   summary: string;
   needsClarification: boolean;
@@ -81,6 +88,12 @@ export interface ClassifiedMessage {
 export interface AgentDecision {
   action: AgentActionType;
   classification: ClassifiedMessage;
+  /** Conversation-scoped planning choice for a covered recurring expense. */
+  planningChoice?: {
+    monthlyAmountCents: number;
+    annualProjectionCents: number;
+    selectedHorizon?: "monthly" | "annual";
+  };
   savingsEvent?: SavingsEvent;
   proposal?: SavingsProposal;
   proposalTransitions?: readonly SavingsProposalTransition[];

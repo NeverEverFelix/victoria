@@ -8,7 +8,7 @@ describe("OpenAiFinancialMomentAdapter", () => {
       usage: { input_tokens: 21, output_tokens: 13 },
       output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
         type: "avoided_spend", confidence: 0.92, merchantName: "Tailor", goalName: null,
-        revisionReason: null, summary: "Paused a jacket purchase", needsClarification: false
+        revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Paused a jacket purchase", needsClarification: false
       }) }] }]
     }));
     const usageReporter = new ProviderUsageReporter();
@@ -38,7 +38,7 @@ describe("OpenAiFinancialMomentAdapter", () => {
       fetcher: async () => jsonResponse({
         output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
           type: "avoided_spend", confidence: 0.9, merchantName: null, goalName: null,
-          revisionReason: null, summary: "Avoided a purchase", needsClarification: false
+          revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Avoided a purchase", needsClarification: false
         }) }] }]
       })
     });
@@ -54,7 +54,7 @@ describe("OpenAiFinancialMomentAdapter", () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
       output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
         type: "real_money_movement_request", confidence: 0.91, merchantName: null, goalName: null,
-        revisionReason: null, summary: "Asked to move the discussed amount", needsClarification: false
+        revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Asked to move the discussed amount", needsClarification: false
       }) }] }]
     }));
     const adapter = new OpenAiFinancialMomentAdapter({ apiKey: "test-key", model: "gpt-test", fetcher });
@@ -68,8 +68,40 @@ describe("OpenAiFinancialMomentAdapter", () => {
     expect(result.type).toBe("real_money_movement_request");
     const request = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
     expect(request.instructions).toContain("do not classify from a keyword or phrase alone");
+    expect(request.instructions).toContain("saving more is not automatically the right answer");
     expect(request.input).toContain("I almost bought lunch for $37.46, but skipped it.");
     expect(request.input).toContain("Can we move the $37.46 we discussed into savings?");
+  });
+
+  it("returns a context fact reference without converting it into a savings amount", async () => {
+    const adapter = new OpenAiFinancialMomentAdapter({
+      apiKey: "test-key", model: "gpt-test", fetcher: async () => jsonResponse({
+        output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
+          type: "proposal_revision", confidence: 0.9, merchantName: null, goalName: null,
+          revisionReason: "yearly amount", referenceFactId: "turn:0:annual-projection", referencePeriod: "annual",
+          summary: "The user refers to the annual projection.", needsClarification: false
+        }) }] }]
+      })
+    });
+    const financialContext = {
+      relevantUserTurns: [{ sourceTurnIndex: 0, text: "My employer covers a $35/month gym cost." }],
+      selectedMemoryFacts: [],
+      conversationSavingsEvents: [],
+      financialFacts: [{
+        id: "turn:0:annual-projection", amountCents: 42_000, currency: "USD" as const,
+        period: "annual" as const, meaning: "conditional_projection" as const,
+        provenance: "derived" as const, evidenceTurnIndexes: [0], condition: "Only if it stays covered for 12 months."
+      }]
+    };
+    const result = await adapter.classifyMessage({
+      userMessage: "record the yearly amount",
+      memory: { habits: [], goals: [], recentDecisions: [] },
+      financialContext
+    });
+
+    expect(result.referenceHint).toEqual({ factId: "turn:0:annual-projection", period: "annual" });
+    expect(result.amountCents).toBeUndefined();
+    expect(result).not.toHaveProperty("amountIssue");
   });
 
   it("drops model-supplied merchant names that are absent from the user context", async () => {
@@ -77,7 +109,7 @@ describe("OpenAiFinancialMomentAdapter", () => {
       apiKey: "test-key", model: "gpt-test", fetcher: async () => jsonResponse({
         output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
           type: "avoided_spend", confidence: 0.9, merchantName: "DoorDash", goalName: null,
-          revisionReason: null, summary: "Cooked at home", needsClarification: false
+          revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Cooked at home", needsClarification: false
         }) }] }]
       })
     });

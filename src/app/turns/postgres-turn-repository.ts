@@ -23,6 +23,7 @@ interface TurnRow {
   accepted_at: string | Date;
   updated_at: string | Date;
   result_id: string | null;
+  result_payload: unknown | null;
   failure_code: string | null;
 }
 
@@ -38,8 +39,8 @@ export class PostgresTurnRepository implements TurnRepository {
       const inserted = await client.query<TurnRow>(
         `INSERT INTO victoria_turns
           (id, user_id, conversation_id, idempotency_key, user_message, request_fingerprint,
-           status, attempt, revision, accepted_at, updated_at, result_id, failure_code)
-         VALUES ($1, $2, $3, $4, $5, $6, 'queued', 0, 0, $7, $7, NULL, NULL)
+           status, attempt, revision, accepted_at, updated_at, result_id, result_payload, failure_code)
+         VALUES ($1, $2, $3, $4, $5, $6, 'queued', 0, 0, $7, $7, NULL, NULL, NULL)
          ON CONFLICT (user_id, idempotency_key) DO NOTHING
          RETURNING *`,
         [turn.id, turn.userId, turn.conversationId, turn.idempotencyKey, turn.userMessage,
@@ -81,6 +82,14 @@ export class PostgresTurnRepository implements TurnRepository {
     return result.rows[0] ? fromRow(result.rows[0]) : null;
   }
 
+  async listConversation(userId: string, conversationId: string): Promise<readonly TurnRecord[]> {
+    const result = await this.pool.query<TurnRow>(
+      `SELECT * FROM victoria_turns WHERE user_id = $1 AND conversation_id = $2 ORDER BY accepted_at, id`,
+      [userId, conversationId]
+    );
+    return Object.freeze(result.rows.map(fromRow));
+  }
+
   async compareAndTransition(input: {
     userId: string;
     conversationId: string;
@@ -104,11 +113,13 @@ export class PostgresTurnRepository implements TurnRepository {
       const updated = transitionTurn(current, input.transition);
       const result = await client.query<{ id: string }>(
         `UPDATE victoria_turns
-         SET status = $1, attempt = $2, revision = $3, updated_at = $4, result_id = $5, failure_code = $6
-         WHERE id = $7 AND user_id = $8 AND conversation_id = $9 AND revision = $10
+         SET status = $1, attempt = $2, revision = $3, updated_at = $4, result_id = $5, failure_code = $6,
+             result_payload = $7::jsonb
+         WHERE id = $8 AND user_id = $9 AND conversation_id = $10 AND revision = $11
          RETURNING id`,
         [updated.status, updated.attempt, updated.revision, updated.updatedAt, updated.resultId ?? null,
-          updated.failureCode ?? null, input.turnId, input.userId, input.conversationId, input.expectedRevision]
+          updated.failureCode ?? null, updated.resultPayload === undefined ? null : JSON.stringify(updated.resultPayload),
+          input.turnId, input.userId, input.conversationId, input.expectedRevision]
       );
       if (result.rows.length !== 1) {
         throw new TurnRevisionConflictError(input.expectedRevision, input.expectedRevision + 1);
@@ -138,6 +149,7 @@ function fromRow(row: TurnRow): TurnRecord {
     acceptedAt: toIso(row.accepted_at),
     updatedAt: toIso(row.updated_at),
     ...(row.result_id === null ? {} : { resultId: row.result_id }),
+    ...(row.result_payload === null ? {} : { resultPayload: row.result_payload }),
     ...(row.failure_code === null ? {} : { failureCode: row.failure_code })
   };
   return Object.freeze(turn);
@@ -151,7 +163,7 @@ function toIso(value: string | Date): string {
 
 function assertInitialTurn(turn: TurnRecord): void {
   if (turn.status !== "queued" || turn.attempt !== 0 || turn.revision !== 0 ||
-      "resultId" in turn || "failureCode" in turn ||
+      "resultId" in turn || "resultPayload" in turn || "failureCode" in turn ||
       !turn.id.trim() || !turn.userId.trim() || !turn.conversationId.trim() ||
       !turn.idempotencyKey.trim() || !turn.userMessage.trim() || !turn.requestFingerprint.trim()) {
     throw new TurnRepositoryConflictError("Only a valid, newly queued turn can be accepted.");

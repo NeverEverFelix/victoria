@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  annualizeMonthlyAmountCents,
   dollarsToCents,
   formatUsd
 } from "../../../src/domain/money.js";
@@ -13,6 +14,12 @@ describe("money domain", () => {
   it("converts dollar amounts to cents safely", () => {
     expect(dollarsToCents(27.46)).toBe(2746);
     expect(dollarsToCents(6.755)).toBe(676);
+  });
+
+  it("projects one monthly amount over a year using integer cents", () => {
+    expect(annualizeMonthlyAmountCents(3500)).toBe(42000);
+    expect(() => annualizeMonthlyAmountCents(0)).toThrow("positive safe integer");
+    expect(() => annualizeMonthlyAmountCents(Number.MAX_SAFE_INTEGER)).toThrow("safe integer number of cents");
   });
 
   it("rejects non-finite dollar amounts", () => {

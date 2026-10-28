@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev --webpack",
+    "chat": "node scripts/chat-local.mjs",
     "build": "next build --webpack",
     "start": "next start",
     "db:local:up": "docker compose -f docker-compose.local.yml up -d",

@@ -17,12 +17,14 @@ export interface TurnRecord {
   readonly acceptedAt: string;
   readonly updatedAt: string;
   readonly resultId?: string;
+  /** Optional serialized application result, available after completion. */
+  readonly resultPayload?: unknown;
   readonly failureCode?: string;
 }
 
 export type TurnTransition =
   | { readonly type: "start"; readonly at: string }
-  | { readonly type: "complete"; readonly at: string; readonly resultId: string }
+  | { readonly type: "complete"; readonly at: string; readonly resultId: string; readonly resultPayload?: unknown }
   | { readonly type: "fail"; readonly at: string; readonly failureCode: string }
   | { readonly type: "retry"; readonly at: string };
 
@@ -62,7 +64,11 @@ export function transitionTurn(turn: TurnRecord, transition: TurnTransition): Tu
     case "complete":
       if (turn.status !== "running") throw new Error(`Cannot complete a ${turn.status} turn.`);
       if (!transition.resultId.trim()) throw new Error("Completed turns require a result identifier.");
-      next = { ...turn, status: "completed", resultId: transition.resultId, revision: turn.revision + 1, updatedAt: transition.at };
+      next = {
+        ...turn, status: "completed", resultId: transition.resultId,
+        ...(transition.resultPayload === undefined ? {} : { resultPayload: transition.resultPayload }),
+        revision: turn.revision + 1, updatedAt: transition.at
+      };
       break;
     case "fail":
       if (turn.status !== "running") throw new Error(`Cannot fail a ${turn.status} turn.`);

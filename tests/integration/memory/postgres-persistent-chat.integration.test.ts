@@ -9,6 +9,11 @@ import { PostgresConversationCoordinator } from "../../../src/app/turns/postgres
 import { createPostgresTurnStore } from "../../../src/app/turns/postgres-pool.js";
 import { PostgresMockSavingsTools } from "../../../src/app/savings/postgres-mock-savings-tools.js";
 import { PostgresPendingGoalAllocationActionStore } from "../../../src/app/savings/postgres-pending-goal-allocation-store.js";
+import { PostgresConversationSavingsEventStore } from "../../../src/app/savings/postgres-conversation-savings-event-store.js";
+import { PostgresMemoryRepository } from "../../../src/agent/memory/postgres-memory-repository.js";
+import { MemoryOrchestrator } from "../../../src/agent/memory/memory-orchestrator.js";
+import { suppressLifecycleConflictingEpisodes } from "../../../src/agent/memory/episodic-summary.js";
+import { MockLlmAdapter, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_POSTGRES_MEMORY_CHAT_INTEGRATION === "true" && isSafeLocalDatabase(databaseUrl);
@@ -32,6 +37,127 @@ const baseEnv = {
 describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
   afterAll(async () => {
     await closeLocalPersistentMemoryPools();
+  });
+
+  it("persists episode source turns and suppresses a linked episode after forgetting its fact across repository restart", async () => {
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    const turnId = `turn-${randomUUID()}`;
+    try {
+      const firstRepository = new PostgresMemoryRepository(store.pool);
+      const firstMemoryRuntime = new MemoryOrchestrator(firstRepository);
+      const fact = await firstMemoryRuntime.rememberConversationalMemory(userId, {
+        category: "other", key: `interest:hiking:${randomUUID()}`,
+        value: "Enjoys hiking and wants to explore local trails.", evidence: "I love hiking and want to explore local trails.",
+        confidence: 0.95, sourceType: "user_statement",
+        sourceMetadata: { sourceTurnReferences: [{ turnId }] }
+      });
+      const episode = await firstMemoryRuntime.rememberConversationalMemory(userId, {
+        category: "other", key: `episode:${randomUUID()}`,
+        value: "The user enjoys hiking and wants to explore local trails.", evidence: "I love hiking and want to explore local trails.",
+        confidence: 0.95, sourceType: "system_inference",
+        sourceMetadata: { memoryKind: "episodic_summary", sourceTurnReferences: [{ turnId }] }
+      });
+      await firstMemoryRuntime.forgetMemory(userId, fact.id);
+
+      // A new repository and orchestrator model a process restart while keeping only the database.
+      const restartedRepository = new PostgresMemoryRepository(store.pool);
+      const lifecycleRecords = await restartedRepository.listCurrentConversationalMemories(userId, true);
+      const visibleRecords = await restartedRepository.listCurrentConversationalMemories(userId, false);
+      expect(visibleRecords.find((memory) => memory.id === episode.id)?.sourceMetadata).toMatchObject({
+        memoryKind: "episodic_summary", sourceTurnReferences: [{ turnId }]
+      });
+      expect(suppressLifecycleConflictingEpisodes(visibleRecords, lifecycleRecords).map((memory) => memory.id))
+        .not.toContain(episode.id);
+      expect(lifecycleRecords.find((memory) => memory.sourceMetadata?.memoryStatus === "forgotten")?.sourceMetadata)
+        .toMatchObject({ sourceTurnReferences: [{ turnId }] });
+    } finally {
+      await store.pool.end();
+    }
+  });
+
+  it("creates a durable-turn episode through the agent and suppresses it after correcting its fact across repository restart", async () => {
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    const lifecycleUserId = `memory-check-${randomUUID()}`;
+    const conversationId = `episode-correction-${randomUUID()}`;
+    const turnId = `turn-${randomUUID()}`;
+    const userMessage = "I love hiking on weekends.";
+    try {
+      const firstRepository = new PostgresMemoryRepository(store.pool);
+      const firstMemoryRuntime = new MemoryOrchestrator(firstRepository);
+      const fact = await firstMemoryRuntime.rememberConversationalMemory(lifecycleUserId, {
+        category: "other", key: "interest:hiking", value: "Enjoys hiking on weekends.",
+        evidence: userMessage, confidence: 0.95, sourceType: "user_statement",
+        sourceMetadata: { sourceTurnReferences: [{ turnId }] }
+      });
+      await firstMemoryRuntime.setConversationContext(lifecycleUserId, conversationId, [
+        userMessage,
+        "Victoria: What kind of outdoor routine feels manageable?",
+        "I'd like to find a steady weekend trail routine."
+      ]);
+      const agent = new VictoriaAgent({
+        llm: new MockLlmAdapter(), memory: firstMemoryRuntime, tools: new MockVictoriaTools(),
+        episodicMemorySummarizer: {
+          async summarize() {
+            return {
+              summary: "The user enjoys hiking and wants a steady weekend trail routine.",
+              evidenceQuotes: [userMessage], confidence: 0.94, sensitivity: "ordinary"
+            };
+          }
+        }
+      });
+
+      await expect(agent.finishConversation(lifecycleUserId, conversationId, [
+        { turnId, userMessage }
+      ])).resolves.toBe(true);
+      const episode = (await firstMemoryRuntime.listConversationalMemories(lifecycleUserId))
+        .find((memory) => memory.sourceMetadata?.memoryKind === "episodic_summary");
+      expect(episode?.sourceMetadata?.sourceTurnReferences).toEqual([{ turnId, userMessage }]);
+
+      await firstMemoryRuntime.correctMemory(lifecycleUserId, fact.id, "I don't enjoy hiking anymore.");
+
+      // A new repository and orchestrator model a process restart while retaining database state only.
+      const restartedRepository = new PostgresMemoryRepository(store.pool);
+      const lifecycleRecords = await restartedRepository.listCurrentConversationalMemories(lifecycleUserId, true);
+      const visibleRecords = await restartedRepository.listCurrentConversationalMemories(lifecycleUserId, false);
+      expect(visibleRecords.some((memory) => memory.id === episode?.id)).toBe(false);
+      expect(suppressLifecycleConflictingEpisodes(visibleRecords, lifecycleRecords).map((memory) => memory.id))
+        .not.toContain(episode?.id);
+      expect(lifecycleRecords.find((memory) => memory.sourceType === "user_correction")?.sourceMetadata)
+        .toMatchObject({ sourceTurnReferences: [{ turnId }] });
+      const restartedMemoryRuntime = new MemoryOrchestrator(restartedRepository);
+      const restartedAgent = new VictoriaAgent({
+        llm: new MockLlmAdapter(), memory: restartedMemoryRuntime, tools: new MockVictoriaTools()
+      });
+      const later = await restartedAgent.respond({
+        userId: lifecycleUserId, conversationId: `later-${randomUUID()}`,
+        message: "Can you help me plan a steady weekend trail routine?"
+      });
+      expect(later.message).not.toContain("note from an earlier conversation");
+      expect(later.message).not.toContain("enjoys hiking");
+    } finally {
+      await store.pool.end();
+    }
+  });
+
+  it("persists savings events and scopes lookup to the exact user and conversation", async () => {
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    const events = new PostgresConversationSavingsEventStore(store.pool);
+    const conversationId = `event-lookup-${randomUUID()}`;
+    const event = {
+      id: `event-${randomUUID()}`, userId, type: "avoided_spend" as const,
+      summary: "Cooked instead of ordering takeout", merchantName: "takeout",
+      userProvidedAmountCents: 2400, classificationConfidence: 0.95,
+      createdAt: new Date().toISOString()
+    };
+    try {
+      await events.record({ conversationId, event });
+      const freshStore = new PostgresConversationSavingsEventStore(store.pool);
+      await expect(freshStore.list(userId, conversationId)).resolves.toEqual([event]);
+      await expect(freshStore.list(userId, `${conversationId}-other`)).resolves.toEqual([]);
+      await expect(freshStore.list(otherUserId, conversationId)).resolves.toEqual([]);
+    } finally {
+      await store.pool.end();
+    }
   });
 
   it("keeps turn and Plaid consent tables server-only", async () => {
@@ -165,6 +291,122 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
     expect(replayedBody.decision.action).toBe("ask_follow_up");
     expect(replayedBody.message).toContain("$18.00 savings suggestion is still pending");
     expect(replayedBody.message).toContain("confirm or decline");
+  });
+
+  it("restores a revision clarification across fresh runtimes and still requires new approval", async () => {
+    const revisionUserId = `memory-check-${randomUUID()}`;
+    const conversationId = `revision-${randomUUID()}`;
+    const firstRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: firstSecret });
+    expect(firstRuntime).not.toBeNull();
+    const token = signVictoriaSession({ userId: revisionUserId, secret: firstSecret });
+    const proposed = await firstRuntime!.handler(chatRequest(
+      token,
+      conversationId,
+      "I almost bought a $20 pastry but decided to wait."
+    ), { conversationId });
+    expect((await proposed.json() as { message: string }).message).toContain("$20.00");
+
+    const unclearRevision = await firstRuntime!.handler(chatRequest(
+      token,
+      conversationId,
+      "Actually, make that $6 or $8."
+    ), { conversationId });
+    expect((await unclearRevision.json() as { message: string }).message).toContain("haven't changed the pending suggestion");
+
+    const restartedRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: secondSecret });
+    expect(restartedRuntime).not.toBeNull();
+    const restartedToken = signVictoriaSession({ userId: revisionUserId, secret: secondSecret });
+    const staleApproval = await restartedRuntime!.handler(chatRequest(
+      restartedToken,
+      conversationId,
+      "Yes"
+    ), { conversationId });
+    expect((await staleApproval.json() as { message: string }).message).toContain("unambiguous amount");
+
+    const revised = await restartedRuntime!.handler(chatRequest(
+      restartedToken,
+      conversationId,
+      "Use $8."
+    ), { conversationId });
+    expect((await revised.json() as { message: string }).message).toContain("$8.00");
+
+    const approved = await restartedRuntime!.handler(chatRequest(
+      restartedToken,
+      conversationId,
+      "Yes"
+    ), { conversationId });
+    expect((await approved.json() as { message: string }).message).toContain("recorded $8.00");
+
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    try {
+      const revisions = await store.pool.query<{ amount_cents: number; proposal_id: string; supersedes_proposal_id: string | null; status: string }>(
+        `SELECT (p.decision #>> '{proposal,suggestion,amountCents}')::integer AS amount_cents,
+           p.proposal_id,
+           p.decision #>> '{proposal,supersedesProposalId}' AS supersedes_proposal_id,
+           t.to_status AS status
+         FROM victoria_local_savings_proposals p
+         JOIN LATERAL (
+           SELECT to_status FROM victoria_local_savings_proposal_transitions
+           WHERE user_id = p.user_id AND proposal_id = p.proposal_id
+           ORDER BY created_at DESC, transition_id DESC LIMIT 1
+         ) t ON true
+         WHERE p.user_id = $1 AND p.conversation_id = $2
+         ORDER BY p.created_at, p.proposal_id`,
+        [revisionUserId, conversationId]
+      );
+      expect(revisions.rows).toHaveLength(2);
+      expect(revisions.rows[1]).toMatchObject({ amount_cents: 800, status: "recorded" });
+      expect(revisions.rows[1]?.supersedes_proposal_id).toBe(revisions.rows[0]?.proposal_id);
+    } finally {
+      await store.pool.end();
+    }
+  });
+
+  it("persists a non-active revision-target clarification and blocks amount-only follow-up after restart", async () => {
+    const targetUserId = `memory-check-${randomUUID()}`;
+    const conversationId = `revision-target-${randomUUID()}`;
+    const firstRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: firstSecret });
+    expect(firstRuntime).not.toBeNull();
+    const firstToken = signVictoriaSession({ userId: targetUserId, secret: firstSecret });
+    const proposed = await firstRuntime!.handler(chatRequest(
+      firstToken, conversationId, "I almost bought a $20 pastry but decided to wait."
+    ), { conversationId });
+    expect((await proposed.json() as { message: string }).message).toContain("$20.00");
+
+    const wrongTarget = await firstRuntime!.handler(chatRequest(
+      firstToken, conversationId, "Actually revise my coffee-shop purchase to $8."
+    ), { conversationId });
+    expect((await wrongTarget.json() as { message: string }).message).toContain("can't target an older event");
+
+    const restartedRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: secondSecret });
+    expect(restartedRuntime).not.toBeNull();
+    const restartedToken = signVictoriaSession({ userId: targetUserId, secret: secondSecret });
+    const amountOnly = await restartedRuntime!.handler(chatRequest(
+      restartedToken, conversationId, "Use $8."
+    ), { conversationId });
+    expect((await amountOnly.json() as { message: string }).message).toContain("decline the current suggestion");
+
+    const staleApproval = await restartedRuntime!.handler(chatRequest(
+      restartedToken, conversationId, "Yes"
+    ), { conversationId });
+    expect((await staleApproval.json() as { message: string }).message).toContain("can't target an older event");
+
+    const declined = await restartedRuntime!.handler(chatRequest(
+      restartedToken, conversationId, "No"
+    ), { conversationId });
+    expect((await declined.json() as { message: string }).message).toContain("won't record it");
+
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    try {
+      const marker = await store.pool.query<{ clarification_id: string }>(
+        `SELECT clarification_id FROM victoria_local_savings_revision_target_clarifications
+         WHERE user_id = $1 AND conversation_id = $2`,
+        [targetUserId, conversationId]
+      );
+      expect(marker.rows).toEqual([{ clarification_id: expect.stringContaining(":revision-target") }]);
+    } finally {
+      await store.pool.end();
+    }
   });
 
   it("forgets a local memory from listing and retrieval while retaining its linked history", async () => {
@@ -479,6 +721,66 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
     } finally {
       await store.pool.end();
     }
+  });
+
+  it("restores an unapproved entry correction after a runtime restart", async () => {
+    const correctionUserId = `memory-check-${randomUUID()}`;
+    const conversationId = `pending-correction-restart-${randomUUID()}`;
+    const firstToken = signVictoriaSession({ userId: correctionUserId, secret: firstSecret });
+    const firstRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: firstSecret });
+    expect(firstRuntime).not.toBeNull();
+    await firstRuntime!.handler(chatRequest(firstToken, conversationId,
+      "I almost bought a $45 book but decided to wait."), { conversationId });
+    await firstRuntime!.handler(chatRequest(firstToken, conversationId, "Yes"), { conversationId });
+    const proposed = await firstRuntime!.handler(chatRequest(firstToken, conversationId,
+      "I need to correct that entry. I saved $30, not $45."), { conversationId });
+    expect((await proposed.json() as { decision: { action: string } }).decision.action).toBe("correct_ledger_entry");
+
+    const restartedRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: secondSecret });
+    expect(restartedRuntime).not.toBeNull();
+    const secondToken = signVictoriaSession({ userId: correctionUserId, secret: secondSecret });
+    const recorded = await restartedRuntime!.handler(chatRequest(secondToken, conversationId, "Yes"), { conversationId });
+    expect((await recorded.json() as { message: string; decision: { action: string } })).toMatchObject({
+      decision: { action: "correct_ledger_entry" }, message: expect.stringContaining("corrected the recorded amount to $30.00")
+    });
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    try {
+      const entries = await new PostgresMockSavingsTools(store.pool).listSavingsEntries(correctionUserId);
+      expect(entries).toHaveLength(1);
+      expect(await new PostgresMockSavingsTools(store.pool).getEffectiveSavingsEntryAmount(correctionUserId, entries[0]!.id)).toBe(3000);
+      const transitions = await store.pool.query<{ status: string }>(
+        "SELECT status FROM victoria_local_entry_correction_transitions WHERE user_id = $1 AND conversation_id = $2",
+        [correctionUserId, conversationId]);
+      expect(transitions.rows).toEqual([{ status: "recorded" }]);
+    } finally { await store.pool.end(); }
+  });
+
+  it("keeps a restored correction unchanged when the user declines", async () => {
+    const correctionUserId = `memory-check-${randomUUID()}`;
+    const conversationId = `declined-correction-restart-${randomUUID()}`;
+    const firstToken = signVictoriaSession({ userId: correctionUserId, secret: firstSecret });
+    const firstRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: firstSecret });
+    expect(firstRuntime).not.toBeNull();
+    await firstRuntime!.handler(chatRequest(firstToken, conversationId,
+      "I almost bought a $45 book but decided to wait."), { conversationId });
+    await firstRuntime!.handler(chatRequest(firstToken, conversationId, "Yes"), { conversationId });
+    await firstRuntime!.handler(chatRequest(firstToken, conversationId,
+      "I need to correct that entry. I saved $30, not $45."), { conversationId });
+
+    const restartedRuntime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: secondSecret });
+    expect(restartedRuntime).not.toBeNull();
+    const secondToken = signVictoriaSession({ userId: correctionUserId, secret: secondSecret });
+    const declined = await restartedRuntime!.handler(chatRequest(secondToken, conversationId, "No"), { conversationId });
+    expect((await declined.json() as { message: string }).message).toContain("entry remains unchanged");
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 1 });
+    try {
+      const rows = await store.pool.query<{ status: string }>(
+        "SELECT status FROM victoria_local_entry_correction_transitions WHERE user_id = $1 AND conversation_id = $2",
+        [correctionUserId, conversationId]);
+      expect(rows.rows).toEqual([{ status: "declined" }]);
+      const corrections = await store.pool.query("SELECT 1 FROM victoria_local_savings_entry_corrections WHERE user_id = $1", [correctionUserId]);
+      expect(corrections.rowCount).toBe(0);
+    } finally { await store.pool.end(); }
   });
 
   it("restores a pending goal allocation after restart and persists its terminal approval or decline", async () => {

@@ -11,8 +11,23 @@ export class PostgresPendingSavingsActionStore implements PendingSavingsActionSt
   constructor(private readonly db: PostgresPool) {}
 
   async getPending(userId: string, conversationId: string): Promise<PersistedPendingSavingsAction | null> {
-    const result = await this.db.query<{ action_id: string; decision: unknown }>(
-      `SELECT p.action_id, p.decision
+    const result = await this.db.query<{
+      action_id: string;
+      decision: unknown;
+      awaiting_valid_revision: boolean;
+      awaiting_revision_target: boolean;
+    }>(
+      `SELECT p.action_id, p.decision,
+         EXISTS (
+           SELECT 1 FROM victoria_local_savings_revision_clarifications c
+           WHERE c.user_id = p.user_id AND c.conversation_id = p.conversation_id
+             AND c.proposal_id = p.proposal_id AND c.action_id = p.action_id
+         ) AS awaiting_valid_revision
+         ,EXISTS (
+           SELECT 1 FROM victoria_local_savings_revision_target_clarifications c
+           WHERE c.user_id = p.user_id AND c.conversation_id = p.conversation_id
+             AND c.proposal_id = p.proposal_id AND c.action_id = p.action_id
+         ) AS awaiting_revision_target
        FROM victoria_local_savings_proposals p
        WHERE p.user_id = $1 AND p.conversation_id = $2
          AND NOT EXISTS (
@@ -24,7 +39,12 @@ export class PostgresPendingSavingsActionStore implements PendingSavingsActionSt
     );
     const row = result.rows[0];
     if (!row || !isPendingDecision(row.decision, userId, row.action_id)) return null;
-    return Object.freeze({ actionId: row.action_id, decision: row.decision });
+    return Object.freeze({
+      actionId: row.action_id,
+      decision: row.decision,
+      ...(row.awaiting_valid_revision ? { awaitingValidRevision: true } : {}),
+      ...(row.awaiting_revision_target ? { awaitingRevisionTarget: true } : {})
+    });
   }
 
   async commit(input: {
@@ -51,6 +71,26 @@ export class PostgresPendingSavingsActionStore implements PendingSavingsActionSt
           [proposal.id, input.userId, input.conversationId, pending.actionId,
             JSON.stringify(pending.decision), proposal.createdAt]
         );
+        if (pending.awaitingValidRevision) {
+          await client.query(
+            `INSERT INTO victoria_local_savings_revision_clarifications
+              (clarification_id, user_id, conversation_id, proposal_id, action_id, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (user_id, action_id) DO NOTHING`,
+            [`${pending.actionId}:revision-amount`, input.userId, input.conversationId,
+              proposal.id, pending.actionId, new Date().toISOString()]
+          );
+        }
+        if (pending.awaitingRevisionTarget) {
+          await client.query(
+            `INSERT INTO victoria_local_savings_revision_target_clarifications
+              (clarification_id, user_id, conversation_id, proposal_id, action_id, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (user_id, action_id) DO NOTHING`,
+            [`${pending.actionId}:revision-target`, input.userId, input.conversationId,
+              proposal.id, pending.actionId, new Date().toISOString()]
+          );
+        }
       }
 
       for (const transition of input.responseDecision.proposalTransitions ?? []) {

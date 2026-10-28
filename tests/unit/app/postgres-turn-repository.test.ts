@@ -14,7 +14,7 @@ function row(overrides: Partial<Row> = {}): Row {
     id: "turn-1", user_id: "user-1", conversation_id: "conversation-1", idempotency_key: "request-1",
     user_message: "I skipped a purchase.", request_fingerprint: "fingerprint-1", status: "queued",
     attempt: 0, revision: 0, accepted_at: "2026-10-05T12:00:00.000Z", updated_at: "2026-10-05T12:00:00.000Z",
-    result_id: null, failure_code: null, ...overrides
+    result_id: null, result_payload: null, failure_code: null, ...overrides
   };
 }
 
@@ -92,5 +92,25 @@ describe("PostgresTurnRepository", () => {
     expect(pool.statements[0]?.values).toEqual(["turn-1", "user-1", "conversation-1"]);
     expect(pool.statements.find((statement) => statement.sql.includes("FOR UPDATE"))?.sql).toContain("FOR UPDATE");
     expect(updated).toMatchObject({ status: "running", attempt: 1, revision: 1 });
+  });
+
+  it("writes completed result payload in the same lifecycle transaction", async () => {
+    const pool = new ScriptedPool((sql) => {
+      if (sql.startsWith("SELECT")) return { rows: [row({ status: "running", attempt: 1, revision: 1 })], rowCount: 1 };
+      if (sql.startsWith("UPDATE")) return { rows: [{ id: "turn-1" }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
+    const repository = new PostgresTurnRepository(pool);
+    const payload = { message: "Saved response", decision: { action: "reflect" } };
+
+    const completed = await repository.compareAndTransition({
+      userId: "user-1", conversationId: "conversation-1", turnId: "turn-1", expectedRevision: 1,
+      transition: { type: "complete", at: "2026-10-05T12:00:02.000Z", resultId: "turn-1", resultPayload: payload }
+    });
+
+    expect(completed).toMatchObject({ status: "completed", resultPayload: payload });
+    const update = pool.statements.find((statement) => statement.sql.includes("UPDATE victoria_turns"));
+    expect(update?.sql).toContain("result_payload = $7::jsonb");
+    expect(update?.values[6]).toBe(JSON.stringify(payload));
   });
 });

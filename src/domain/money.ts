@@ -26,3 +26,15 @@ export function dollarsToCents(amountDollars: number): number {
   }
   return amountCents;
 }
+
+/** Calculates a simple annual projection from one recurring monthly USD amount. */
+export function annualizeMonthlyAmountCents(monthlyAmountCents: number): number {
+  if (!Number.isSafeInteger(monthlyAmountCents) || monthlyAmountCents <= 0) {
+    throw new Error("Monthly amount must be a positive safe integer number of cents.");
+  }
+  const annualAmountCents = monthlyAmountCents * 12;
+  if (!Number.isSafeInteger(annualAmountCents)) {
+    throw new Error("Annualized amount must be a safe integer number of cents.");
+  }
+  return annualAmountCents;
+}

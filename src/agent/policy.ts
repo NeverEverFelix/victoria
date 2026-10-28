@@ -37,6 +37,23 @@ export function interpretApprovalResponse(message: string, expectedAmountCents?:
     return "explicit_decline";
   }
 
+  // A standalone refusal can be followed by a separate request. Preserve the
+  // refusal unless the user reverses it or asks for a recording in that turn.
+  if (/^(?:no|nope|nah)[.!?,]\s+/.test(message.trim().toLowerCase()) &&
+      !/\b(?:actually|instead|but)\s+(?:please\s+)?(?:record|log|save|add)\b/i.test(message) &&
+      !/^(?:no|nope|nah)[.!?,]\s+(?:please\s+)?(?:record|log|save|add)\b/i.test(message.trim())) {
+    return "explicit_decline";
+  }
+
+  // A direct refusal of the pending ledger action remains a refusal when the
+  // user adds a follow-up question. Keep this narrow so mixed or uncertain
+  // instructions cannot be mistaken for consent or a proposal revision.
+  const firstClause = normalized.split(/[.!?]/, 1)[0] ?? normalized;
+  if (/^(?:no\s+)?(?:please\s+)?(?:don't|do not)\s+(?:record|log|save|add)\s+(?:it|this(?:\s+amount)?|that(?:\s+amount)?|the\s+\$?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?)(?:\b|$)/i.test(firstClause) &&
+      !/\b(?:instead|but|actually)\s+(?:please\s+)?(?:record|log|save|add)\b/i.test(normalized)) {
+    return "explicit_decline";
+  }
+
   if (["ok", "okay", "sure", "sounds good"].includes(normalized) ||
     /\b(maybe|guess|probably)\b/.test(normalized)) {
     return "ambiguous";

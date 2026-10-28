@@ -15,6 +15,21 @@ const profileMemory = (overrides: Partial<Omit<ConversationalMemory, "id" | "cre
 });
 
 describe("MemoryOrchestrator", () => {
+  it("carries source-turn provenance into append-only forget markers", async () => {
+    const storage = new MockMemoryProvider();
+    const memory = new MemoryOrchestrator(storage);
+    const saved = await memory.rememberConversationalMemory("user-a", {
+      category: "other", key: "interest:hiking", value: "Enjoys hiking on weekends.", evidence: "I love hiking.",
+      confidence: 0.95, sourceType: "user_statement",
+      sourceMetadata: { sourceTurnReferences: [{ turnId: "turn-hiking-1" }] }
+    });
+    await memory.forgetMemory("user-a", saved.id);
+
+    expect(await memory.listCurrentConversationalMemories("user-a", true)).toMatchObject([{
+      sourceMetadata: { memoryStatus: "forgotten", sourceTurnReferences: [{ turnId: "turn-hiking-1" }] }
+    }]);
+  });
+
   it("preserves a paginated current-memory page returned by storage", async () => {
     const storage = new MockMemoryProvider();
     const row = {
@@ -43,6 +58,25 @@ describe("MemoryOrchestrator", () => {
     expect(updated.supersedesId).toBe(first.id);
     await expect(orchestrator.listConversationalMemories("user-a")).resolves.toEqual([updated]);
     await expect(orchestrator.listConversationalMemories("user-b")).resolves.toEqual([]);
+  });
+
+  it("keeps a source-turn fact stable when a retried extraction returns a different paraphrase", async () => {
+    const storage = new MockMemoryProvider();
+    const orchestrator = new MemoryOrchestrator(storage, { now: () => new Date() });
+    const first = await orchestrator.rememberConversationalMemory("user-a", {
+      category: "preference", key: "response_style", value: "Prefers concise answers.",
+      evidence: "I prefer concise answers.", confidence: 0.95, sourceType: "user_statement",
+      sourceMetadata: { sourceTurnReferences: [{ turnId: "turn-style-1" }] }
+    });
+
+    const retried = await orchestrator.rememberConversationalMemory("user-a", {
+      category: "preference", key: "response_style", value: "Likes brief replies.",
+      evidence: "I prefer concise answers.", confidence: 0.95, sourceType: "user_statement",
+      sourceMetadata: { sourceTurnReferences: [{ turnId: "turn-style-1" }] }
+    });
+
+    expect(retried).toEqual(first);
+    await expect(storage.listConversationalMemories("user-a")).resolves.toHaveLength(1);
   });
 
   it("forgets one user fact from current retrieval while preserving linked history", async () => {

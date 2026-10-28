@@ -160,6 +160,9 @@ async function getPullRequestDiff() {
       "GITHUB_TOKEN, GITHUB_REPOSITORY, and PULL_REQUEST_NUMBER are required for pull request review."
     );
   }
+  if (!BASE_SHA || !/^[a-f0-9]{40}$/i.test(BASE_SHA)) {
+    throw new Error("A full trusted base commit SHA is required to recover large-file patches.");
+  }
 
   return fetchPullRequestFilesDiff({
     apiUrl: `https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${PULL_REQUEST_NUMBER}/files`,

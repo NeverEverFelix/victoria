@@ -17,6 +17,8 @@ The agent should be proactive with reasoning, memory, suggestions, and reminders
 ## Boundaries
 
 - `victoria-agent.ts`: orchestration loop.
+- `conversation-context-builder.ts`: assembles bounded relevant dialogue evidence, provenance-labeled financial facts, and a read-only active-workflow summary for Financial Moment and Savings Reasoning; `resolveFinancialReferenceHint` validates model-selected fact IDs and periods against that context.
+- `planning-reference-resolver.ts`: resolves an explicit period reference against the active pending planning choice; its typed result has no approval or write authority.
 - `types.ts`: shared agent types and contracts.
 - `policy.ts`: safety rules for tool use and money movement.
 - `llm/`: model adapter interfaces.

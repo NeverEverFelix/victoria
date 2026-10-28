@@ -158,7 +158,7 @@ describe("multi-agent uncertainty and disagreement conversations", () => {
     const uncertainRevision = await agent.respond({ ...context, message: "I think changing the amount to $25 is what I want." });
     expect(uncertainRevision.decision.action).toBe("ask_follow_up");
     expect(uncertainRevision.decision.classification.uncertainIntent).toBe("proposal_revision");
-    expect(uncertainRevision.message).toContain("couldn't confidently understand that revision");
+    expect(uncertainRevision.message).toMatch(/misunderstood|couldn't confidently understand/i);
     expect(uncertainRevision.decision.proposal).toMatchObject({
       status: "pending", suggestion: { amountCents: 2000 }
     });

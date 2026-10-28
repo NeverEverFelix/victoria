@@ -32,6 +32,57 @@ describe("AgentTeamPrototype", () => {
     expect(specialists.financialMoment.analyze).toHaveBeenCalledTimes(1);
   });
 
+  it("validates a model fact reference against the supplied context before Savings Reasoning sees it", async () => {
+    const financialContext = {
+      relevantUserTurns: [],
+      selectedMemoryFacts: [],
+      conversationSavingsEvents: [],
+      financialFacts: [{
+        id: "turn:0:annual-projection", amountCents: 42_000, currency: "USD" as const,
+        period: "annual" as const, meaning: "conditional_projection" as const,
+        provenance: "derived" as const, evidenceTurnIndexes: [0], condition: "Only if it remains covered for 12 months."
+      }]
+    };
+    const specialists = team({
+      classification: {
+        type: "avoided_spend", confidence: 0.9, summary: "Asked about the annual amount",
+        needsClarification: true, referenceHint: { factId: "turn:0:annual-projection", period: "annual" }
+      }
+    });
+    specialists.savingsReasoning.assess = vi.fn(async ({ finding }) => {
+      expect(finding.resolvedReference).toEqual({
+        factId: "turn:0:annual-projection", amountCents: 42_000, currency: "USD",
+        period: "annual", meaning: "conditional_projection", provenance: "derived",
+        condition: "Only if it remains covered for 12 months."
+      });
+      return { outcome: "ask" as const, confidence: 0.95, question: "Would you like to plan with that projection?" };
+    });
+    await new AgentTeamPrototype(specialists).respond({
+      message: "record the yearly amount", memory, financialContext
+    });
+    expect(specialists.savingsReasoning.assess).toHaveBeenCalledOnce();
+  });
+
+  it("drops a fact reference that is absent from the supplied context", async () => {
+    const specialists = team({
+      classification: {
+        type: "avoided_spend", confidence: 0.9, summary: "Asked about an annual amount",
+        needsClarification: true, referenceHint: { factId: "turn:999:annual-projection", period: "annual" }
+      }
+    });
+    specialists.savingsReasoning.assess = vi.fn(async ({ finding }) => {
+      expect(finding.resolvedReference).toBeUndefined();
+      expect(finding.classification.referenceHint).toBeUndefined();
+      return { outcome: "ask" as const, confidence: 0.95, question: "Which amount do you mean?" };
+    });
+    await new AgentTeamPrototype(specialists).respond({
+      message: "record the yearly amount",
+      memory,
+      financialContext: { relevantUserTurns: [], selectedMemoryFacts: [], conversationSavingsEvents: [], financialFacts: [] }
+    });
+    expect(specialists.savingsReasoning.assess).toHaveBeenCalledOnce();
+  });
+
   it("rejects malformed moment output before routing to savings reasoning", async () => {
     const specialists = team({ classification: { ...avoided, type: "nonsense" } as unknown as ClassifiedMessage });
     const turn = await new AgentTeamPrototype(specialists).respond({ message: "anything", memory });
@@ -74,11 +125,23 @@ describe("AgentTeamPrototype", () => {
     const specialists = team({ voiceMessage: "That sounds like a thoughtful pause." });
     const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
     expect(turn.message).toContain("Would you like me to record $90.00");
-    expect(turn.message).toContain("Please confirm before I record it.");
+    expect(turn.message).toMatch(/would you like|do you want|please confirm/i);
     expect(turn.message).toContain("No real money has moved");
     expect(specialists.companionVoice.respond).toHaveBeenCalledWith(expect.objectContaining({
       requiredDisclosures: ["Ask for explicit confirmation before recording.", "No real money has moved."]
     }));
+  });
+
+  it("normalizes a provider confirmation to the exact amount and ledger without duplicating the question", async () => {
+    const specialists = team({
+      voiceMessage: "Nice job avoiding that $90 purchase. Would you like me to record $90 in a coffee savings tracker? I won't record anything without your explicit confirmation, and no real money has moved."
+    });
+    const turn = await new AgentTeamPrototype(specialists).respond({ message: "I waited on a $90 jacket", memory });
+
+    expect(turn.message).toMatch(/Would you like me to record \$90(?:\.00)? in your Victoria savings ledger\?/);
+    expect(turn.message.match(/\?/g)).toHaveLength(1);
+    expect(turn.message).not.toContain("Please confirm before I record it.");
+    expect(turn.message).toMatch(/no real money has moved/i);
   });
 
   it("uses the savings specialist's clarification without asking voice to rewrite it", async () => {
@@ -153,7 +216,7 @@ describe("AgentTeamPrototype", () => {
     const turn = await new AgentTeamPrototype(specialists).respond({ message: "I made coffee at home", memory: estimateMemory });
     expect(turn.message).toContain("estimate");
     expect(turn.message).toContain("$24.00");
-    expect(turn.message).toContain("Please confirm before I record it.");
+    expect(turn.message).toMatch(/would you like|do you want|please confirm/i);
   });
 
   it("rejects a user-provided amount that was not present in the financial finding", async () => {

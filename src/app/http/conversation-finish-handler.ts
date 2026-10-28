@@ -1,5 +1,6 @@
 import type { VictoriaAgent } from "../../agent/victoria-agent.js";
 import type { ConversationCoordinator } from "../turns/conversation-coordinator.js";
+import type { TurnRepository } from "../turns/turn-repository.js";
 
 const CONVERSATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -7,6 +8,7 @@ export interface ConversationFinishHandlerDependencies {
   authenticate(request: Request): Promise<{ readonly userId: string } | null>;
   agent: Pick<VictoriaAgent, "finishConversation">;
   conversationCoordinator?: ConversationCoordinator;
+  turns?: TurnRepository;
 }
 
 /** Authenticated boundary for explicitly ending a chat and saving eligible long-term context. */
@@ -23,7 +25,14 @@ export function createConversationFinishHandler(dependencies: ConversationFinish
     if (!user?.userId?.trim()) return respond(401, { error: "unauthorized" });
 
     try {
-      const finishConversation = () => dependencies.agent.finishConversation(user.userId, conversationId);
+      const finishConversation = async () => {
+        const sourceTurnReferences = dependencies.turns?.listConversation
+          ? (await dependencies.turns.listConversation(user.userId, conversationId))
+            .filter((turn) => turn.status === "completed")
+            .map((turn) => ({ turnId: turn.id, userMessage: turn.userMessage }))
+          : [];
+        return dependencies.agent.finishConversation(user.userId, conversationId, sourceTurnReferences);
+      };
       const saved = dependencies.conversationCoordinator
         ? await dependencies.conversationCoordinator.runExclusive(user.userId, conversationId, finishConversation)
         : await finishConversation();

@@ -3,6 +3,7 @@ import { createVictoriaSessionAuthenticator, signVictoriaSession } from "../../.
 import { createVictoriaChatHandler } from "../../../src/app/http/victoria-chat-handler.js";
 import { getLocalMockVictoriaChatHandler, getLocalMockVictoriaRuntime } from "../../../src/app/http/create-local-mock-victoria-runtime.js";
 import { buildTransactionFinancialProfile } from "../../../src/domain/financial-profile.js";
+import { InMemoryTurnRepository } from "../../../src/app/turns/in-memory-turn-repository.js";
 
 const secret = "test-only-session-secret-with-more-than-32-bytes";
 
@@ -44,6 +45,25 @@ describe("Victoria chat HTTP boundary", () => {
     expect(agent.respond).toHaveBeenCalledWith({ userId: "user-a", conversationId: "chat-1", message: "Hello Victoria" });
   });
 
+  it("passes stable owner-scoped turn references from completed chat turns", async () => {
+    const seen: unknown[] = [];
+    const agent = { respond: vi.fn(async (request: { sourceTurnReferences?: unknown }) => {
+      seen.push(request.sourceTurnReferences);
+      return { message: "Got it.", decision: { action: "reflect", classification: { type: "general_finance", summary: "" } } };
+    }) } as unknown as Parameters<typeof createVictoriaChatHandler>[0]["agent"];
+    const turns = new InMemoryTurnRepository();
+    const handler = createVictoriaChatHandler({ authenticate: createVictoriaSessionAuthenticator(secret), agent, turns });
+    const token = signVictoriaSession({ userId: "turn-user", secret });
+    await handler(chatRequest(token, "turn-chat", "I want to plan my weekends."), { conversationId: "turn-chat" });
+    await handler(chatRequest(token, "turn-chat", "I enjoy hiking."), { conversationId: "turn-chat" });
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject([{ turnId: expect.any(String), userMessage: "I want to plan my weekends." }]);
+    expect(seen[1]).toHaveLength(2);
+    expect((await turns.listConversation("turn-user", "turn-chat"))).toHaveLength(2);
+    expect((await turns.listConversation("another-user", "turn-chat"))).toEqual([]);
+  });
+
   it("rejects unsigned, expired, and tampered sessions", async () => {
     const now = Date.UTC(2026, 9, 14);
     const authenticate = createVictoriaSessionAuthenticator(secret, () => now);
@@ -62,15 +82,94 @@ describe("Victoria chat HTTP boundary", () => {
     expect(getLocalMockVictoriaChatHandler({ APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: "short" })).toBeNull();
   });
 
-  it("keeps persistent memory opt-in and fails closed when its local database configuration is missing", () => {
+  it("uses an available local database without a memory switch and rejects invalid database configuration", () => {
     expect(getLocalMockVictoriaRuntime({
-      APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: `${secret}-persistent-missing`,
-      VICTORIA_MEMORY_MODE: "persistent"
-    })).toBeNull();
+      APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: `${secret}-no-database`
+    })).not.toBeNull();
     expect(getLocalMockVictoriaRuntime({
       APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: `${secret}-persistent-invalid`,
-      VICTORIA_MEMORY_MODE: "typo"
+      DATABASE_URL: "not-a-database-url", OPENAI_API_KEY: "local-openai-key", OPENAI_MODEL: "mock",
+      PLAID_ENV: "sandbox", MONEY_MOVEMENT_MODE: "mock_ledger"
     })).toBeNull();
+  });
+
+  it("uses the configured provider for conversation without a separate switch", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify({
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
+        text: "Start with one easy evening routine you can repeat."
+      }) }] }]
+    })));
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      const base = {
+        APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: `${secret}-response-mode`,
+        OPENAI_API_KEY: "sk-test-provider-key", OPENAI_MODEL: "gpt-5-mini",
+        OPENAI_MEMORY_EXTRACTION_ENABLED: "false", OPENAI_PERSONALIZED_REPLIES_ENABLED: "false",
+        OPENAI_EPISODIC_SUMMARIES_ENABLED: "false"
+      };
+      const provider = getLocalMockVictoriaRuntime(base);
+      expect(provider).not.toBeNull();
+      const token = signVictoriaSession({ userId: "response-mode-user", secret: base.AUTH_SECRET });
+      const response = await provider!.handler(chatRequest(token, "response-mode-chat", "What can I do with my evenings?"),
+        { conversationId: "response-mode-chat" });
+      expect(response.status).toBe(200);
+      expect((await response.json()).message).toContain("easy evening routine");
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("enables episode summaries by default with a real provider and honors the explicit opt-out", async () => {
+    const episodeRequests: string[] = [];
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      const requestBody = JSON.parse(String(init?.body)) as { text?: { format?: { name?: string } } };
+      const format = requestBody.text?.format?.name;
+      episodeRequests.push(format ?? "unknown");
+      const result = format === "episodic_memory_summary_v1"
+        ? {
+            summary: "The user enjoys hiking and wants to spend more time outdoors on weekends.",
+            evidenceQuotes: ["I love hiking."], confidence: 0.94, sensitivity: "ordinary"
+          }
+        : { candidates: [] };
+      return new Response(JSON.stringify({
+        output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(result) }] }]
+      }));
+    });
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      const baseEnv = {
+        APP_ENV: "local", NODE_ENV: "development", AUTH_SECRET: `${secret}-episode-default`,
+        OPENAI_API_KEY: "sk-test-provider-key", OPENAI_MODEL: "gpt-5-mini",
+        OPENAI_MEMORY_EXTRACTION_ENABLED: "false", OPENAI_PERSONALIZED_REPLIES_ENABLED: "false"
+      };
+      const runtime = getLocalMockVictoriaRuntime(baseEnv);
+      expect(runtime).not.toBeNull();
+      const token = signVictoriaSession({ userId: "episode-default-user", secret: baseEnv.AUTH_SECRET });
+      for (const message of ["I love hiking.", "I want to spend more time outdoors on weekends."]) {
+        const response = await runtime!.handler(chatRequest(token, "episode-default", message), { conversationId: "episode-default" });
+        expect(response.status).toBe(200);
+      }
+      const finished = await runtime!.finishHandler(finishRequest(token), "episode-default");
+      expect(await finished.json()).toEqual({ saved: true });
+      expect(episodeRequests.filter((name) => name === "episodic_memory_summary_v1")).toEqual(["episodic_memory_summary_v1"]);
+
+      episodeRequests.length = 0;
+      const disabledEnv = {
+        ...baseEnv, AUTH_SECRET: `${secret}-episode-optout`, OPENAI_EPISODIC_SUMMARIES_ENABLED: "false"
+      };
+      const disabledRuntime = getLocalMockVictoriaRuntime(disabledEnv);
+      expect(disabledRuntime).not.toBeNull();
+      const disabledToken = signVictoriaSession({ userId: "episode-optout-user", secret: disabledEnv.AUTH_SECRET });
+      for (const message of ["I love hiking.", "I want to spend more time outdoors on weekends."]) {
+        await disabledRuntime!.handler(chatRequest(disabledToken, "episode-optout", message), { conversationId: "episode-optout" });
+      }
+      const notSaved = await disabledRuntime!.finishHandler(finishRequest(disabledToken), "episode-optout");
+      expect(await notSaved.json()).toEqual({ saved: false });
+      expect(episodeRequests).not.toContain("episodic_memory_summary_v1");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("feeds a refreshed user-scoped financial profile into the running local chat route", async () => {
@@ -236,5 +335,11 @@ function chatRequest(token: string, conversationId: string, message: string): Re
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ message })
+  });
+}
+
+function finishRequest(token: string): Request {
+  return new Request("https://victoria.local/api/victoria/conversation/finish", {
+    method: "POST", headers: { authorization: `Bearer ${token}` }
   });
 }

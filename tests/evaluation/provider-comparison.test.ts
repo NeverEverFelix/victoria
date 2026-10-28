@@ -13,7 +13,7 @@ describe("provider comparison runner", () => {
           ? { response: "Would you like to record $42 in your Victoria savings ledger? No real money has moved yet." }
           : {
               type: "avoided_spend", confidence: 0.95, merchantName: null, goalName: null,
-              revisionReason: null, summary: "Skipped a $42 dinner order", needsClarification: false
+              revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Skipped a $42 dinner order", needsClarification: false
             };
       const id = `mock-provider-request-${++requestNumber}`;
       return new Response(JSON.stringify({

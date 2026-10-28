@@ -8,10 +8,11 @@ import type { AgentTeamSpecialists, SavingsAssessment } from "../team-prototype.
 export function createMockAgentTeamSpecialists(classifier: Pick<LlmAdapter, "classifyMessage"> = new MockLlmAdapter()): AgentTeamSpecialists {
   return {
     financialMoment: {
-      async analyze({ message, memory, conversationContext }) {
+      async analyze({ message, memory, conversationContext, financialContext }) {
         return { classification: await classifier.classifyMessage({
           userMessage: message, memory,
-          ...(conversationContext ? { conversationContext } : {})
+          ...(conversationContext ? { conversationContext } : {}),
+          ...(financialContext ? { financialContext } : {})
         }) };
       }
     },

@@ -29,6 +29,6 @@ describe("conversation finish HTTP boundary", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ saved: true });
-    expect(agent.finishConversation).toHaveBeenCalledWith("user-a", "chat-1");
+    expect(agent.finishConversation).toHaveBeenCalledWith("user-a", "chat-1", []);
   });
 });

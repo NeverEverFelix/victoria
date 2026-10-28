@@ -42,7 +42,7 @@ describe("multi-agent readiness evaluation corpus", () => {
       expect(baselineResponse.decision.suggestion?.amountCents).toBe(scenario.expectedAmountCents);
       expect(specialistTurn.assessment).toMatchObject({ amountCents: scenario.expectedAmountCents });
       expect(specialistTurn.message).toContain(formatUsd(scenario.expectedAmountCents));
-      expect(specialistTurn.message).toContain("Please confirm");
+      expect(specialistTurn.message).toMatch(/would you like|do you want|please confirm/i);
       expect(specialistTurn.message).toContain("No real money has moved");
     }
     if (scenario.expectedClassification === "real_money_movement_request") {

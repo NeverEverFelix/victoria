@@ -2,7 +2,7 @@ import type { ClassifiedMessage } from "../types.js";
 import { parseExplicitDollarAmount } from "../../domain/financial-events/parse-explicit-amount.js";
 import { parseExplicitCorrectionAmount } from "../../domain/financial-events/parse-correction-amount.js";
 import type { ClassifyMessageInput, DraftResponseInput, LlmAdapter } from "./types.js";
-import { isRealMoneyMovementRequest } from "../money-movement-intent.js";
+import { employerCoveredRecurringSpend, isBudgetingAdviceQuestion, isExplicitRealMoneyMovementRequest, isRealMoneyMovementRequest } from "../money-movement-intent.js";
 
 export class MockLlmAdapter implements LlmAdapter {
   async classifyMessage(input: ClassifyMessageInput): Promise<ClassifiedMessage> {
@@ -19,12 +19,24 @@ export class MockLlmAdapter implements LlmAdapter {
     const revisionReason = parseRevisionReason(input.userMessage);
     const merchantName = inferMerchantName(contextualMessage);
 
-    if (isRealMoneyMovementRequest(message)) {
+    const employerCoveredSpend = employerCoveredRecurringSpend(input.userMessage);
+    if (isExplicitRealMoneyMovementRequest(message) ||
+        (isRealMoneyMovementRequest(message) && (!employerCoveredSpend || !isBudgetingAdviceQuestion(message)))) {
       return {
         type: "real_money_movement_request",
         confidence: 0.95,
         ...(amountCents !== undefined ? { amountCents } : {}),
         ...(amountIssue ? { amountIssue } : {}),
+        summary: input.userMessage,
+        needsClarification: false
+      };
+    }
+
+    if (employerCoveredSpend) {
+      return {
+        type: "avoided_spend",
+        confidence: 0.95,
+        amountCents: employerCoveredSpend.amountCents,
         summary: input.userMessage,
         needsClarification: false
       };

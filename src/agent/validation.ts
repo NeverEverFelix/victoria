@@ -17,6 +17,10 @@ export function validateClassifiedMessage(candidate: unknown): ClassifiedMessage
   if (candidate.merchantName !== undefined && typeof candidate.merchantName !== "string") return null;
   if (candidate.goalName !== undefined && typeof candidate.goalName !== "string") return null;
   if (candidate.revisionReason !== undefined && typeof candidate.revisionReason !== "string") return null;
+  const referenceHint = candidate.referenceHint;
+  if (referenceHint !== undefined && (!isRecord(referenceHint) || typeof referenceHint.factId !== "string" ||
+      !referenceHint.factId.trim() || referenceHint.factId.length > 120 ||
+      (referenceHint.period !== "monthly" && referenceHint.period !== "annual"))) return null;
   const amountIssue = candidate.amountIssue;
   const amountCents = candidate.amountCents;
   if (amountIssue !== undefined && (typeof amountIssue !== "string" || !amountIssues.has(amountIssue))) return null;
@@ -31,6 +35,7 @@ export function validateClassifiedMessage(candidate: unknown): ClassifiedMessage
     ...(typeof amountCents === "number" ? { amountCents } : {}),
     ...(typeof candidate.goalName === "string" ? { goalName: candidate.goalName } : {}),
     ...(typeof candidate.revisionReason === "string" ? { revisionReason: candidate.revisionReason } : {}),
+    ...(referenceHint ? { referenceHint: { factId: referenceHint.factId as string, period: referenceHint.period as "monthly" | "annual" } } : {}),
     ...(typeof amountIssue === "string" ? { amountIssue: amountIssue as NonNullable<ClassifiedMessage["amountIssue"]> } : {}),
     summary: candidate.summary,
     needsClarification: candidate.needsClarification

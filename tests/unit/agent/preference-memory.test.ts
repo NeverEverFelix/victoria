@@ -1,11 +1,50 @@
-import { describe, expect, it } from "vitest";
-import { MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
+import { describe, expect, it, vi } from "vitest";
+import { createMockAgentTeamSpecialists, MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
 import { buildTransactionFinancialProfile } from "../../../src/domain/financial-profile.js";
 import { MockProfileTransactionHistoryProvider } from "../../../src/app/financial-profile/mock-profile-transaction-history-provider.js";
 import { MockTransactionHistoryProvider } from "../../fixtures/mock-transaction-history-provider.js";
 import { extractConversationalMemories } from "../../../src/agent/memory/extract-preference.js";
+import { validateMemoryCandidates } from "../../../src/agent/memory/conversational-memory-extractor.js";
+import type { ConversationResponderInput } from "../../../src/agent/conversation-responder.js";
 
 describe("explicit savings preference memory", () => {
+  it("keeps an ordinary reply preference in a covered-expense turn without an interest", async () => {
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
+    await agent.respond({
+      userId: "covered_spend_reply_preference",
+      message: "I prefer concise, practical replies. My employer now covers my $35 monthly gym membership."
+    });
+    expect(await memory.listConversationalMemories("covered_spend_reply_preference"))
+      .toEqual(expect.arrayContaining([expect.objectContaining({
+        key: "preference:concise_practical_replies",
+        value: "Prefers concise, practical replies.",
+        evidence: "I prefer concise, practical replies"
+      })]));
+  });
+
+  it("learns a later direct preference without including the earlier covered-expense sentence", async () => {
+    const memory = new MockMemoryProvider();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
+    await agent.respond({
+      userId: "later_covered_spend_preference",
+      message: "My employer now covers my $35 monthly gym membership. I prefer concise, practical replies."
+    });
+    expect(await memory.listConversationalMemories("later_covered_spend_preference"))
+      .toEqual(expect.arrayContaining([expect.objectContaining({
+        key: "preference:concise_practical_replies",
+        value: "Prefers concise, practical replies.",
+        evidence: "I prefer concise, practical replies"
+      })]));
+  });
+
+  it("extracts a concise first-person interest from a financial message", () => {
+    const message = "Hey, I like to play basketball at a gym that costs me $35 a month, but now my company pays for my gym membership. Is it a good idea to move this money elsewhere?";
+    expect(extractConversationalMemories(message)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "interest:basketball", value: "Enjoys basketball.", evidence: "I like to play basketball" })
+    ]));
+  });
+
   it("keeps the savings amount preference when the same turn also mentions activity spend", async () => {
     const memory = new MockMemoryProvider();
     const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools() });
@@ -215,6 +254,94 @@ describe("explicit savings preference memory", () => {
     expect(await tools.listSavingsEntries("user_pref_pending")).toHaveLength(1);
   });
 
+  it("keeps a monthly allocation choice scoped to the covered expense and remembers the confirmed behavior", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const specialists = createMockAgentTeamSpecialists();
+    const voiceContexts: unknown[] = [];
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools,
+      specialists: {
+        ...specialists,
+        companionVoice: { respond: async ({ finding }) => {
+          voiceContexts.push(finding.responseContext);
+          return "Which allocation target would you prefer: the monthly amount or the annual projection?";
+        } }
+      }
+    });
+    const userId = "user_scoped_allocation_choice";
+    const conversationId = "covered_expense_monthly_choice";
+
+    const firstTurn = await agent.respond({
+      userId, conversationId,
+      message: "I like basketball at a gym that costs $35 a month, but my company now covers it. Is it sensible to put that money toward savings?"
+    });
+    expect(firstTurn.decision.action).toBe("suggest_savings");
+    await memory.setConversationContext(userId, conversationId, [
+      "I like basketball at a gym that costs $35 a month, but my company now covers it. Is it sensible to put that money toward savings?",
+      "Victoria: Which planning horizon feels right for this expense, the $35 monthly amount or the $420 yearly projection?"
+    ]);
+
+    const choice = await agent.respond({
+      userId, conversationId,
+      message: "I'd rather go with the monthly one.\n\t"
+    });
+    expect(choice.decision.action).not.toBe("create_ledger_entry");
+    expect(choice.message).not.toMatch(/i'll remember|prefers to allocate/i);
+    expect(await tools.listSavingsEntries(userId)).toEqual([]);
+    const memoriesAfterChoice = await memory.listConversationalMemories(userId);
+    expect(memoriesAfterChoice.filter((item) => item.category === "preference")).toEqual([]);
+    expect(memoriesAfterChoice.filter((item) => item.key.startsWith("observed_behavior:"))).toEqual([]);
+
+    const confirmed = await agent.respond({ userId, conversationId, message: "Yes" });
+    expect(confirmed.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries(userId)).toHaveLength(1);
+    expect(await memory.listConversationalMemories(userId)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        category: "financial_pattern",
+        key: "observed_behavior:covered_recurring_expense_to_savings",
+        value: expect.stringMatching(/covered recurring expense.*savings/i),
+        sourceType: "system_inference",
+        sourceMetadata: expect.objectContaining({
+          memoryKind: "observed_behavior", observationCount: 1, lastPlanningHorizon: "monthly",
+          planningHorizonCounts: { monthly: 1, annual: 0 }
+        })
+      })
+    ]));
+    const observedBehavior = (await memory.listConversationalMemories(userId))
+      .find((item) => item.key === "observed_behavior:covered_recurring_expense_to_savings");
+    expect(observedBehavior?.evidence).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+    expect(observedBehavior?.evidence.length).toBeLessThanOrEqual(240);
+
+    const secondExpense = await agent.respond({
+      userId, conversationId: "different_covered_expense",
+      message: "My employer now covers a $22 monthly streaming service, so I'd like to direct that toward savings."
+    });
+    expect(voiceContexts.at(-1)).toMatchObject({
+      priorCoveredExpenseAllocation: { lastPlanningHorizon: "monthly", observationCount: 1 }
+    });
+    expect(secondExpense.decision.action).toBe("suggest_savings");
+    await memory.setConversationContext(userId, "different_covered_expense", [
+      "My employer now covers a $22 monthly streaming service, so I'd like to direct that toward savings.",
+      "Victoria: Which allocation target would you prefer: the $22 monthly amount or the $264 annual projection?"
+    ]);
+    await agent.respond({ userId, conversationId: "different_covered_expense", message: "monthly" });
+    expect(await tools.listSavingsEntries(userId)).toHaveLength(1);
+    await agent.respond({ userId, conversationId: "different_covered_expense", message: "Yes" });
+    expect(await tools.listSavingsEntries(userId)).toHaveLength(2);
+
+    const thirdExpense = await agent.respond({
+      userId, conversationId: "third_covered_expense",
+      message: "My employer covers a $18 monthly wellness membership now; it could go toward savings."
+    });
+    expect(thirdExpense.decision.action).toBe("suggest_savings");
+    expect(voiceContexts.at(-1)).toMatchObject({
+      priorCoveredExpenseAllocation: {
+        lastPlanningHorizon: "monthly", observationCount: 2, moreOftenChosen: "monthly"
+      }
+    });
+  });
+
   it("[MEM-002] remembers an explicit preferred amount without suggesting or recording savings", async () => {
     const memory = new MockMemoryProvider();
     const tools = new MockVictoriaTools();
@@ -269,6 +396,16 @@ describe("explicit savings preference memory", () => {
 });
 
 describe("general conversational memory extraction", () => {
+  it("accepts eight distinct eligible facts and enforces the per-turn ceiling", () => {
+    const evidence = Array.from({ length: 9 }, (_, index) => `I prefer option ${index + 1}.`);
+    const candidates = evidence.map((quote, index) => ({
+      category: "preference", key: `preference_${index + 1}`, value: `Prefers option ${index + 1}.`, evidence: quote,
+      confidence: 0.95, subject: "user", assertion: "affirmed", stability: "stable", sensitivity: "ordinary"
+    }));
+
+    expect(validateMemoryCandidates(candidates, evidence.join(" "))).toHaveLength(8);
+  });
+
   it("learns a model-validated preference from a natural pattern reflection without replacing its reply", async () => {
     const memory = new MockMemoryProvider();
     const evidence = "The way I reset after a long shift is taking a quiet walk.";
@@ -331,6 +468,83 @@ describe("general conversational memory extraction", () => {
     expect(await memory.listConversationalMemories("user_unclear_personal")).toMatchObject([{
       key: "thinking_routine", evidence
     }]);
+  });
+
+  it("runs guarded extraction on an avoided-spend turn without changing the financial decision", async () => {
+    const memory = new MockMemoryProvider();
+    const evidence = "I prefer cooking at home on weeknights.";
+    const agent = new VictoriaAgent({
+      llm: {
+        async classifyMessage() {
+          return { type: "avoided_spend", confidence: 0.9, summary: "Skipped takeout", amountCents: 2400, needsClarification: false };
+        },
+        async draftResponse() { return ""; }
+      },
+      memory,
+      tools: new MockVictoriaTools(),
+      conversationalMemoryExtractor: {
+        async extract() {
+          return [{ category: "preference", key: "weeknight_meals", value: "Prefers cooking at home on weeknights.",
+            evidence, confidence: 0.95, subject: "user", assertion: "affirmed", stability: "stable", sensitivity: "ordinary" }];
+        }
+      }
+    });
+
+    const response = await agent.respond({ userId: "user_learning_avoided", message: `I almost bought a $30 book but decided to wait. ${evidence}` });
+
+    expect(response.decision.action).toBe("suggest_savings");
+    expect(await memory.listConversationalMemories("user_learning_avoided")).toMatchObject([{ key: "weeknight_meals" }]);
+  });
+
+  it("runs guarded extraction on a read-only savings-progress turn", async () => {
+    const memory = new MockMemoryProvider();
+    const evidence = "I find it useful when weekly money recaps use one brief paragraph.";
+    let extractionCalls = 0;
+    const agent = new VictoriaAgent({
+      llm: {
+        async classifyMessage() {
+          return { type: "savings_progress", confidence: 0.9, summary: "Progress question", needsClarification: false };
+        },
+        async draftResponse() { return "Your recorded savings total is available in the ledger summary."; }
+      },
+      memory,
+      tools: new MockVictoriaTools(),
+      conversationalMemoryExtractor: {
+        async extract() {
+          extractionCalls += 1;
+          return [{ category: "preference", key: "summary_length", value: "Prefers short summaries.",
+            evidence, confidence: 0.95, subject: "user", assertion: "affirmed", stability: "stable", sensitivity: "ordinary" }];
+        }
+      }
+    });
+
+    const response = await agent.respond({ userId: "user_learning_progress", message: evidence });
+
+    expect(extractionCalls).toBe(1);
+    expect(response.message).toContain("No savings have been recorded");
+    expect(await memory.listConversationalMemories("user_learning_progress")).toMatchObject([{ key: "summary_length" }]);
+  });
+
+  it("reports provider extraction failures without replacing the normal response", async () => {
+    const memory = new MockMemoryProvider();
+    const failures: string[] = [];
+    const agent = new VictoriaAgent({
+      llm: {
+        async classifyMessage() {
+          return { type: "general_finance", confidence: 0.9, summary: "Personal preference", needsClarification: false };
+        },
+        async draftResponse() { return "A calm weekly review sounds practical."; }
+      }, memory, tools: new MockVictoriaTools(),
+      conversationalMemoryExtractor: { async extract() { throw new Error("provider unavailable"); } },
+      onConversationalMemoryExtractionFailure(errorName) { failures.push(errorName); }
+    });
+
+    const response = await agent.respond({ userId: "user_learning_failure", message: "The way I recharge is having a quiet morning to myself." });
+
+    expect(response.decision.action).toBe("reflect");
+    expect(response.message).not.toContain("keep that in mind");
+    expect(failures).toEqual(["provider_or_validation_error"]);
+    expect(await memory.listConversationalMemories("user_learning_failure")).toEqual([]);
   });
 
   it("retrieves relevant remembered financial profile facts for the current user turn", async () => {
@@ -818,6 +1032,118 @@ describe("general conversational memory extraction", () => {
     expect(otherUserReply.message).not.toContain("Japan");
     expect(await tools.listSavingsEntries(userId)).toEqual([]);
     expect(await tools.listSavingsGoalAllocations(userId)).toEqual([]);
+  });
+
+  it("adapts an ordinary reply to a remembered communication preference without changing its action", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const personalizedReplyPersonalizer = {
+      personalize: async ({ memories }: { memories: readonly { id: string }[] }) => ({
+        message: "Let's keep it practical and start with one small step. What would help most right now?",
+        usedMemoryIds: [memories[0]!.id]
+      })
+    };
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools, personalizedReplyPersonalizer });
+    const userId = "user_reply_style_personalization";
+
+    await agent.respond({ userId, conversationId: "style", message: "I prefer concise, practical replies." });
+    const response = await agent.respond({
+      userId, conversationId: "ordinary-question", message: "I'm feeling stuck. What is a practical next step?"
+    });
+
+    expect(response.decision.action).toBe("reflect");
+    expect(response.message).toContain("Let's keep it practical");
+    expect(response.decision.suggestion).toBeUndefined();
+    expect(await tools.listSavingsEntries(userId)).toEqual([]);
+    expect(await tools.listSavingsGoalAllocations(userId)).toEqual([]);
+  });
+
+  it("passes only a verified remembered response-depth preference to the read-only responder", async () => {
+    const memory = new MockMemoryProvider();
+    const userId = "user_response_depth_preference";
+    await memory.rememberConversationalMemory(userId, {
+      category: "preference", key: "communication:brief", value: "Prefers brief, practical check-ins.",
+      evidence: "I prefer brief, practical check-ins.", confidence: 0.95, sourceType: "user_statement"
+    });
+    const responder = vi.fn(async (input: ConversationResponderInput) => input.baselineReply);
+    const base = createMockAgentTeamSpecialists();
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools(),
+      conversationResponder: { respond: responder },
+      specialists: { ...base, financialMoment: { analyze: async ({ message }) => ({ classification: {
+        type: "general_finance", confidence: 0.9, summary: message, needsClarification: false
+      } }) } }
+    });
+
+    await agent.respond({ userId, conversationId: "response-depth-chat", message: "I'm feeling stuck. What might help?" });
+    await agent.respond({ userId, conversationId: "response-depth-chat", message: "Can you explain in detail what might help?" });
+
+    expect(responder.mock.calls[0]?.[0].responsePreference).toBe("brief");
+    expect(responder.mock.calls[0]?.[0].responseDepth).toBeUndefined();
+    expect(responder.mock.calls[1]?.[0].responsePreference).toBe("brief");
+    expect(responder.mock.calls[1]?.[0].responseDepth).toBeUndefined();
+    expect(responder.mock.calls[1]?.[0].message).toContain("in detail");
+  });
+
+  it("does not personalize from a legacy memory without provenance", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const received: string[][] = [];
+    const personalizer = {
+      async personalize({ memories }: { memories: readonly { id: string }[] }) {
+        received.push(memories.map(({ id }) => id));
+        return {
+          message: "I’ll keep it concise and practical. What would help most right now?",
+          usedMemoryIds: memories.map(({ id }) => id)
+        };
+      }
+    };
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools,
+      personalizedReplyPersonalizer: personalizer });
+    const userId = "user_legacy_memory_provenance";
+    await memory.rememberConversationalMemory(userId, {
+      category: "preference", key: "legacy_style", value: "Prefers practical replies.",
+      evidence: "I prefer practical replies.", confidence: 0.95
+    });
+    await memory.rememberConversationalMemory(userId, {
+      category: "preference", key: "verified_style", value: "Prefers concise, practical replies.",
+      evidence: "I prefer concise, practical replies.", confidence: 0.95, sourceType: "user_statement"
+    });
+
+    const response = await agent.respond({ userId, conversationId: "legacy-provenance-chat",
+      message: "I'm feeling stuck. What is a practical next step?" });
+
+    expect(received).toEqual([["memory_2"]]);
+    expect(response.message).toContain("concise and practical");
+    expect(response.decision.action).toBe("reflect");
+  });
+
+  it("keeps the deterministic ordinary reply when personalized wording fails validation", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools,
+      personalizedReplyPersonalizer: {
+        personalize: async ({ memories }) => ({
+          message: "I recorded $80 for you. What next?", usedMemoryIds: [memories[0]!.id]
+        })
+      }
+    });
+    const userId = "user_reply_style_fallback";
+    await memory.rememberConversationalMemory(userId, {
+      category: "preference", key: "response_style", value: "Prefers practical replies.",
+      evidence: "I prefer practical replies.", confidence: 0.95, sourceType: "user_statement"
+    });
+
+    const response = await agent.respond({
+      userId, message: "I'm feeling stuck and need practical help with savings."
+    });
+
+    expect(response.decision.action).toBe("reflect");
+    expect(response.message).not.toContain("I recorded");
+    expect(response.message).toContain("preference for practical replies");
+    expect(response.message).toContain("What would be most helpful right now?");
+    expect(await tools.listSavingsEntries(userId)).toEqual([]);
   });
 
   it("uses a relevant remembered merchant routine without estimating or shaming", async () => {

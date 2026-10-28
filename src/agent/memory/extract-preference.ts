@@ -81,43 +81,45 @@ export function extractConversationalMemory(message: string): ExtractedConversat
   if (interest) return interest;
   if (/\$\s*\d[\d,.]*.*\b(?:rather than|instead of|over)\b.*\$\s*\d[\d,.]*/i.test(message)) return null;
 
-  const preference = /^\s*(?:actually,?\s*)?(?:i prefer|i'd prefer|i would prefer)\s+(?:a\s+|an\s+|the\s+)?(.+?)[.!?]*\s*$/i.exec(message);
-  if (preference?.[1]) {
-    const subject = preference[1].trim().replace(/[.!?]+$/, "");
-    if (subject && !/^(?:not\s|to\s+avoid\s)/i.test(subject)) {
+  for (const evidence of message.split(/[.!?](?:\s|$)/).map((part) => part.trim()).filter(Boolean)) {
+    const preference = /^\s*(?:actually,?\s*)?(?:i prefer|i'd prefer|i would prefer)\s+(?:a\s+|an\s+|the\s+)?(.+?)[.!?]*\s*$/i.exec(evidence);
+    if (preference?.[1]) {
+      const subject = preference[1].trim().replace(/[.!?]+$/, "");
+      if (subject && !/^(?:not\s|to\s+avoid\s)/i.test(subject)) {
+        return {
+          category: "preference",
+          key: preferenceKey(subject),
+          value: `Prefers ${subject}.`,
+          evidence,
+          confidence: 0.95
+        };
+      }
+    }
+
+    const habit = /^\s*(?:on\s+weekdays,?\s*)?i\s+(?:(?:usually|often|typically|routinely|regularly)\s+)?(.+?)[.!?]*\s*$/i.exec(evidence);
+    if (habit?.[1] && /\b(?:usually|often|typically|routinely|regularly|every day|every weekday|every week|each day|each week|on weekdays)\b/i.test(evidence)) {
+      const action = habit[1].trim().replace(/[.!?]+$/, "");
+      const merchantName = extractNamedMerchantFromHabit(action);
       return {
-        category: "preference",
-        key: preferenceKey(subject),
-        value: `Prefers ${subject}.`,
-        evidence: message,
+        category: "habit",
+        key: merchantName ? merchantHabitMemoryKey(merchantName) : habitKey(action),
+        value: `Regularly ${action}.`,
+        evidence,
+        confidence: 0.9
+      };
+    }
+
+    const goal = /^\s*(?:my goal is (?:to )?|i am saving for |i'm saving for |i want to save for )(.+?)[.!?]*\s*$/i.exec(evidence);
+    if (goal?.[1]) {
+      const target = goal[1].trim().replace(/[.!?]+$/, "");
+      return {
+        category: "goal",
+        key: goalKey(target),
+        value: `Wants to save for ${target}.`,
+        evidence,
         confidence: 0.95
       };
     }
-  }
-
-  const habit = /^\s*(?:on\s+weekdays,?\s*)?i\s+(?:(?:usually|often|typically|routinely|regularly)\s+)?(.+?)[.!?]*\s*$/i.exec(message);
-  if (habit?.[1] && /\b(?:usually|often|typically|routinely|regularly|every day|every weekday|every week|each day|each week|on weekdays)\b/i.test(message)) {
-    const action = habit[1].trim().replace(/[.!?]+$/, "");
-    const merchantName = extractNamedMerchantFromHabit(action);
-    return {
-      category: "habit",
-      key: merchantName ? merchantHabitMemoryKey(merchantName) : habitKey(action),
-      value: `Regularly ${action}.`,
-      evidence: message,
-      confidence: 0.9
-    };
-  }
-
-  const goal = /^\s*(?:my goal is (?:to )?|i am saving for |i'm saving for |i want to save for )(.+?)[.!?]*\s*$/i.exec(message);
-  if (goal?.[1]) {
-    const target = goal[1].trim().replace(/[.!?]+$/, "");
-    return {
-      category: "goal",
-      key: goalKey(target),
-      value: `Wants to save for ${target}.`,
-      evidence: message,
-      confidence: 0.95
-    };
   }
   return null;
 }
@@ -240,7 +242,8 @@ function extractExplicitInterest(message: string): ExtractedConversationalMemory
     /^\s*i(?:'m| am)\s+(?:(?:really|very)\s+)?into\s+(.+?)[.!?]*\s*$/i.exec(message) ??
     /^\s*my\s+hobbies\s+(?:include|are)\s+(.+?)[.!?]*\s*$/i.exec(message) ??
     /^\s*one of my hobbies is\s+(.+?)[.!?]*\s*$/i.exec(message);
-  const activity = match?.[1]?.trim()
+  const embeddedMatch = match ? null : /\bi\s+(?:(?:really|really do)\s+)?(?:like|love|enjoy)\s+(?:to\s+)?(?:play\s+)?([a-z][a-z -]{0,59}?)(?=\s+(?:at|and|but|because|that|while|now)\b|[,;.!?]|$)/i.exec(message);
+  const activity = (match?.[1] ?? embeddedMatch?.[1])?.trim()
     .split(/\s*,\s*|\s+(?:and|&)\s+/i, 1)[0]
     ?.replace(/[.!?]+$/, "");
   if (!activity || activity.length > 80 || /\b(?:spend|spending|spent|saving|money|budget|finance|costs?|paid|bought|purchased)\b|\$\s*\d/i.test(activity)) return null;
@@ -250,7 +253,7 @@ function extractExplicitInterest(message: string): ExtractedConversationalMemory
     category: "other",
     key: `interest:${keyPart}`,
     value: correction ? `No longer enjoys ${activity}.` : `Enjoys ${activity}.`,
-    evidence: message,
+    evidence: embeddedMatch?.[0].trim() ?? message,
     confidence: 0.95,
     sourceType: correction ? "user_correction" : "user_statement",
     ...(correction ? { sourceMetadata: { interestStatus: "inactive" } } : {})

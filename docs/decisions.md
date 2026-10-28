@@ -6,6 +6,29 @@ Use it to keep future development honest. If a coding agent runs into an unresol
 
 ## Decided
 
+### Conversation Understanding Flows Through Explicit Context And Workflow State
+
+Decision: Confirmed on 2026-10-25. Victoria's agent direction is a single orchestrator coordinating advisory specialists through bounded typed context, explicit reference resolution, and structured conversation workflow state. This extends the orchestrated multi-agent direction in [ADR 0001](architecture/decisions/0001-orchestrated-multi-agent-architecture.md); it does not grant specialists authority over proposals, approvals, tools, or ledger writes.
+
+Implications:
+
+- Context assembly, intent/reference resolution, and workflow-state transitions are explicit orchestration responsibilities, not assumptions left to a single classifier or the transcript alone.
+- Resolved amounts and periods must be bound to grounded facts with provenance; arithmetic and validation remain deterministic.
+- A changed pending action must become a new/revised proposal and require confirmation of that exact action. A correction or period choice is not approval of a stale proposal.
+- The current implementation has a narrow read-only turn context and reference resolver. A general typed state manager and full specialist context handoff remain future work.
+- The architecture review's sample TypeScript contracts and durable storage design are proposals, not accepted implementation requirements. Implement in small, behavior-focused slices after reviewing existing repositories and safety contracts.
+
+### Annualized Savings Remain Planning Projections
+
+Decision: Confirmed on 2026-10-25. An annualized amount derived from a monthly avoided expense is a conditional planning projection, not realized savings and not an amount the current MVP can record in its savings ledger. A monthly or annual planning choice is scoped to the current expense and does not approve a ledger action.
+
+Implications:
+
+- The current MVP may offer only the explicitly stated current-period amount for a mocked ledger entry, after asking for explicit confirmation of that exact amount.
+- Repeating or clarifying an annual target does not convert the projection into an already-saved amount or authorize recording it.
+- A future annual goal/projection record requires an explicit product and domain decision, distinct storage/reporting semantics, and its own approval behavior.
+- This reaffirms the existing employer-covered and ended-recurring-expense behavior in [Story 22 and related stories](user-stories.md) and [MVP scope](mvp.md).
+
 ### MVP Uses A Mocked Savings Ledger
 
 Decision:
@@ -374,7 +397,7 @@ Implications:
 
 ### Predictable Memory Learning Boundary
 
-Decision: Confirmed on 2026-10-21; provider-default behavior updated on 2026-10-22 at the user's direction. Victoria automatically remembers only direct, affirmed, user-authored, stable, ordinary statements that match the narrow deterministic preference, recurring habit, goal, or merchant-spend patterns. These statements receive an acknowledgement. Provider extraction runs when a real model and API key are configured unless explicitly disabled, and must pass the same evidence and privacy checks; it is not required for ordinary direct learning. Episode summarization remains a separate opt-in.
+Decision: Confirmed on 2026-10-21; provider defaults and broader extraction coverage updated on 2026-10-22 at the user's direction. Victoria automatically remembers only direct, affirmed, user-authored, stable, ordinary statements. Provider extraction runs with a real model and API key unless explicitly disabled, and must pass the same evidence and privacy checks; it can consider ordinary and pattern reflections, avoided-spend and regretful-spend turns, and unclear turns only when no uncertain financial intent was detected. It does not run during pending approval/correction or real-money-movement requests. The extractor may retain up to eight facts per turn: this accommodates a single message with several independent, clearly stated facts while keeping a hard ceiling on automated retention. Episode summarization follows the same provider-configured default, with `OPENAI_EPISODIC_SUMMARIES_ENABLED=false` as the opt-out. It still runs only at conversation finish or context rollover and stores a concise, evidence-linked summary rather than the raw transcript. Extraction failures preserve the ordinary response and emit a message-free diagnostic signal.
 
 Memory handling classes:
 
@@ -399,6 +422,18 @@ Implications:
 - The optional provider extractor may learn ordinary interests, but provider-generated monetary spend facts are rejected. Amount-bearing activity spend is accepted only through the deterministic explicit-period parser.
 - Memory remains context only and cannot classify or approve a savings action.
 
+### Keep Financial Choices Scoped, Remember Confirmed Patterns
+
+Decision: Confirmed on 2026-10-23. A user's monthly-versus-annual choice while considering one covered recurring expense is contextual to that expense. It is not a general preference. After the user explicitly confirms recording the covered expense in the mocked ledger, Victoria may append a concise semantic observation of the behavior and chosen planning horizon.
+
+Implications:
+
+- The observed memory is written only after successful ledger confirmation and never authorizes an action.
+- The memory records the covered-expense-to-savings behavior and horizon as one evidence-linked `financial_pattern`, not a preference sentence copied from the user's reply.
+- A later similar conversation may recall the previous choice as a soft reference while asking what the user wants this time.
+- Victoria may describe a recurring tendency only when at least two observations show one horizon was chosen more often; conflicting choices remain visible in compact counts and do not become a fixed preference.
+- See [Story 22](user-stories.md) and the [user-learning schema](specification/user-learning-schema.md) for the behavior and memory shape.
+
 
 ### Memory Retention, Forget Purge, And Recovery
 
@@ -410,3 +445,13 @@ Implications:
 - Daily retention maintenance emits a structured log and writes deletion counts/status to `victoria_retention_runs`. Alert on failed jobs or no success for 48 hours.
 - A restored database must have migrations and retention reapplied before traffic resumes. The restore must first be inspected in a separate recovery project.
 - This supersedes the 2026-10-17 decision that forget only suppresses retrieval and keeps the source/embedding indefinitely.
+
+### Product Chat Has No User-Selected AI Or Memory Mode
+
+Decision: Confirmed by the user on 2026-10-25. Victoria's chat uses a configured provider model for financial understanding and ordinary conversation without requiring feature switches. A configured local database is used automatically for durable chat state and the mocked ledger. The terminal chat command has one product path.
+
+Implications:
+
+- Internal mock adapters remain available to automated tests, but product testing does not require a user to choose or understand a mock/provider mode.
+- Previous opt-in provider and local-memory decisions above are superseded for the product chat route.
+- Deterministic financial calculations, explicit approval, mocked ledger records, and the prohibition on real-money movement are unchanged.

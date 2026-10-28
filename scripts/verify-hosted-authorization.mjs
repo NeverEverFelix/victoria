@@ -4,7 +4,8 @@ const required = [
   "VICTORIA_STAGING_USER_A_TOKEN",
   "VICTORIA_STAGING_USER_B_TOKEN",
   "SUPABASE_URL",
-  "SUPABASE_PUBLISHABLE_KEY"
+  "SUPABASE_PUBLISHABLE_KEY",
+  "CRON_SECRET"
 ];
 
 if (process.env.CI || process.env.GITHUB_ACTIONS) {
@@ -94,6 +95,25 @@ assert(proposal.status === 200, `user A can use their own chat (HTTP ${proposal.
 const proposalBody = await proposal.json();
 assert(proposalBody.decision?.action === "suggest_savings", "user A receives a pending savings suggestion");
 
+const memoryConversationId = `memory-smoke-${crypto.randomUUID()}`;
+const memoryChatPath = `/api/victoria/${memoryConversationId}`;
+const learnedPreference = await request(memoryChatPath, process.env.VICTORIA_STAGING_USER_A_TOKEN, {
+  method: "POST",
+  body: JSON.stringify({ message: "I prefer saving $20 rather than $50 at a time." })
+});
+assert(learnedPreference.status === 200, `user A can save a direct preference (HTTP ${learnedPreference.status})`);
+
+const laterConversationId = `memory-recall-smoke-${crypto.randomUUID()}`;
+const laterReflection = await request(`/api/victoria/${laterConversationId}`, process.env.VICTORIA_STAGING_USER_A_TOKEN, {
+  method: "POST",
+  body: JSON.stringify({ message: "I'm trying to make saving feel manageable and consistent." })
+});
+assert(laterReflection.status === 200, `user A can start a second conversation (HTTP ${laterReflection.status})`);
+const laterReflectionBody = await laterReflection.json();
+assert(laterReflectionBody.decision?.action === "reflect" &&
+  /\$20/.test(laterReflectionBody.message ?? "") && /\$50/.test(laterReflectionBody.message ?? ""),
+  "a preference learned in one conversation shapes a later conversation for the same user");
+
 const crossOwnerApproval = await request(chatPath, process.env.VICTORIA_STAGING_USER_B_TOKEN, {
   method: "POST",
   body: JSON.stringify({ message: "yes" })
@@ -120,20 +140,43 @@ const idsA = new Set((bodyA.memories ?? []).map((memory) => memory.id));
 const idsB = new Set((bodyB.memories ?? []).map((memory) => memory.id));
 assert([...idsA].every((id) => !idsB.has(id)), "memory listing does not cross user boundaries");
 
-const foreignMemoryId = [...idsA][0];
-if (foreignMemoryId) {
-  const foreignCorrection = await request("/api/memories", process.env.VICTORIA_STAGING_USER_B_TOKEN, {
-    method: "PATCH",
-    body: JSON.stringify({ memoryId: foreignMemoryId, value: "Unauthorized smoke-test correction." })
-  });
-  assert(foreignCorrection.status === 404, "user B cannot correct user A's memory");
+const learnedMemory = (bodyA.memories ?? []).find((memory) =>
+  memory.key === "savings_contribution_amount" && /\$20 rather than \$50/.test(memory.value ?? ""));
+assert(Boolean(learnedMemory), "user A can list the preference learned through chat");
 
-  const foreignForget = await request(`/api/memories/${encodeURIComponent(foreignMemoryId)}/forget`,
-    process.env.VICTORIA_STAGING_USER_B_TOKEN, { method: "POST" });
-  assert(foreignForget.status === 404, "user B cannot forget user A's memory");
-} else {
-  console.log("SKIP no existing user A memory was available for foreign-ID mutation checks");
-}
+const foreignMemoryId = learnedMemory.id;
+const foreignCorrection = await request("/api/memories", process.env.VICTORIA_STAGING_USER_B_TOKEN, {
+  method: "PATCH",
+  body: JSON.stringify({ memoryId: foreignMemoryId, value: "Unauthorized smoke-test correction." })
+});
+assert(foreignCorrection.status === 404, "user B cannot correct user A's memory");
+const foreignForget = await request(`/api/memories/${encodeURIComponent(foreignMemoryId)}/forget`,
+  process.env.VICTORIA_STAGING_USER_B_TOKEN, { method: "POST" });
+assert(foreignForget.status === 404, "user B cannot forget user A's memory");
+
+const correctedMemoryResponse = await request("/api/memories", process.env.VICTORIA_STAGING_USER_A_TOKEN, {
+  method: "PATCH",
+  body: JSON.stringify({
+    memoryId: learnedMemory.id,
+    value: "Prefers setting aside $15 rather than $40 at a time."
+  })
+});
+assert(correctedMemoryResponse.status === 200, `user A can correct their memory (HTTP ${correctedMemoryResponse.status})`);
+const correctedMemoryBody = await correctedMemoryResponse.json();
+const correctedMemory = correctedMemoryBody.memory;
+assert(correctedMemory?.id && correctedMemory.id !== learnedMemory.id &&
+  /\$15 rather than \$40/.test(correctedMemory.value ?? ""),
+  "correction appends a linked memory with the new value");
+
+const forgetResponse = await request(`/api/memories/${encodeURIComponent(correctedMemory.id)}/forget`,
+  process.env.VICTORIA_STAGING_USER_A_TOKEN, { method: "POST" });
+assert(forgetResponse.status === 200, `user A can forget their corrected memory (HTTP ${forgetResponse.status})`);
+const listedAfterForget = await request("/api/memories?limit=100", process.env.VICTORIA_STAGING_USER_A_TOKEN);
+assert(listedAfterForget.status === 200, `user A can relist memories after forgetting (HTTP ${listedAfterForget.status})`);
+const afterForgetBody = await listedAfterForget.json();
+assert(!(afterForgetBody.memories ?? []).some((memory) => memory.key === "savings_contribution_amount" &&
+  /\$15 rather than \$40/.test(memory.value ?? "")),
+  "forgotten memory is suppressed from listing immediately");
 
 const declined = await request(chatPath, process.env.VICTORIA_STAGING_USER_A_TOKEN, {
   method: "POST",
@@ -143,4 +186,17 @@ assert(declined.status === 200, `user A can close their own pending suggestion (
 assert(!/recorded|saved to your victoria savings ledger/i.test((await declined.json()).message ?? ""),
   "declining the staging smoke proposal does not create a savings entry");
 
-console.log("Hosted authorization smoke checks completed. The synthetic user A proposal was declined.");
+const retentionPath = "/api/cron/memory-retention";
+const unauthorizedRetention = await request(retentionPath, null);
+assert(unauthorizedRetention.status === 401, "retention rejects requests without the cron secret");
+const retention = await fetch(new URL(retentionPath, base), {
+  headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+  redirect: "error",
+  cache: "no-store"
+});
+assert(retention.status === 200, `authorized retention run succeeds (HTTP ${retention.status})`);
+const retentionBody = await retention.json();
+assert(retentionBody.status === "succeeded" && Number.isInteger(retentionBody.runId),
+  "retention reports an audited successful run");
+
+console.log("Hosted authorization, memory, and retention smoke checks completed. The synthetic user A proposal was declined.");
