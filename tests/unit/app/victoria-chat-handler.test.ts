@@ -3,6 +3,7 @@ import { createVictoriaSessionAuthenticator, signVictoriaSession } from "../../.
 import { createVictoriaChatHandler } from "../../../src/app/http/victoria-chat-handler.js";
 import { getLocalMockVictoriaChatHandler, getLocalMockVictoriaRuntime } from "../../../src/app/http/create-local-mock-victoria-runtime.js";
 import { buildTransactionFinancialProfile } from "../../../src/domain/financial-profile.js";
+import { InMemoryTurnRepository } from "../../../src/app/turns/in-memory-turn-repository.js";
 
 const secret = "test-only-session-secret-with-more-than-32-bytes";
 
@@ -42,6 +43,25 @@ describe("Victoria chat HTTP boundary", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ message: "user-a:chat-1:Hello Victoria" });
     expect(agent.respond).toHaveBeenCalledWith({ userId: "user-a", conversationId: "chat-1", message: "Hello Victoria" });
+  });
+
+  it("passes stable owner-scoped turn references from completed chat turns", async () => {
+    const seen: unknown[] = [];
+    const agent = { respond: vi.fn(async (request: { sourceTurnReferences?: unknown }) => {
+      seen.push(request.sourceTurnReferences);
+      return { message: "Got it.", decision: { action: "reflect", classification: { type: "general_finance", summary: "" } } };
+    }) } as unknown as Parameters<typeof createVictoriaChatHandler>[0]["agent"];
+    const turns = new InMemoryTurnRepository();
+    const handler = createVictoriaChatHandler({ authenticate: createVictoriaSessionAuthenticator(secret), agent, turns });
+    const token = signVictoriaSession({ userId: "turn-user", secret });
+    await handler(chatRequest(token, "turn-chat", "I want to plan my weekends."), { conversationId: "turn-chat" });
+    await handler(chatRequest(token, "turn-chat", "I enjoy hiking."), { conversationId: "turn-chat" });
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject([{ turnId: expect.any(String), userMessage: "I want to plan my weekends." }]);
+    expect(seen[1]).toHaveLength(2);
+    expect((await turns.listConversation("turn-user", "turn-chat"))).toHaveLength(2);
+    expect((await turns.listConversation("another-user", "turn-chat"))).toEqual([]);
   });
 
   it("rejects unsigned, expired, and tampered sessions", async () => {

@@ -57,9 +57,14 @@ export function finalizeCompanionResponse(
   finding: FinancialMomentFinding,
   assessment: SavingsAssessment
 ): FinalizedResponse {
-  const normalizedDraft = typeof draft === "string" && assessment.outcome === "suggest" &&
-    !finding.responseContext?.awaitingAllocationTargetChoice
-    ? normalizeLedgerConfirmation(draft, assessment.amountCents)
+  const normalizedDraft = typeof draft === "string"
+    ? normalizeAvoidedSpendClaim(
+        assessment.outcome === "suggest" && !finding.responseContext?.awaitingAllocationTargetChoice
+          ? normalizeLedgerConfirmation(draft, assessment.amountCents)
+          : draft,
+        finding,
+        assessment
+      )
     : draft;
   const validationIssues = inspectVoiceDraft(normalizedDraft, finding, assessment);
   // A missing ledger-confirmation question is recoverable: preserve the
@@ -69,8 +74,37 @@ export function finalizeCompanionResponse(
   const blockingIssues = validationIssues.filter((issue) => issue !== "missing_confirmation_request");
   const voiceDraftAccepted = typeof normalizedDraft === "string" && normalizedDraft.trim().length > 0 && blockingIssues.length === 0;
   let message = voiceDraftAccepted && typeof normalizedDraft === "string" ? normalizedDraft.trim() : deterministicResponse(finding, assessment);
+  if (assessment.outcome === "suggest" && !finding.responseContext?.awaitingAllocationTargetChoice &&
+      !containsExplicitLedgerConfirmation(message, assessment.amountCents)) {
+    message = removeUnqualifiedRecordingOffers(message);
+  }
   message = enforceRequiredDisclosures(message, finding, assessment);
   return Object.freeze({ message, voiceDraftAccepted, validationIssues });
+}
+
+/** Keep avoided spend distinct from money guaranteed to remain in the user's balance. */
+function normalizeAvoidedSpendClaim(
+  message: string,
+  finding: FinancialMomentFinding,
+  assessment: SavingsAssessment
+): string {
+  if (finding.classification.type !== "avoided_spend" || assessment.outcome !== "suggest") return message;
+  return message.replace(/\bsaved\s+(?:you\s+)?((?:\$\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s+(?:dollars?|bucks)))/gi,
+    (claim, amount: string) => parsePositiveVoiceUsdCents(amount) === assessment.amountCents
+      ? claim.replace(/\bsaved\s+(?:you\s+)?/i, "avoided spending ")
+      : claim);
+}
+
+/** Keep the useful response while replacing an incomplete offer with one deterministic exact-action question. */
+function removeUnqualifiedRecordingOffers(message: string): string {
+  const offerCue = /\b(?:if you(?:'|’)d like|if you want|would you like|do you want|tell me to|say yes|please confirm|go ahead and i will)\b/i;
+  const recordingAction = /\b(?:record|save|log|enter|add)\b/i;
+  return message.split(/(?<=[.!?])\s+/).map((sentence) => {
+    if (!offerCue.test(sentence) || !recordingAction.test(sentence)) return sentence.trim();
+    const offerIndex = sentence.search(offerCue);
+    const retainedLead = sentence.slice(0, offerIndex).replace(/[\s,;:—-]+$/, "").trim();
+    return retainedLead;
+  }).filter(Boolean).join(" ");
 }
 
 /** Preserve a generated confirmation question while grounding its destination in Victoria's ledger. */
@@ -78,9 +112,7 @@ function normalizeLedgerConfirmation(message: string, amountCents: number): stri
   if (containsExplicitLedgerConfirmation(message, amountCents)) return message;
   const confirmationSignals = /\b(?:would you like|do you want|want me to|should I|can I|may I|shall I|please confirm|would you feel comfortable|are you comfortable|is it okay if I|is that okay with you)\b/i;
   const recordingAction = /\b(?:record|save|log|enter|add)\b/i;
-  const questions = [...message.matchAll(/[^?]*\?/g)];
-  for (const match of questions) {
-    const question = match[0];
+  for (const question of questionSentences(message)) {
     if (!confirmationSignals.test(question) || !recordingAction.test(question) || !messageMentionsAmount(question, amountCents)) continue;
     const trackerOrDestination = /\s+(?:in|to)\s+(?:a|an|the|your|my)\s+(?:[A-Za-z'-]+\s+){0,5}(?:ledger|tracker|fund|goal|account)\s*\?$/i;
     if (trackerOrDestination.test(question)) {
@@ -145,8 +177,12 @@ function containsExplicitLedgerConfirmation(message: string, amountCents: number
   if (!/\b(?:mocked\s+)?savings ledger\b/i.test(normalized)) return false;
   const confirmationSignals = /\b(?:would you like|do you want|want me to|should I|can I|may I|shall I|please confirm|would you feel comfortable|are you comfortable|is it okay if I|is that okay with you)\b/i;
   const recordingAction = /\b(?:record|save|log|enter|add)\b/i;
-  return normalized.split("?").some((question) => confirmationSignals.test(question) &&
+  return questionSentences(normalized).some((question) => confirmationSignals.test(question) &&
     recordingAction.test(question) && messageMentionsAmount(question, amountCents));
+}
+
+function questionSentences(message: string): string[] {
+  return message.split(/(?<=[.!?])\s+/).filter((sentence) => sentence.includes("?"));
 }
 
 function inspectVoiceDraft(

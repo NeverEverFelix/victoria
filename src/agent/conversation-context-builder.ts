@@ -8,7 +8,7 @@ import {
   resolveActiveSavingsProposalReference
 } from "./conversation-state-manager.js";
 import { resolveHistoricalEventReference, type HistoricalEventReferenceResolution } from "./historical-event-reference-resolver.js";
-import { planMemoryRetrieval } from "./memory/retrieval-planner.js";
+import { isRetrievableMemory, planMemoryRetrieval } from "./memory/retrieval-planner.js";
 
 export interface ContextFinancialFact {
   readonly id: string;
@@ -16,8 +16,9 @@ export interface ContextFinancialFact {
   readonly currency: "USD";
   readonly period: "monthly" | "annual";
   readonly meaning: "user_reported_recurring_cost" | "conditional_projection";
-  readonly provenance: "user_statement" | "derived";
+  readonly provenance: "user_statement" | "user_correction" | "derived";
   readonly evidenceTurnIndexes: readonly number[];
+  readonly sourceMemoryId?: string;
   readonly derivedFromFactId?: string;
   readonly condition?: string;
 }
@@ -171,17 +172,53 @@ export function buildVictoriaConversationContext(input: {
   const historicalEventReference = input.message
     ? resolveHistoricalEventReference(input.message, conversationSavingsEvents)
     : undefined;
+  const selectedMemoryFacts = selectMemoryFacts(input.selectedMemories ?? [], input.message ?? "", workflowState);
+  const selectedMemoryIds = new Set(selectedMemoryFacts.map((fact) => fact.id));
+  for (const memory of input.selectedMemories ?? []) {
+    if (!selectedMemoryIds.has(memory.id) || memory.category !== "financial_pattern" ||
+        !memory.key.startsWith("interest_spend:")) continue;
+    const recurringAmount = parseMonthlyRecurringMemory(memory.value);
+    if (!recurringAmount || !Number.isSafeInteger(recurringAmount.amountCents * 12)) continue;
+    const id = `memory:${memory.id}:monthly-recurring-cost`;
+    facts.push({
+      id,
+      amountCents: recurringAmount.amountCents,
+      currency: "USD",
+      period: "monthly",
+      meaning: "user_reported_recurring_cost",
+      provenance: memory.sourceType === "user_correction" ? "user_correction" : "user_statement",
+      evidenceTurnIndexes: [],
+      sourceMemoryId: memory.id
+    });
+    facts.push({
+      id: `memory:${memory.id}:annual-projection`,
+      amountCents: annualizeMonthlyAmountCents(recurringAmount.amountCents),
+      currency: "USD",
+      period: "annual",
+      meaning: "conditional_projection",
+      provenance: "derived",
+      evidenceTurnIndexes: [],
+      sourceMemoryId: memory.id,
+      derivedFromFactId: id,
+      condition: "Only if the monthly spend is avoided for all 12 months."
+    });
+  }
 
   return Object.freeze({
     relevantUserTurns: Object.freeze(relevantUserTurns),
     financialFacts: Object.freeze(facts),
-    selectedMemoryFacts: Object.freeze(selectMemoryFacts(
-      input.selectedMemories ?? [], input.message ?? "", workflowState
-    )),
+    selectedMemoryFacts: Object.freeze(selectedMemoryFacts),
     conversationSavingsEvents,
     ...(historicalEventReference && historicalEventReference.kind !== "not_requested" ? { historicalEventReference } : {}),
     ...(workflowState ? { workflowState } : {})
   });
+}
+
+function parseMonthlyRecurringMemory(value: string): { amountCents: number } | undefined {
+  const match = /^Usually spends \$([\d,]+\.\d{2}) per month on .+\.$/i.exec(value.trim());
+  if (!match?.[1]) return undefined;
+  const amountCents = Math.round(Number(match[1].replace(/[$,]/g, "")) * 100);
+  return Number.isSafeInteger(amountCents) && amountCents > 0 ? { amountCents } : undefined;
 }
 
 function selectConversationSavingsEvents(events: readonly SavingsEvent[]): ConversationSavingsEventContext[] {
@@ -215,15 +252,7 @@ function selectMemoryFacts(
     : workflowState?.status === "awaiting_amount"
       ? `${workflowState.sourceEvent.summary} ${workflowState.sourceEvent.merchantName ?? ""}` : "";
   const eligible = memories.filter((memory) => {
-    if ((memory.sourceType !== "user_statement" && memory.sourceType !== "user_correction") ||
-        memory.sourceMetadata?.interestStatus === "inactive" ||
-        !Number.isFinite(memory.confidence) || memory.confidence < 0.85) return false;
-    const id = memory.id.trim();
-    const key = memory.key.trim();
-    const value = memory.value.trim();
-    const evidence = memory.evidence.trim();
-    return Boolean(id && id.length <= 120 && key && key.length <= 80 && value && value.length <= 240 &&
-      evidence && evidence.length <= 240);
+    return isRetrievableMemory(memory);
   });
   return planMemoryRetrieval({ memories: eligible, query: message, additionalContext: activeContext, limit: 6 })
     .map((memory) => ({

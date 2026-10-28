@@ -5,6 +5,7 @@ describe("isMemoryLearningEligibleTurn", () => {
   it("permits read-only savings progress and conversational turns", () => {
     expect(isMemoryLearningEligibleTurn({ message: "I prefer a monthly view.", intent: "savings_progress" })).toBe(true);
     expect(isMemoryLearningEligibleTurn({ message: "I usually like short answers.", intent: "general_finance" })).toBe(true);
+    expect(isMemoryLearningEligibleTurn({ message: "I prefer a monthly view.", intent: "read_only_summary" })).toBe(true);
   });
 
   it.each([

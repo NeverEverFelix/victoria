@@ -46,6 +46,39 @@ describe("buildVictoriaConversationContext", () => {
     expect(context.financialFacts).toEqual([]);
   });
 
+  it("grounds typed monthly facts from retrieved user-stated recurring-spend memories", () => {
+    const context = buildVictoriaConversationContext({
+      priorTurns: [],
+      turnContext: buildTurnContext({ message: "What would basketball cost yearly?", priorTurns: [] }),
+      message: "What would basketball cost yearly?",
+      selectedMemories: [
+        {
+          id: "basketball-monthly-spend", category: "financial_pattern", key: "interest_spend:basketball",
+          value: "Usually spends $35.00 per month on basketball.",
+          evidence: "I usually spend $35 per month on basketball.", confidence: 0.95,
+          createdAt: "2026-10-20T00:00:00.000Z", sourceType: "user_statement"
+        },
+        {
+          id: "imported-numeric-profile", category: "financial_pattern", key: "interest_spend:golf",
+          value: "Usually spends $900.00 per month on golf.", evidence: "Imported profile estimate.", confidence: 0.99,
+          createdAt: "2026-10-20T00:00:00.000Z", sourceType: "plaid_transaction_profile"
+        }
+      ]
+    });
+
+    expect(context.financialFacts).toEqual([
+      expect.objectContaining({
+        id: "memory:basketball-monthly-spend:monthly-recurring-cost", amountCents: 3_500,
+        period: "monthly", provenance: "user_statement", sourceMemoryId: "basketball-monthly-spend"
+      }),
+      expect.objectContaining({
+        id: "memory:basketball-monthly-spend:annual-projection", amountCents: 42_000,
+        period: "annual", meaning: "conditional_projection", provenance: "derived",
+        derivedFromFactId: "memory:basketball-monthly-spend:monthly-recurring-cost"
+      })
+    ]);
+  });
+
   it("ranks relevant durable memories before applying the context cap and prefers the current correction", () => {
     const context = buildVictoriaConversationContext({
       priorTurns: [],

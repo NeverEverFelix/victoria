@@ -1,9 +1,10 @@
-import type { AgentMemory } from "./types.js";
+import type { AgentMemory, ClassifiedMessage } from "./types.js";
 import { MIN_ACTIONABLE_CONFIDENCE } from "./confidence-policy.js";
 import type { FinancialMomentFinding, SavingsAssessment } from "./team-prototype.js";
 import { validateClassifiedMessage } from "./validation.js";
 import { resolveFinancialReferenceHint } from "./conversation-context-builder.js";
 import type { VictoriaConversationContext } from "./conversation-context-builder.js";
+import { parseExplicitDollarAmount } from "../domain/financial-events/parse-explicit-amount.js";
 
 /** Deterministic validation for financial evidence passed between specialists. */
 export function validateTeamFinding(
@@ -26,6 +27,23 @@ export function fallbackFinding(summary: string): FinancialMomentFinding {
   return Object.freeze({
     classification: Object.freeze({ type: "unclear", confidence: 0, summary, needsClarification: true })
   });
+}
+
+/** Recover a missing amount only when the classifier already recognized a clear avoided purchase. */
+export function groundExplicitAvoidedSpendAmount(classification: ClassifiedMessage, message: string): ClassifiedMessage {
+  if (classification.type !== "avoided_spend" || classification.amountIssue !== undefined) return classification;
+
+  for (const sentence of message.split(/(?<=[.!?])\s+/)) {
+    const hasAvoidedPurchase = /\b(?:skipped|skip|passed on|decided not to (?:buy|order)|didn't (?:buy|order|purchase)|chose not to (?:buy|order)|avoided)\b/i.test(sentence) &&
+      /\b(?:purchase|order|takeout|coffee|book|meal|snack|item|drink|subscription|ride|expense|spend|spending)\b/i.test(sentence);
+    if (!hasAvoidedPurchase) continue;
+    const explicitAmount = parseExplicitDollarAmount(sentence);
+    if (explicitAmount.status === "valid" &&
+        (classification.amountCents === undefined || classification.amountCents === explicitAmount.amountCents)) {
+      return { ...classification, amountCents: explicitAmount.amountCents, needsClarification: false };
+    }
+  }
+  return classification;
 }
 
 export function clarificationAfterSpecialistFailure(role: "financialMoment" | "savingsReasoning"): SavingsAssessment {

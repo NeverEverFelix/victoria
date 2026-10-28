@@ -31,20 +31,38 @@ export function suppressLifecycleConflictingEpisodes(
   memories: readonly ConversationalMemory[],
   lifecycleMemories: readonly ConversationalMemory[]
 ): readonly ConversationalMemory[] {
-  const retiredTopics = lifecycleMemories
+  const retired = lifecycleMemories
     .filter((memory) => memory.sourceType === "user_correction" ||
       memory.sourceMetadata?.memoryStatus === "forgotten" || memory.sourceMetadata?.interestStatus === "inactive")
-    .map((memory) => topicTokens(memory.key))
-    .filter((terms) => terms.size > 0);
-  if (retiredTopics.length === 0) return memories;
+    .map((memory) => ({
+      turnIds: sourceTurnIds(memory),
+      topics: topicTokens(memory.key)
+    }))
+    .filter((item) => item.turnIds.size > 0 || item.topics.size > 0);
+  if (retired.length === 0) return memories;
   return memories.filter((memory) => {
     if (memory.sourceMetadata?.memoryKind !== "episodic_summary") return true;
+    const episodeTurnIds = sourceTurnIds(memory);
+    if (episodeTurnIds.size > 0) {
+      const linkedLifecycleRecords = retired.filter((record) => record.turnIds.size > 0);
+      if (linkedLifecycleRecords.length > 0) {
+        return !linkedLifecycleRecords.some((record) => [...record.turnIds].some((turnId) => episodeTurnIds.has(turnId)));
+      }
+    }
     const episodeTerms = new Set([...topicTokens(`${memory.value} ${memory.evidence}`)]);
-    return !retiredTopics.some((topic) => {
+    return !retired.some(({ topics: topic }) => {
       const overlap = [...topic].filter((term) => episodeTerms.has(term)).length;
       return overlap >= (topic.size === 1 ? 1 : 2);
     });
   });
+}
+
+function sourceTurnIds(memory: ConversationalMemory): Set<string> {
+  const references = memory.sourceMetadata?.sourceTurnReferences;
+  if (!Array.isArray(references)) return new Set();
+  return new Set(references.flatMap((reference) =>
+    reference && typeof reference === "object" && "turnId" in reference &&
+      typeof reference.turnId === "string" && reference.turnId.trim() ? [reference.turnId] : []));
 }
 
 function topicTokens(value: string): Set<string> {
@@ -58,6 +76,10 @@ export interface EpisodicSummaryCandidate {
   readonly evidenceQuotes: readonly string[];
   readonly confidence: number;
   readonly sensitivity: "ordinary" | "sensitive";
+}
+
+export interface EpisodeEvidenceReference {
+  readonly turnId: string;
 }
 
 export interface EpisodicMemorySummarizer {
@@ -99,7 +121,8 @@ export function isUsableEpisodicSummary(
 export function validateEpisodicSummary(
   value: unknown,
   userMessages: readonly string[],
-  authoritativeOutcomes: readonly AuthoritativeEpisodeOutcome[] = []
+  authoritativeOutcomes: readonly AuthoritativeEpisodeOutcome[] = [],
+  evidenceReferences: readonly EpisodeEvidenceReference[] = []
 ): Omit<ConversationalMemory, "id" | "createdAt" | "supersedesId"> | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<EpisodicSummaryCandidate>;
@@ -110,7 +133,9 @@ export function validateEpisodicSummary(
       !candidate.evidenceQuotes.every((quote) => typeof quote === "string" && quote.trim().length > 0 && quote.length <= 200 &&
         userMessages.some((message) => isExplicitUserEvidence(message, quote)))) return null;
   const evidence = candidate.evidenceQuotes.map((quote) => quote.trim()).join(" | ");
-  if (evidence.length > 240 || authoritativeOutcomes.length > 8 || authoritativeOutcomes.some((outcome) =>
+  if (evidence.length > 240 || evidenceReferences.length > 16 ||
+      evidenceReferences.some((reference) => !reference.turnId.trim()) ||
+      authoritativeOutcomes.length > 8 || authoritativeOutcomes.some((outcome) =>
     outcome.kind !== "mocked_ledger_entry_recorded" || !outcome.userId.trim() || !outcome.eventId.trim() ||
     !outcome.entryId.trim() || !outcome.proposalId.trim() || !Number.isSafeInteger(outcome.amountCents) ||
     outcome.amountCents <= 0 || !Number.isFinite(Date.parse(outcome.recordedAt)))) return null;
@@ -124,6 +149,7 @@ export function validateEpisodicSummary(
     sourceMetadata: {
       memoryKind: "episodic_summary",
       evidenceCount: candidate.evidenceQuotes.length,
+      ...(evidenceReferences.length > 0 ? { sourceTurnReferences: Object.freeze([...new Map(evidenceReferences.map((reference) => [reference.turnId, reference])).values()]) } : {}),
       ...(authoritativeOutcomes.length > 0 ? { authoritativeWorkflowOutcomes: Object.freeze([...authoritativeOutcomes]) } : {})
     }
   });

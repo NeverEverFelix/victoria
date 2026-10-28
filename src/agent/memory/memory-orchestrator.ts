@@ -52,12 +52,22 @@ export class MemoryOrchestrator implements MemoryProvider {
     if (!userId.trim()) throw new Error("A user ID is required to remember a fact.");
     const all = await this.listCurrentMemoryRecords(userId);
     const active = this.selectCurrentRecords(all);
+    const incomingTurnIds = memoryTurnIds(memory);
     const prior = [...active].reverse().find((item) => item.category === memory.category && item.key === memory.key);
+    const sameTurnPrior = memory.sourceType !== "user_correction" && memory.sourceMetadata?.memoryStatus !== "forgotten" &&
+      incomingTurnIds.size > 0 && [...active].reverse().find((item) =>
+      item.category === memory.category && item.key === memory.key &&
+      [...memoryTurnIds(item)].some((turnId) => incomingTurnIds.has(turnId)));
+    if (sameTurnPrior) return sameTurnPrior;
     if (prior && prior.value === memory.value && prior.evidence === memory.evidence &&
         (prior.sourceType ?? "user_statement") === (memory.sourceType ?? "user_statement") &&
         prior.confidence >= memory.confidence) return prior;
     return this.storage.rememberConversationalMemory(userId, {
       ...memory,
+      sourceType: memory.sourceType ?? "user_statement",
+      ...((prior || memory.sourceMetadata?.sourceTurnReferences) ? {
+        sourceMetadata: mergeSourceTurnEvidence(prior, memory.sourceMetadata)
+      } : {}),
       ...((memory.supersedesId || !prior) ? {} : { supersedesId: prior.id })
     });
   }
@@ -82,7 +92,7 @@ export class MemoryOrchestrator implements MemoryProvider {
         evidence: evidence?.trim() || `The user corrected this memory: ${value}`,
         confidence: 1,
         sourceType: "user_correction",
-        sourceMetadata: { ...extracted.sourceMetadata, correctedFrom: target.id },
+        sourceMetadata: { ...extracted.sourceMetadata, ...sourceTurnEvidenceMetadata(target), correctedFrom: target.id },
         supersedesId: target.id
       });
       await this.invalidateCachedMemory(userId);
@@ -95,7 +105,7 @@ export class MemoryOrchestrator implements MemoryProvider {
       evidence: evidence?.trim() || `The user corrected this memory: ${value}`,
       confidence: 1,
       sourceType: "user_correction",
-      sourceMetadata: { correctedFrom: target.sourceType ?? "user_statement" },
+      sourceMetadata: { ...sourceTurnEvidenceMetadata(target), correctedFrom: target.sourceType ?? "user_statement" },
       supersedesId: target.id
     });
     await this.invalidateCachedMemory(userId);
@@ -113,7 +123,7 @@ export class MemoryOrchestrator implements MemoryProvider {
       evidence: "The user asked Victoria to forget this memory.",
       confidence: 1,
       sourceType: "user_correction",
-      sourceMetadata: { memoryStatus: "forgotten" },
+      sourceMetadata: { ...sourceTurnEvidenceMetadata(target), memoryStatus: "forgotten" },
       supersedesId: target.id
     });
     await this.invalidateCachedMemory(userId);
@@ -144,7 +154,7 @@ export class MemoryOrchestrator implements MemoryProvider {
         evidence: input.evidence,
         confidence: 1,
         sourceType: "user_correction",
-        sourceMetadata: { correctionOfMemoryId: target.id, correctionScope: "individual_transaction" }
+        sourceMetadata: { ...sourceTurnEvidenceMetadata(target), correctionOfMemoryId: target.id, correctionScope: "individual_transaction" }
       });
       await this.invalidateCachedMemory(input.userId);
       return correction;
@@ -287,6 +297,43 @@ export class MemoryOrchestrator implements MemoryProvider {
     const cache = this.storage as MemoryProvider & { invalidateUserMemoryCache?: (userId: string) => void };
     cache.invalidateUserMemoryCache?.(userId);
   }
+}
+
+function sourceTurnEvidenceMetadata(memory: ConversationalMemory): Readonly<Record<string, unknown>> {
+  const references = memory.sourceMetadata?.sourceTurnReferences;
+  if (!Array.isArray(references)) return {};
+  const valid = references.filter((reference): reference is { turnId: string } =>
+    Boolean(reference && typeof reference === "object" && "turnId" in reference &&
+      typeof reference.turnId === "string" && reference.turnId.trim()));
+  return valid.length ? { sourceTurnReferences: Object.freeze([...valid]) } : {};
+}
+
+function memoryTurnIds(memory: Pick<ConversationalMemory, "sourceMetadata">): Set<string> {
+  const references = memory.sourceMetadata?.sourceTurnReferences;
+  if (!Array.isArray(references)) return new Set();
+  return new Set(references.flatMap((reference) =>
+    reference && typeof reference === "object" && "turnId" in reference &&
+    typeof reference.turnId === "string" && reference.turnId.trim()
+      ? [reference.turnId]
+      : []));
+}
+
+function mergeSourceTurnEvidence(
+  prior: ConversationalMemory | undefined,
+  incoming: Readonly<Record<string, unknown>> | undefined
+): Readonly<Record<string, unknown>> {
+  const references = [
+    ...(Array.isArray(prior?.sourceMetadata?.sourceTurnReferences) ? prior.sourceMetadata.sourceTurnReferences : []),
+    ...(Array.isArray(incoming?.sourceTurnReferences) ? incoming.sourceTurnReferences : [])
+  ].filter((reference): reference is { turnId: string } =>
+    Boolean(reference && typeof reference === "object" && "turnId" in reference &&
+      typeof reference.turnId === "string" && reference.turnId.trim()));
+  return {
+    ...incoming,
+    ...(references.length ? {
+      sourceTurnReferences: Object.freeze([...new Map(references.map((reference) => [reference.turnId, reference])).values()])
+    } : {})
+  };
 }
 
 function memoryAuthority(memory: ConversationalMemory): number {

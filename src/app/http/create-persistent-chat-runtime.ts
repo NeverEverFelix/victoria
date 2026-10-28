@@ -1,5 +1,5 @@
 import "server-only";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { OpenAiEmbeddingProvider } from "../../agent/memory/openai-embedding-provider.js";
 import { OpenAiConversationalMemoryExtractor } from "../../agent/memory/openai-conversational-memory-extractor.js";
 import { OpenAiPersonalizedReply } from "../../agent/memory/openai-personalized-reply.js";
@@ -16,6 +16,7 @@ import { PostgresPendingSavingsActionStore } from "../savings/postgres-pending-s
 import { PostgresMockSavingsTools } from "../savings/postgres-mock-savings-tools.js";
 import { PostgresConversationSavingsEventStore } from "../savings/postgres-conversation-savings-event-store.js";
 import { PostgresConversationCoordinator } from "../turns/postgres-conversation-coordinator.js";
+import { createQueuedTurnProcessor } from "../turns/queued-turn-processor.js";
 import { createPostgresTurnStore } from "../turns/postgres-pool.js";
 import { createSupabaseBearerAuthenticator } from "../auth/supabase-bearer-auth.js";
 import { createVictoriaAgent } from "../create-victoria-agent.js";
@@ -23,11 +24,21 @@ import { createVictoriaChatHandler } from "./victoria-chat-handler.js";
 import { createRlsScopedMemoryManagement } from "./rls-scoped-memory-management.js";
 import { createMemoryManagementHandlers } from "./memory-management-handler.js";
 import { createConversationFinishHandler } from "./conversation-finish-handler.js";
+import { createTurnResultHandler } from "./turn-result-handler.js";
+import { createQueuedTurnProcessHandler } from "./queued-turn-process-handler.js";
+import { createSubmitTurnHandler } from "./submit-turn-handler.js";
 
 type ChatHandler = ReturnType<typeof createVictoriaChatHandler>;
 type FinishHandler = ReturnType<typeof createConversationFinishHandler>;
+type TurnResultHandler = ReturnType<typeof createTurnResultHandler>;
 type MemoryHandlers = ReturnType<typeof createMemoryManagementHandlers>;
-let cached: { readonly key: string; readonly runtime: { handler: ChatHandler; finishHandler: FinishHandler; memories: MemoryHandlers } } | undefined;
+let cached: { readonly key: string; readonly runtime: {
+  handler: ChatHandler; finishHandler: FinishHandler; memories: MemoryHandlers;
+  processQueuedTurn: ReturnType<typeof createQueuedTurnProcessor>;
+  turnResultHandler: TurnResultHandler;
+  processQueuedTurnHandler: ReturnType<typeof createQueuedTurnProcessHandler>;
+  submitTurnHandler: ReturnType<typeof createSubmitTurnHandler>;
+} } | undefined;
 
 /** Persistent server runtime: Supabase Auth is the sole identity issuer; PostgreSQL stores chat state. */
 export function getPersistentChatRuntime(source: EnvSource = process.env, fetcher?: typeof fetch) {
@@ -56,7 +67,7 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
     if (cached?.key === key) return cached.runtime;
 
     const authenticate = createSupabaseBearerAuthenticator({ supabaseUrl, publishableKey, ...(fetcher ? { fetcher } : {}) });
-    const { pool } = createPostgresTurnStore(env.databaseUrl, { maxPoolSize: 2 });
+    const { pool, turns } = createPostgresTurnStore(env.databaseUrl, { maxPoolSize: 2 });
     const embeddings = new OpenAiEmbeddingProvider({ apiKey: env.openAiApiKey, dimensions: SEMANTIC_MEMORY_EMBEDDING_DIMENSIONS, ...(fetcher ? { fetcher } : {}) });
     const repository = new PostgresMemoryRepository(pool, undefined, embeddings);
     const memory = new MemoryOrchestrator(repository, { financialProfiles: repository });
@@ -98,13 +109,26 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
       ...(fetcher ? { fetcher } : {})
     });
     const conversationCoordinator = new PostgresConversationCoordinator(pool);
-    const handler = createVictoriaChatHandler({
-      authenticate, agent, conversationCoordinator
+    const processQueuedTurn = createQueuedTurnProcessor({ turns, agent, conversationCoordinator });
+    const turnResultHandler = createTurnResultHandler({ authenticate, turns });
+    const processQueuedTurnHandler = createQueuedTurnProcessHandler({ authenticate, process: processQueuedTurn });
+    const submitTurnHandler = createSubmitTurnHandler({
+      authenticate,
+      // Conversation IDs are user-scoped namespaces, not globally addressable resources.
+      ownsConversation: async (userId, conversationId) => Boolean(userId.trim() && conversationId.trim()),
+      fingerprintRequest: async (input) => createHmac("sha256", env.databaseUrl)
+        .update(input.userId).update("\0").update(input.conversationId).update("\0").update(input.message).digest("hex"),
+      createTurnId: randomUUID,
+      now: () => new Date().toISOString(),
+      turns
     });
-    const finishHandler = createConversationFinishHandler({ authenticate, agent, conversationCoordinator });
+    const handler = createVictoriaChatHandler({
+      authenticate, agent, conversationCoordinator, turns
+    });
+    const finishHandler = createConversationFinishHandler({ authenticate, agent, conversationCoordinator, turns });
     const memoryForUser = createRlsScopedMemoryManagement(pool, embeddings);
     const memories = createMemoryManagementHandlers({ authenticate, memoryForUser });
-    const runtime = Object.freeze({ handler, finishHandler, memories });
+    const runtime = Object.freeze({ handler, finishHandler, memories, processQueuedTurn, turnResultHandler, processQueuedTurnHandler, submitTurnHandler });
     cached = Object.freeze({ key, runtime });
     return runtime;
   } catch {

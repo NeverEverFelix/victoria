@@ -29,6 +29,8 @@ Acceptance criteria:
 - Given Victoria asks because intent confidence is low, it uses that unresolved turn as context for the user's next reply and clears it when the user switches to a clear new intent.
 - Given the amount has more than two decimal places or uses a recognized non-USD currency, Victoria asks for a valid USD amount and creates no proposal.
 - Given the user has not confirmed, no savings ledger entry is created.
+- Given the user asks whether to record an identified avoided-spend amount in the same message, Victoria may present the savings suggestion but must still wait for a separate explicit confirmation.
+- Given an active monthly recurring-cost suggestion and a combined annual-math/current-month record request, Victoria answers with the conditional annual projection and asks for confirmation of only the pending monthly amount.
 - Given the user confirms, Victoria creates a mocked ledger entry for 9000 cents.
 - Given the entry is mocked, Victoria does not claim real money moved.
 
@@ -404,6 +406,7 @@ As a user, I want Victoria to retain a small amount of useful context from ordin
 
 Expected behavior:
 
+- A clear unpunctuated read-only request to talk about a topic can receive an ordinary conversational response without being mistaken for a savings action; financial statements and explicit action requests retain their specialist/workflow handling.
 - When a real provider model and API key are configured, Victoria may retain up to eight stable, useful facts explicitly stated by the user in the current turn. `OPENAI_MEMORY_EXTRACTION_ENABLED=false` disables this provider extraction.
 - The provider path can run on ordinary personal statements, pattern reflections, avoided-spend and regretful-spend turns, and unclear turns only when no uncertain financial intent was detected. It remains disabled while a financial approval/correction is pending and for real-money-movement requests. Capturing a fact does not change the financial classification or action, and does not replace or interrupt the ordinary response or a needed follow-up.
 - Victoria retains only candidates with exact supporting evidence, high confidence, user attribution, affirmed statements, and ordinary sensitivity.
@@ -633,6 +636,7 @@ Expected behavior:
 
 - Victoria builds a scoped, typed view of recently stated recurring costs and their source turns. The language model may select which events a planning question refers to, but code verifies that those events exist and calculates any total in cents.
 - A question about two clearly identified monthly costs can receive a conditional combined annual projection without creating a savings proposal or ledger entry. If the reference could point to several combinations, Victoria asks which costs the user means.
+- If the user asks to record one of multiple costs while requesting their combined projection, Victoria asks which single monthly cost they mean before creating or changing a proposal; an existing pending proposal remains approval-gated.
 - A refusal can contain a separate read-only planning request. Victoria closes the pending proposal and answers the separate request when its amount and meaning are grounded.
 - A request that may repeat a recently completed entry asks whether this is a new occurrence before opening another proposal. An explicit new occurrence can follow the normal approval flow.
 - Transcript-derived context is advisory. It never supplies approval, a bank transfer, or proof of a completed ledger entry.

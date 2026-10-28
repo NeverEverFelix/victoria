@@ -58,6 +58,43 @@ describe("OpenAI Savings Reasoning context handoff", () => {
   });
 });
 
+describe("OpenAI companion voice correction handling", () => {
+  it("receives prior assistant advice and is instructed to adapt when the user pushes back", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const fetcher: typeof fetch = async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({ output: [{ type: "message", content: [{
+        type: "output_text", text: JSON.stringify({ response: "We can make that boundary more flexible." })
+      }] }] }), { status: 200 });
+    };
+    const team = createOpenAiAgentTeamSpecialists({ apiKey: "test-key", model: "test-model", fetcher });
+    const reply = await team.companionVoice.respond({
+      finding: { classification: {
+        type: "general_finance", confidence: 0.9, summary: "The user challenges a prior recommendation.", needsClarification: false
+      } },
+      assessment: { outcome: "reflect", confidence: 0.9, rationale: "Respond to the user's concern." },
+      requiredDisclosures: [],
+      contextSnapshot: {
+        currentMessage: "I'm not sure I can call it non-negotiable; my manager schedules Sunday requests.",
+        dialogueTurns: [
+          { role: "assistant", content: "Make Sunday time non-negotiable." },
+          { role: "user", content: "I'm not sure I can call it non-negotiable; my manager schedules Sunday requests." }
+        ],
+        selectedMemories: [], episodicSummaries: [], responseDepth: "brief"
+      }
+    });
+
+    expect(reply).toContain("make that boundary more flexible");
+    expect(requestBody?.instructions).toContain("When the user corrects or pushes back on earlier advice");
+    const providerInput = JSON.parse(String(requestBody?.input)) as { contextSnapshot: {
+      dialogueTurns: Array<{ role: string; content: string }>;
+    } };
+    expect(providerInput.contextSnapshot.dialogueTurns[0]).toEqual({
+      role: "assistant", content: "Make Sunday time non-negotiable."
+    });
+  });
+});
+
 describe("OpenAI Financial Moment context handoff", () => {
   it("receives the same curated evidence and workflow summary before classification", async () => {
     let requestBody: Record<string, unknown> | undefined;

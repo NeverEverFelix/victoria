@@ -67,17 +67,18 @@ export function createOpenAiAgentTeamSpecialists(options: OpenAiAgentTeamOptions
 
   return {
     financialMoment: {
-      async analyze({ message, memory, conversationContext, financialContext }) {
+      async analyze({ message, memory, conversationContext, financialContext, contextSnapshot }) {
         return { classification: await financialMoment.classifyMessage({
           userMessage: message,
           memory,
           ...(conversationContext ? { conversationContext } : {}),
-          ...(financialContext ? { financialContext } : {})
+          ...(financialContext ? { financialContext } : {}),
+          ...(contextSnapshot ? { contextSnapshot } : {})
         }) };
       }
     },
     savingsReasoning: {
-      async assess({ finding, memory, financialContext }) {
+      async assess({ finding, memory, financialContext, contextSnapshot }) {
         const text = await requestOutput({
           apiKey: options.apiKey,
           model: options.model,
@@ -88,7 +89,7 @@ export function createOpenAiAgentTeamSpecialists(options: OpenAiAgentTeamOptions
           ...(options.usageReporter ? { usageReporter: options.usageReporter } : {}),
           schema: assessmentJsonSchema,
           instructions: SAVINGS_REASONING_INSTRUCTIONS,
-          input: JSON.stringify({ finding, financialContext, memory: {
+          input: JSON.stringify({ finding, financialContext, contextSnapshot, memory: {
             habits: memory.habits,
             conversationalMemories: (memory.conversationalMemories ?? []).slice(0, 20).map(({ category, key, value }) => ({
               category, key, value
@@ -100,7 +101,7 @@ export function createOpenAiAgentTeamSpecialists(options: OpenAiAgentTeamOptions
       }
     },
     companionVoice: {
-      async respond({ finding, assessment, requiredDisclosures, revisionFeedback }) {
+      async respond({ finding, assessment, requiredDisclosures, revisionFeedback, contextSnapshot }) {
         const text = await requestOutput({
           apiKey: options.apiKey,
           model: options.model,
@@ -111,7 +112,7 @@ export function createOpenAiAgentTeamSpecialists(options: OpenAiAgentTeamOptions
           ...(options.usageReporter ? { usageReporter: options.usageReporter } : {}),
           schema: voiceJsonSchema,
           instructions: COMPANION_VOICE_INSTRUCTIONS,
-          input: JSON.stringify({ finding, assessment, requiredDisclosures, ...(revisionFeedback ? { revisionFeedback } : {}) })
+          input: JSON.stringify({ finding, assessment, requiredDisclosures, contextSnapshot, ...(revisionFeedback ? { revisionFeedback } : {}) })
         });
         const candidate = parseProviderJson("companion_voice", "companion_voice_v1", text, voiceSchema);
         return candidate.response;

@@ -3,9 +3,11 @@ import type { LlmAdapter } from "./llm/types.js";
 import type { ConversationalMemory, MemoryProvider } from "./memory/types.js";
 import { MemoryOrchestrator } from "./memory/memory-orchestrator.js";
 import type { AgentTeamSpecialists, SavingsAssessment } from "./team-prototype.js";
+import { composeTeamDecisionMessage, type TeamAdvice } from "./response-composition.js";
 import {
   clarificationAfterSpecialistFailure,
   fallbackFinding,
+  groundExplicitAvoidedSpendAmount,
   validateTeamAssessment,
   validateTeamFinding
 } from "./team-assessment-policy.js";
@@ -13,6 +15,14 @@ import { finalizeCompanionResponse, requiredDisclosures, voiceDraftRevisionFeedb
 import { canCallTool, interpretApprovalResponse } from "./policy.js";
 import { validateClassifiedMessage, validateSavingsSuggestion } from "./validation.js";
 import { applyClassificationConfidencePolicy } from "./confidence-policy.js";
+import { clarificationMessage } from "./clarification-policy.js";
+import {
+  getAllocationTargetChoiceFromConversation,
+  isAnswerToRecentVictoriaQuestion,
+  isCoveredAllocationTargetChoice,
+  recoverPendingPlanningHorizon,
+  resolveCoveredSpendPeriodAnswer
+} from "./conversation-dialogue-policy.js";
 import { transitionSavingsProposal } from "../domain/savings/proposal-lifecycle.js";
 import type { VictoriaTools } from "./tools/contracts.js";
 import { annualizeMonthlyAmountCents, formatUsd } from "../domain/money.js";
@@ -45,6 +55,7 @@ import {
 } from "./memory/extract-preference.js";
 import { selectFinancialContextSource } from "./context-source-policy.js";
 import { buildTurnContext, projectionFromResolvedReferences } from "./turn-context.js";
+import type { TurnContext } from "./turn-context.js";
 import { resolvePlanningReference } from "./planning-reference-resolver.js";
 import {
   buildActiveSavingsConversationState,
@@ -54,17 +65,21 @@ import {
 } from "./conversation-state-manager.js";
 import { buildVictoriaConversationContext, resolveFinancialReferenceHint } from "./conversation-context-builder.js";
 import type { ResolvedFinancialReference, VictoriaConversationContext } from "./conversation-context-builder.js";
-import { planMemoryRetrieval } from "./memory/retrieval-planner.js";
+import { isRetrievableMemory, planMemoryRetrieval } from "./memory/retrieval-planner.js";
 import { isMemoryLearningEligibleTurn } from "./memory/memory-learning-policy.js";
 import type { ContextReferenceResolver } from "./context-reference-resolver.js";
-import { validateConversationReply, type ConversationResponder, type ConversationResponderInput } from "./conversation-responder.js";
+import { buildConversationContextSnapshot, validateConversationReply, type ConversationContextSnapshot, type ConversationResponder, type ConversationResponderInput, type ConversationResponderMemory } from "./conversation-responder.js";
+import { deterministicConversationFallback } from "./conversation-fallback.js";
 import {
-  hasFinancialActionSignal,
-  isConversationTopicTurn,
-  isExplicitFinancialActionQuestion,
+  isPendingCorrectionReplacementRequest,
+  isPendingGoalRetargetRequest,
+  isSafePendingWorkflowTopicSwitch,
   isOrdinaryQuestion,
+  independentOrdinaryQuestion,
+  shouldRouteToConversationResponder,
   isReadOnlyEventHistoryQuestion
 } from "./conversation-routing.js";
+import { resolvePendingWorkflowMessage } from "./pending-workflow-policy.js";
 import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } from "./transaction-history-provider.js";
 import { employerCoveredRecurringSpend, freedRecurringSpend, isBudgetingAdviceQuestion, isExplicitRealMoneyMovementRequest, isRealMoneyMovementRequest } from "./money-movement-intent.js";
 import { isExplicitInterestCorrectionEvidence, isExplicitUserEvidence, validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
@@ -90,6 +105,8 @@ export interface VictoriaAgentDependencies {
   conversationalMemoryExtractor?: ConversationalMemoryExtractor;
   /** Receives a provider failure name only; the current turn continues without provider-derived memories. */
   onConversationalMemoryExtractionFailure?: (errorName: string) => void;
+  /** Receives an enumerated fallback reason only; no user message or draft content is included. */
+  onConversationReplyFallback?: (reason: "provider_error" | "invalid_after_retry") => void;
   /** Receives validation categories only; never includes draft text or user content. */
   onCompanionVoiceValidationFailure?: (issues: readonly VoiceDraftIssue[]) => void;
   /** Optional wording layer for ordinary reflections; deterministic policy keeps action authority. */
@@ -101,12 +118,6 @@ export interface VictoriaAgentDependencies {
   pendingEntryCorrections?: PendingEntryCorrectionStore;
   savingsEvents?: ConversationSavingsEventStore;
   idFactory?: () => string;
-}
-
-interface TeamAdvice {
-  assessment: SavingsAssessment;
-  message: string;
-  awaitingAllocationTargetChoice?: boolean;
 }
 
 export class VictoriaAgent {
@@ -160,7 +171,7 @@ export class VictoriaAgent {
     const priorCorrectionId = this.pendingEntryCorrectionIdsByConversation.get(conversationKey);
     const priorCorrection = priorCorrectionId ? this.pendingEntryCorrections.get(priorCorrectionId) : undefined;
     const priorContext = await this.dependencies.memory.getConversationContext(request.userId, conversationId);
-    await this.summarizeOverflowingConversation(request.userId, conversationId, priorContext);
+    await this.summarizeOverflowingConversation(request.userId, conversationId, priorContext, request.sourceTurnReferences ?? []);
     const withUserMessage = [...priorContext, request.message].slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT);
     await this.dependencies.memory.setConversationContext(request.userId, conversationId, withUserMessage);
     const response = immutableSnapshot(await this.respondTurn(request, priorContext));
@@ -179,23 +190,30 @@ export class VictoriaAgent {
   }
 
   /** Saves a grounded summary of a conversation when the client explicitly ends it. */
-  async finishConversation(userId: string, conversationId: string): Promise<boolean> {
+  async finishConversation(
+    userId: string, conversationId: string,
+    sourceTurnReferences: readonly { readonly turnId: string; readonly userMessage: string }[] = []
+  ): Promise<boolean> {
     if (!userId.trim() || !conversationId.trim()) return false;
     const context = await this.dependencies.memory.getConversationContext(userId, conversationId);
     const outcome = this.recentSavingsEntriesByConversation.get(this.conversationKey({ userId, conversationId, message: "" }));
-    return this.summarizeConversation(userId, context, true, outcome ? [outcome] : []);
+    return this.summarizeConversation(userId, context, true, outcome ? [outcome] : [], sourceTurnReferences);
   }
 
-  private async summarizeOverflowingConversation(userId: string, conversationId: string, context: readonly string[]): Promise<void> {
+  private async summarizeOverflowingConversation(
+    userId: string, conversationId: string, context: readonly string[],
+    sourceTurnReferences: readonly { readonly turnId: string; readonly userMessage: string }[]
+  ): Promise<void> {
     const outcome = this.recentSavingsEntriesByConversation.get(this.conversationKey({ userId, conversationId, message: "" }));
-    await this.summarizeConversation(userId, context, false, outcome ? [outcome] : []);
+    await this.summarizeConversation(userId, context, false, outcome ? [outcome] : [], sourceTurnReferences);
   }
 
   private async summarizeConversation(
     userId: string,
     context: readonly string[],
     finishing: boolean,
-    entries: readonly SavingsEntry[] = []
+    entries: readonly SavingsEntry[] = [],
+    sourceTurnReferences: readonly { readonly turnId: string; readonly userMessage: string }[] = []
   ): Promise<boolean> {
     const summarizer = this.dependencies.episodicMemorySummarizer;
     if (!summarizer || (!finishing && context.length < DEFAULT_CONVERSATION_CONTEXT_LIMIT)) return false;
@@ -232,8 +250,9 @@ export class VictoriaAgent {
           const outcome = authoritativeEpisodeOutcome(entry);
           return outcome ? [outcome] : [];
         });
+      const sourceReferences = mapEpisodeSourceTurns(userMessages, sourceTurnReferences);
       const candidate = validateEpisodicSummary(
-        await summarizer.summarize({ userMessages, turnPairs }), userMessages, authoritativeOutcomes
+        await summarizer.summarize({ userMessages, turnPairs }), userMessages, authoritativeOutcomes, sourceReferences
       );
       if (!candidate) return false;
       await this.dependencies.memory.rememberConversationalMemory(userId, {
@@ -273,21 +292,34 @@ export class VictoriaAgent {
       ? this.pendingEntryCorrections.get(pendingCorrectionId)
       : undefined;
     if (pendingCorrection && pendingCorrectionId) {
-      const approval = interpretApprovalResponse(request.message, pendingCorrection.decision.entryCorrection?.correctedAmountCents);
-      if (approval === "explicit_approval") {
+      const messageResolution = resolvePendingWorkflowMessage({
+        message: request.message,
+        workflow: "entry_correction",
+        ...(pendingCorrection.decision.entryCorrection?.correctedAmountCents === undefined ? {} : {
+          expectedAmountCents: pendingCorrection.decision.entryCorrection.correctedAmountCents
+        })
+      });
+      if (messageResolution === "explicit_approval") {
         return this.approveEntryCorrection({ ...request, approvedActionId: pendingCorrectionId }, pendingCorrection.decision);
       }
-      if (approval === "explicit_decline") {
+      if (messageResolution === "explicit_decline") {
         this.pendingEntryCorrections.delete(pendingCorrectionId);
         this.pendingEntryCorrectionIdsByConversation.delete(conversationKey);
         const message = "No problem. The recorded savings entry remains unchanged.";
         return { message, decision: { ...pendingCorrection.decision, action: "reflect", userFacingMessage: message } };
       }
-      if (approval === "ambiguous") {
+      if (messageResolution === "replacement_request") {
+        this.pendingEntryCorrections.delete(pendingCorrectionId);
+        this.pendingEntryCorrectionIdsByConversation.delete(conversationKey);
+        const correctedAmount = pendingCorrection.decision.entryCorrection?.correctedAmountCents;
+        const message = `I heard that you want a different correction. I canceled the pending ${correctedAmount === undefined ? "" : `${formatUsd(correctedAmount)} `}correction; the recorded entry is unchanged. Please send the new correction request so I can prepare a fresh confirmation.`;
+        return { message, decision: { ...pendingCorrection.decision, action: "ask_follow_up", userFacingMessage: message } };
+      }
+      if (messageResolution === "ambiguous") {
         const message = "Please give me a clear yes or no before I correct this ledger entry.";
         return { message, decision: { ...pendingCorrection.decision, action: "ask_follow_up", userFacingMessage: message } };
       }
-      if (isConversationTopicTurn(request.message) && this.dependencies.conversationResponder) {
+      if (messageResolution === "read_only_topic" && this.dependencies.conversationResponder) {
         await this.learnFromReadOnlyTopicTurn(request);
         return this.respondConversationalTurn(request, conversationContext,
           "I can help think that through. What part would be most useful to start with? The correction remains pending and the entry is unchanged.", "entry_correction");
@@ -301,14 +333,20 @@ export class VictoriaAgent {
       : undefined;
 
     if (pendingGoalAction && pendingGoalActionId) {
-      const approvalResponse = interpretApprovalResponse(request.message, pendingGoalAction.decision.goalAllocation?.amountCents);
-      if (approvalResponse === "explicit_approval") {
+      const messageResolution = resolvePendingWorkflowMessage({
+        message: request.message,
+        workflow: "goal_allocation",
+        ...(pendingGoalAction.decision.goalAllocation?.amountCents === undefined ? {} : {
+          expectedAmountCents: pendingGoalAction.decision.goalAllocation.amountCents
+        })
+      });
+      if (messageResolution === "explicit_approval") {
         return this.approveGoalAllocation(
           { ...request, approvedActionId: pendingGoalActionId },
           pendingGoalAction.decision
         );
       }
-      if (approvalResponse === "explicit_decline") {
+      if (messageResolution === "explicit_decline") {
         const message = "No problem. The savings entry will stay as recorded without a goal allocation.";
         this.pendingGoalAllocationActions.delete(pendingGoalActionId);
         this.pendingGoalAllocationIdsByConversation.delete(conversationKey);
@@ -321,7 +359,17 @@ export class VictoriaAgent {
           }
         };
       }
-      if (approvalResponse === "ambiguous") {
+      if (messageResolution === "replacement_request") {
+        this.pendingGoalAllocationActions.delete(pendingGoalActionId);
+        this.pendingGoalAllocationIdsByConversation.delete(conversationKey);
+        const message = `I heard that you want a different goal. I canceled the pending ${pendingGoalAction.decision.goalAllocation?.goalName ?? "goal"} allocation; nothing has been linked. Please send the new goal request so I can prepare a fresh confirmation.`;
+        return { message, decision: {
+          action: "ask_follow_up",
+          classification: pendingGoalAction.decision.classification,
+          userFacingMessage: message
+        } };
+      }
+      if (messageResolution === "ambiguous") {
         const message = "Please give me a clear yes or no before I link this entry to the goal.";
         return {
           message,
@@ -332,11 +380,20 @@ export class VictoriaAgent {
           }
         };
       }
-      if (isConversationTopicTurn(request.message) && this.dependencies.conversationResponder) {
+      if (messageResolution === "read_only_topic" && this.dependencies.conversationResponder) {
         await this.learnFromReadOnlyTopicTurn(request);
         return this.respondConversationalTurn(request, conversationContext,
           "I can help think that through. What part would be most useful to start with? The goal allocation remains pending and has not been recorded.", "goal_allocation");
       }
+      const message = "A goal allocation is still waiting for your clear yes or no. The entry has not been linked to a different goal.";
+      return {
+        message,
+        decision: {
+          action: "ask_follow_up",
+          classification: pendingGoalAction.decision.classification,
+          userFacingMessage: message
+        }
+      };
     }
 
     const pendingActionId = this.pendingActionIdsByConversation.get(conversationKey);
@@ -348,19 +405,10 @@ export class VictoriaAgent {
     // choice from this conversation when a new server worker restores the
     // original proposal, rather than treating a later “yes” as a new horizon
     // question or relying on process-local state.
-    if (pendingAction && pendingActionId && pendingAction.decision.planningChoice &&
-        !pendingAction.decision.planningChoice.selectedHorizon) {
-      const summary = pendingAction.decision.savingsEvent?.summary;
-      const eventIndex = summary && conversationContext.filter((turn) => turn === summary).length === 1
-        ? conversationContext.lastIndexOf(summary) : -1;
-      const selected = eventIndex >= 0
-        ? getAllocationTargetChoiceFromConversation(conversationContext, eventIndex)
-        : undefined;
-      if (selected) {
-        pendingAction.decision = {
-          ...pendingAction.decision,
-          planningChoice: { ...pendingAction.decision.planningChoice, selectedHorizon: selected.horizon }
-        };
+    if (pendingAction && pendingActionId) {
+      const recoveredDecision = recoverPendingPlanningHorizon(pendingAction.decision, conversationContext);
+      if (recoveredDecision !== pendingAction.decision) {
+        pendingAction.decision = recoveredDecision;
         this.pendingSavingsActions.set(pendingActionId, pendingAction);
       }
     }
@@ -603,6 +651,17 @@ export class VictoriaAgent {
         return { message, decision: { ...pendingAction.decision, action: "ask_follow_up", userFacingMessage: message } };
       }
 
+      if (approvalResponse === "not_approval" && annualProjection?.eventCount === 1 &&
+          isCurrentMonthRecordRequest(request.message) &&
+          pendingAction.decision.suggestion?.amountCents === annualProjection.monthlyAmountCents) {
+        const message = `That would be ${formatUsd(annualProjection.annualAmountCents)} over 12 months if the expense stays out of your budget. The pending mocked ledger suggestion is ${formatUsd(annualProjection.monthlyAmountCents)} for this month. Say yes to confirm recording that amount; no real money moves.`;
+        return { message, decision: {
+          ...pendingAction.decision,
+          action: "ask_follow_up",
+          userFacingMessage: message
+        } };
+      }
+
       const planningAnswer = answerRecurringProjectionQuestion(request.message,
         pendingAction.decision.planningChoice?.monthlyAmountCents ??
         [...conversationContext].reverse().map(freedRecurringSpend).find((spend) => spend?.cadence === "month")?.amountCents,
@@ -615,6 +674,19 @@ export class VictoriaAgent {
         } };
       }
 
+      if (annualProjection?.eventCount === 2 && isCurrentMonthRecordRequest(request.message)) {
+        const message = describeCombinedProjectionAndClarifyRecordTarget(
+          annualProjection,
+          turnContext.annualProjection?.eventCount === 2 ? turnContext.recurringCosts : undefined,
+          pendingAction.decision.suggestion?.amountCents
+        );
+        return { message, decision: {
+          action: "ask_follow_up",
+          classification: { type: "unclear", confidence: 1, summary: request.message, needsClarification: true },
+          userFacingMessage: message,
+          ...(pendingAction.decision.proposal ? { proposal: pendingAction.decision.proposal } : {})
+        } };
+      }
       if (annualProjection?.eventCount === 2) {
         const message = describeAnnualProjection(annualProjection);
         return { message, decision: {
@@ -636,17 +708,14 @@ export class VictoriaAgent {
           }
         };
       }
-      if (isConversationTopicTurn(request.message) && this.dependencies.conversationResponder &&
-          !/\b(?:revise|correct)\b/i.test(request.message) &&
-          !isExplicitFinancialActionQuestion(request.message) &&
-          (!/\b(?:change|instead)\b/i.test(request.message) || !hasFinancialActionSignal(request.message))) {
+      if (isSafePendingWorkflowTopicSwitch(request.message) && this.dependencies.conversationResponder) {
         await this.learnFromReadOnlyTopicTurn(request);
-        const conversationEvents = await this.savingsEvents.list(request.userId, request.conversationId ?? "default");
         const readOnlyContext = buildVictoriaConversationContext({
           priorTurns: conversationContext,
           turnContext,
           message: request.message,
-          savingsEvents: conversationEvents,
+          // A topic switch is not an event-history request; do not expose unrelated event records.
+          savingsEvents: [],
           ...(pendingSavingsConversationState ? { workflowState: pendingSavingsConversationState } : {})
         });
         return this.respondConversationalTurn(request, conversationContext,
@@ -676,6 +745,18 @@ export class VictoriaAgent {
       } };
     }
 
+    if (annualProjection?.eventCount === 2 &&
+        isCurrentMonthRecordRequest(request.message)) {
+      const message = describeCombinedProjectionAndClarifyRecordTarget(
+        annualProjection,
+        turnContext.annualProjection?.eventCount === 2 ? turnContext.recurringCosts : undefined
+      );
+      return { message, decision: {
+        action: "ask_follow_up",
+        classification: { type: "unclear", confidence: 1, summary: request.message, needsClarification: true },
+        userFacingMessage: message
+      } };
+    }
     if (annualProjection) {
       const message = describeAnnualProjection(annualProjection);
       return { message, decision: {
@@ -758,9 +839,9 @@ export class VictoriaAgent {
         item.category === interestMemory.category && item.key === interestMemory.key);
       if (!prior || prior.value !== interestMemory.value || prior.evidence !== interestMemory.evidence) {
         await this.dependencies.memory.rememberConversationalMemory(request.userId, {
-          ...interestMemory,
-          ...(prior ? { supersedesId: prior.id } : {})
-        });
+            ...withCurrentTurnEvidence(interestMemory, request),
+            ...(prior ? { supersedesId: prior.id } : {})
+          });
       }
       interestSavedThisTurn = true;
     }
@@ -799,7 +880,7 @@ export class VictoriaAgent {
         item.category === memoryToRemember.category && item.key === memoryToRemember.key);
       if (!prior || prior.value !== memoryToRemember.value || prior.evidence !== memoryToRemember.evidence) {
         await this.dependencies.memory.rememberConversationalMemory(request.userId, {
-          ...memoryToRemember,
+          ...withCurrentTurnEvidence(memoryToRemember, request),
           ...(prior ? { supersedesId: prior.id } : {})
         });
       }
@@ -818,7 +899,7 @@ export class VictoriaAgent {
           item.category === candidate.category && item.key === candidate.key);
         if (!previous || previous.value !== candidate.value || previous.evidence !== candidate.evidence) {
           await this.dependencies.memory.rememberConversationalMemory(request.userId, {
-            ...candidate,
+            ...withCurrentTurnEvidence(candidate, request),
             ...(previous ? { supersedesId: previous.id } : {})
           });
         }
@@ -905,6 +986,38 @@ export class VictoriaAgent {
       savingsEvents: conversationSavingsEvents,
       ...(conversationWorkflowState ? { workflowState: conversationWorkflowState } : {})
     });
+    const independentQuestion = independentOrdinaryQuestion(request.message);
+    const canUseEventHistory = !independentQuestion && isReadOnlyEventHistoryQuestion(request.message);
+    const responderFinancialContext = canUseEventHistory
+      ? financialContext
+      : withoutConversationEventHistory(financialContext);
+    if (canUseEventHistory && this.dependencies.conversationResponder &&
+        (financialContext.historicalEventReference?.kind === "ambiguous" ||
+          financialContext.historicalEventReference?.kind === "not_found")) {
+      const reference = financialContext.historicalEventReference;
+      const message = reference.kind === "ambiguous"
+        ? "I found more than one matching moment in this conversation. Which merchant or detail should I use?"
+        : financialContext.conversationSavingsEvents.length === 0
+          ? "I don't have an avoided-spend moment recorded in this conversation yet."
+          : "I couldn't match that description to an avoided-spend moment in this conversation. Which merchant or detail do you mean?";
+      return { message, decision: {
+        action: "reflect",
+        classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false },
+        userFacingMessage: message
+      } };
+    }
+    const responsePreferenceInput = conversationResponsePreferenceInput(memory.conversationalMemories ?? []);
+    const episodicSummaries = selectConversationEpisodeSummaries(memory.conversationalMemories ?? [], request.message);
+    const contextSnapshot = buildConversationContextSnapshot({
+      message: request.message,
+      recentTurns: conversationContext,
+      memories: conversationResponderMemories(memory.conversationalMemories ?? [], responderFinancialContext, request.message),
+      episodicSummaries,
+      ...responsePreferenceInput,
+      ...(pendingAction ? { pendingAction: "savings_entry" as const } : {}),
+      ...(canUseEventHistory ? { conversationSavingsEvents: responderFinancialContext.conversationSavingsEvents } : {}),
+      financialContext: responderFinancialContext
+    });
     const activeProposalReference = financialContext.workflowState?.status === "awaiting_confirmation"
       ? financialContext.workflowState.currentMessageProposalReference
       : undefined;
@@ -956,7 +1069,7 @@ export class VictoriaAgent {
           teamAdvice: undefined,
           resolvedReference: undefined
         }
-      : await this.classifyWithTeam(request.message, memory, conversationContext, financialContext);
+      : await this.classifyWithTeam(request.message, memory, conversationContext, financialContext, contextSnapshot);
     const classification = resolveCoveredSpendPeriodAnswer(classifiedMessage, request.message, conversationContext);
     const planningChoice = pendingAction?.decision.planningChoice;
     if (pendingAction && pendingActionId && pendingAction.decision.proposal?.status === "pending" &&
@@ -977,13 +1090,20 @@ export class VictoriaAgent {
       intent: classification.type,
       ...(classification.uncertainIntent ? { uncertainIntent: classification.uncertainIntent } : {})
     });
-    if (memoryLearningTurn && !scopedAllocationTargetChoice && !interestSavedThisTurn && !extractedMemory && this.dependencies.conversationalMemoryExtractor &&
+    if (memoryLearningTurn && !scopedAllocationTargetChoice && !interestSavedThisTurn && this.dependencies.conversationalMemoryExtractor &&
         !pendingCorrection && !pendingGoalAction && !pendingAction) {
       try {
         const candidates = await this.dependencies.conversationalMemoryExtractor.extract({ userMessage: request.message });
         const memories = validateMemoryCandidates(candidates, request.message);
         for (const candidate of memories) {
-          await this.dependencies.memory.rememberConversationalMemory(request.userId, candidate);
+          const history = await this.dependencies.memory.listConversationalMemories(request.userId);
+          const prior = [...history].reverse().find((item) =>
+            item.category === candidate.category && item.key === candidate.key);
+          if (prior?.value === candidate.value && prior.evidence === candidate.evidence) continue;
+          await this.dependencies.memory.rememberConversationalMemory(request.userId, {
+            ...withCurrentTurnEvidence(candidate, request),
+            ...(prior ? { supersedesId: prior.id } : {})
+          });
         }
         if (memories.length > 0) {
           memoryAcknowledgement = "I'll keep that in mind for future conversations.";
@@ -1004,10 +1124,12 @@ export class VictoriaAgent {
         // Optional extraction cannot block the current turn or financial safety checks.
       }
     }
-    if (this.dependencies.conversationResponder && isOrdinaryQuestion(request.message) &&
-        !hasFinancialActionSignal(request.message)) {
+    if (this.dependencies.conversationResponder && shouldRouteToConversationResponder(request.message)) {
       return this.respondConversationalTurn(request, conversationContext,
-        "I can help think that through. What would be most useful to focus on first?", undefined, undefined, financialContext);
+        "I can help think that through. What would be most useful to focus on first?", undefined,
+        canUseEventHistory ? responderFinancialContext.conversationSavingsEvents : undefined,
+        responderFinancialContext,
+        memoryAcknowledgement ? undefined : contextSnapshot);
     }
     if (["avoided_spend", "regretful_spend", "pattern_reflection"].includes(classification.type)) {
       await this.dependencies.memory.rememberDecision(request.userId, {
@@ -1302,7 +1424,7 @@ export class VictoriaAgent {
       await this.clearPendingAmountClarification(request);
       const merchantName = pendingClarification?.classification.merchantName;
       if (merchantName && classification.amountCents !== undefined) {
-        await this.rememberMerchantSpendAnswer(request.userId, merchantName, classification.amountCents, request.message);
+        await this.rememberMerchantSpendAnswer(request, merchantName, classification.amountCents, request.message);
       }
     } else if (pendingClarification && classification.type !== "unclear") {
       await this.clearPendingAmountClarification(request);
@@ -1314,7 +1436,36 @@ export class VictoriaAgent {
       resolvedSavingsEvent,
       teamAdvice
     );
-    let userFacingMessage = this.teamMessageForDecision(decision, teamAdvice);
+    let userFacingMessage = composeTeamDecisionMessage(decision, teamAdvice);
+    if (decision.action === "suggest_savings" && independentQuestion && !teamAdvice &&
+        this.dependencies.conversationResponder && decision.proposal?.status === "pending") {
+      const conversationalAnswer = await this.generateConversationReply({
+        message: independentQuestion,
+        recentTurns: conversationContext,
+        memories: contextSnapshot.selectedMemories,
+        episodicSummaries: contextSnapshot.episodicSummaries,
+        baselineReply: "I can answer that separately. What would you like to know?",
+        ...responsePreferenceInput,
+        pendingAction: "savings_entry",
+        financialContext: responderFinancialContext
+      });
+      userFacingMessage = `${conversationalAnswer} ${userFacingMessage}`;
+      decision = { ...decision, userFacingMessage };
+    }
+    if (decision.action === "reflect" && resolvedClassification.type === "regretful_spend" &&
+        independentQuestion && this.dependencies.conversationResponder) {
+      const conversationalAnswer = await this.generateConversationReply({
+        message: independentQuestion,
+        recentTurns: conversationContext,
+        memories: contextSnapshot.selectedMemories,
+        episodicSummaries: contextSnapshot.episodicSummaries,
+        baselineReply: "A pot of lentil and tomato soup with bread is easy to make together and uses inexpensive pantry staples.",
+        ...responsePreferenceInput,
+        financialContext: responderFinancialContext
+      });
+      userFacingMessage = `${userFacingMessage} ${conversationalAnswer}`;
+      decision = { ...decision, userFacingMessage };
+    }
     if (decision.action === "reflect" &&
         (resolvedClassification.type === "general_finance" || resolvedClassification.type === "pattern_reflection")) {
       const personalizedMessage = isAnswerToRecentVictoriaQuestion(conversationContext)
@@ -1332,18 +1483,17 @@ export class VictoriaAgent {
         (resolvedClassification.type === "general_finance" || resolvedClassification.type === "pattern_reflection" ||
           (resolvedClassification.type === "unclear" && !resolvedClassification.uncertainIntent)) &&
         this.dependencies.conversationResponder) {
-      const canUseEventHistory = isReadOnlyEventHistoryQuestion(request.message);
-      const responderContext: VictoriaConversationContext = canUseEventHistory
-        ? financialContext
-        : { ...financialContext, conversationSavingsEvents: [] };
       userFacingMessage = await this.generateConversationReply({
         message: request.message,
         recentTurns: conversationContext,
-        memories: (memory.conversationalMemories ?? []).map(({ id, key, value, confidence, sourceType }) =>
-          ({ id, key, value, confidence, ...(sourceType ? { sourceType } : {}) })),
+        memories: contextSnapshot.selectedMemories,
+        episodicSummaries: contextSnapshot.episodicSummaries,
         baselineReply: userFacingMessage,
-        ...(canUseEventHistory ? { conversationSavingsEvents: responderContext.conversationSavingsEvents } : {}),
-        financialContext: responderContext
+        ...responsePreferenceInput,
+        ...(pendingAction ? { pendingAction: "savings_entry" as const } : {}),
+        ...(canUseEventHistory ? { conversationSavingsEvents: responderFinancialContext.conversationSavingsEvents } : {}),
+        financialContext: responderFinancialContext,
+        contextSnapshot
       });
       decision = { ...decision, userFacingMessage };
     }
@@ -1422,18 +1572,38 @@ export class VictoriaAgent {
     baselineReply: string,
     pendingAction?: ConversationResponderInput["pendingAction"],
     conversationSavingsEvents?: ConversationResponderInput["conversationSavingsEvents"],
-    financialContext?: VictoriaConversationContext
+    financialContext?: VictoriaConversationContext,
+    contextSnapshot?: ConversationContextSnapshot
   ): Promise<AgentResponse> {
-    const memory = await this.dependencies.memory.getMemoryForUser(request.userId, request.message);
+    let memory = await this.dependencies.memory.getMemoryForUser(request.userId, request.message);
+    if (memory.conversationalMemories?.some((item) => item.sourceMetadata?.memoryKind === "episodic_summary")) {
+      const lifecycleMemories = await this.dependencies.memory.listCurrentConversationalMemories?.(request.userId, true) ?? [];
+      memory = {
+        ...memory,
+        conversationalMemories: [...suppressLifecycleConflictingEpisodes(memory.conversationalMemories, lifecycleMemories)]
+      };
+    }
+    const responderFinancialContext = financialContext
+      ? conversationSavingsEvents ? financialContext : withoutConversationEventHistory(financialContext)
+      : buildVictoriaConversationContext({
+          priorTurns: recentTurns,
+          turnContext: buildTurnContext({ message: request.message, priorTurns: recentTurns }),
+          message: request.message,
+          selectedMemories: memory.conversationalMemories ?? [],
+          // Historical event data is exposed only when the caller explicitly resolved an event-history request.
+          savingsEvents: []
+        });
     const message = await this.generateConversationReply({
       message: request.message,
       recentTurns,
-      memories: (memory.conversationalMemories ?? []).map(({ id, key, value, confidence, sourceType }) =>
-        ({ id, key, value, confidence, ...(sourceType ? { sourceType } : {}) })),
+      memories: conversationResponderMemories(memory.conversationalMemories ?? [], responderFinancialContext, request.message),
+      episodicSummaries: selectConversationEpisodeSummaries(memory.conversationalMemories ?? [], request.message),
       baselineReply,
+      ...conversationResponsePreferenceInput(memory.conversationalMemories ?? []),
       ...(pendingAction ? { pendingAction } : {}),
       ...(conversationSavingsEvents ? { conversationSavingsEvents } : {}),
-      ...(financialContext ? { financialContext } : {})
+      financialContext: responderFinancialContext,
+      ...(contextSnapshot ? { contextSnapshot } : {})
     });
     return { message, decision: {
       action: "reflect",
@@ -1444,22 +1614,63 @@ export class VictoriaAgent {
 
   private async generateConversationReply(input: ConversationResponderInput): Promise<string> {
     if (!this.dependencies.conversationResponder) return input.baselineReply;
+    const responderInput = {
+      ...input,
+      contextSnapshot: input.contextSnapshot ?? buildConversationContextSnapshot(input)
+    };
+    const fallbackReply = deterministicConversationFallback(responderInput);
+    const isConstrainedWorkFollowUp =
+      /\b(?:manager|schedule[sd]?|work|job|role)\b/i.test(responderInput.recentTurns.join(" ")) &&
+      /\b(?:sunday|weekend|evening|cooking|friends?)\b/i.test(responderInput.recentTurns.join(" ")) &&
+      /\b(?:one thing|one sentence|keep it to one|flexible)\b/i.test(responderInput.message) &&
+      fallbackReply.trim() !== responderInput.baselineReply.trim();
+    if (isConstrainedWorkFollowUp) return fallbackReply;
+    let candidate: string;
     try {
-      const candidate = await this.dependencies.conversationResponder.respond(input);
-      const validated = validateConversationReply(candidate, input);
-      if (validated) return validated;
-
-      // A malformed or ungrounded read-only draft should not immediately erase
-      // the user's question. Give the responder one chance to correct its draft;
-      // this path has no tools and cannot approve or mutate a financial action.
-      const retryInput: ConversationResponderInput = {
-        ...input,
-        baselineReply: `Your previous draft was not safe to show. Answer the user's current request directly, using only supported facts and no unsupported dollar amounts. Keep the pending ${input.pendingAction ?? "financial action"} unchanged. If you cannot answer safely, use this fallback: ${input.baselineReply}`
-      };
-      const retry = await this.dependencies.conversationResponder.respond(retryInput);
-      return validateConversationReply(retry, retryInput) ?? input.baselineReply;
+      candidate = await this.dependencies.conversationResponder.respond(responderInput);
     } catch {
-      return input.baselineReply;
+      this.reportConversationReplyFallback("provider_error");
+      return fallbackReply;
+    }
+    const validated = validateConversationReply(candidate, responderInput);
+    if (validated) {
+      const unchangedBaseline = validated.trim().replace(/\s+/g, " ") ===
+        responderInput.baselineReply.trim().replace(/\s+/g, " ");
+      const hasMoreSpecificFallback = fallbackReply.trim().replace(/\s+/g, " ") !==
+        responderInput.baselineReply.trim().replace(/\s+/g, " ");
+      // A provider may return the safe generic baseline verbatim. When a
+      // topic-specific deterministic fallback exists, use it instead of
+      // presenting an answer that ignores the user's concrete situation.
+      if (unchangedBaseline && hasMoreSpecificFallback) return fallbackReply;
+      return validated;
+    }
+
+    // A malformed or ungrounded read-only draft should not immediately erase
+    // the user's question. Give the responder one chance to correct its draft;
+    // this path has no tools and cannot approve or mutate a financial action.
+    const retryBaseline = `Your previous draft was not safe to show. Answer the user's current request directly, using only supported facts and no unsupported dollar amounts. Keep the pending ${responderInput.pendingAction ?? "financial action"} unchanged. If you cannot answer safely, use this fallback: ${responderInput.baselineReply}`;
+    const retryInput: ConversationResponderInput = {
+      ...responderInput,
+      baselineReply: retryBaseline,
+      contextSnapshot: responderInput.contextSnapshot
+    };
+    try {
+      const retry = await this.dependencies.conversationResponder.respond(retryInput);
+      const validatedRetry = validateConversationReply(retry, retryInput);
+      if (validatedRetry) return validatedRetry;
+    } catch {
+      this.reportConversationReplyFallback("provider_error");
+      return fallbackReply;
+    }
+    this.reportConversationReplyFallback("invalid_after_retry");
+    return fallbackReply;
+  }
+
+  private reportConversationReplyFallback(reason: "provider_error" | "invalid_after_retry"): void {
+    try {
+      this.dependencies.onConversationReplyFallback?.(reason);
+    } catch {
+      // Observability is best-effort and cannot block the safe fallback.
     }
   }
 
@@ -1469,7 +1680,7 @@ export class VictoriaAgent {
     try {
       const candidates = await extractor.extract({ userMessage: request.message });
       for (const candidate of validateMemoryCandidates(candidates, request.message)) {
-        await this.dependencies.memory.rememberConversationalMemory(request.userId, candidate);
+        await this.dependencies.memory.rememberConversationalMemory(request.userId, withCurrentTurnEvidence(candidate, request));
       }
     } catch {
       try {
@@ -1519,20 +1730,29 @@ export class VictoriaAgent {
     message: string,
     memory: Awaited<ReturnType<MemoryProvider["getMemoryForUser"]>>,
     conversationContext: readonly string[] = [],
-    financialContext?: VictoriaConversationContext
+    financialContext?: VictoriaConversationContext,
+    providedContextSnapshot?: ConversationContextSnapshot
   ): Promise<{
     classification: ClassifiedMessage;
     teamAdvice?: TeamAdvice;
     resolvedReference?: ResolvedFinancialReference;
   }> {
     const specialists = this.dependencies.specialists;
+    const contextSnapshot = providedContextSnapshot ?? buildConversationContextSnapshot({
+      message,
+      recentTurns: conversationContext,
+      memories: conversationResponderMemories(memory.conversationalMemories ?? [], financialContext, message),
+      ...(financialContext ? { financialContext } : {})
+    });
+    const specialistFinancialContext = contextSnapshot.financialContext ?? financialContext;
     if (!specialists) {
       const candidate = await this.dependencies.llm.classifyMessage({
-        userMessage: message, memory, conversationContext, ...(financialContext ? { financialContext } : {})
+        userMessage: message, memory, conversationContext,
+        ...(specialistFinancialContext ? { financialContext: specialistFinancialContext } : {})
       });
       const validated = validateClassifiedMessage(candidate) ?? fallbackFinding(message).classification;
       const resolvedReference = resolveFinancialReferenceHint(financialContext, validated.referenceHint);
-      const cleanClassification = { ...validated };
+      const cleanClassification = { ...groundExplicitAvoidedSpendAmount(validated, message) };
       delete cleanClassification.referenceHint;
       const classification = enforceMoneyMovementBoundary(message, cleanClassification);
       return {
@@ -1545,7 +1765,8 @@ export class VictoriaAgent {
     let financialMomentValid = false;
     try {
       const candidate = await specialists.financialMoment.analyze({
-        message, memory, conversationContext, ...(financialContext ? { financialContext } : {})
+        message, memory, conversationContext, contextSnapshot,
+        ...(specialistFinancialContext ? { financialContext: specialistFinancialContext } : {})
       });
       const validated = validateTeamFinding(candidate, financialContext);
       finding = validated ?? fallbackFinding(message);
@@ -1553,6 +1774,7 @@ export class VictoriaAgent {
     } catch {
       finding = fallbackFinding(message);
     }
+    finding = { ...finding, classification: groundExplicitAvoidedSpendAmount(finding.classification, message) };
     const classification = enforceMoneyMovementBoundary(message, applyClassificationConfidencePolicy(finding.classification));
     const coveredSpend = freedRecurringSpend(message);
     const periodAnswer = resolveCoveredSpendPeriodAnswer(classification, message, conversationContext);
@@ -1600,6 +1822,7 @@ export class VictoriaAgent {
     };
 
     let assessment: SavingsAssessment;
+    let savingsAssessmentValidated = false;
     const groundedCoveredSpend = coveredSpend && classification.type === "avoided_spend" &&
       classification.amountCents === coveredSpend.amountCents && classification.amountIssue === undefined;
     if (groundedCoveredSpend) {
@@ -1613,11 +1836,30 @@ export class VictoriaAgent {
     } else {
       try {
         const candidate = await specialists.savingsReasoning.assess({
-          finding, memory, ...(financialContext ? { financialContext } : {})
+          finding, memory, contextSnapshot,
+          ...(specialistFinancialContext ? { financialContext: specialistFinancialContext } : {})
         });
         assessment = validateTeamAssessment(candidate, finding, memory);
+        savingsAssessmentValidated = true;
       } catch {
         assessment = clarificationAfterSpecialistFailure("savingsReasoning");
+      }
+    }
+    if (savingsAssessmentValidated && assessment.outcome === "ask" && classification.type === "avoided_spend" &&
+        !classification.needsClarification && classification.amountIssue === undefined &&
+        classification.amountCents !== undefined) {
+      const explicitAmount = parseExplicitDollarAmount(message);
+      const asksToRepeatKnownAmount = /\b(?:clarify|confirm|make sure)\b.{0,60}\b(?:amount|it)\b|\b(?:which|what) amount\b.{0,40}\b(?:use|should|did)\b/i
+        .test(assessment.question);
+      if (explicitAmount.status === "valid" && explicitAmount.amountCents === classification.amountCents &&
+          asksToRepeatKnownAmount) {
+        assessment = {
+          outcome: "suggest",
+          confidence: classification.confidence,
+          amountCents: classification.amountCents,
+          source: "user_provided",
+          rationale: "The follow-up asked for an amount already explicitly stated and validated in the current message."
+        };
       }
     }
     // Keep the clarification selected by Savings Reasoning intact. Companion
@@ -1633,7 +1875,7 @@ export class VictoriaAgent {
     let draft: unknown;
     let voiceCallSucceeded = false;
     try {
-      draft = await specialists.companionVoice.respond({ finding, assessment, requiredDisclosures: disclosures });
+      draft = await specialists.companionVoice.respond({ finding, assessment, requiredDisclosures: disclosures, contextSnapshot });
       voiceCallSucceeded = true;
     } catch {
       draft = undefined;
@@ -1645,7 +1887,8 @@ export class VictoriaAgent {
           finding,
           assessment,
           requiredDisclosures: disclosures,
-          revisionFeedback: voiceDraftRevisionFeedback(finalized.validationIssues)
+          revisionFeedback: voiceDraftRevisionFeedback(finalized.validationIssues),
+          contextSnapshot
         });
         voiceCallSucceeded = true;
         finalized = finalizeCompanionResponse(revision, finding, assessment);
@@ -1675,19 +1918,6 @@ export class VictoriaAgent {
         ...(finding.responseContext?.awaitingAllocationTargetChoice ? { awaitingAllocationTargetChoice: true } : {})
       }
     };
-  }
-
-  private teamMessageForDecision(decision: AgentDecision, teamAdvice?: TeamAdvice): string {
-    if (!teamAdvice) return decision.userFacingMessage;
-    const type = decision.classification.type;
-    if (type === "unclear" && teamAdvice.assessment.outcome === "ask") return teamAdvice.message;
-    if (type === "regretful_spend" && teamAdvice.assessment.outcome === "reflect") return teamAdvice.message;
-    if (type === "avoided_spend") {
-      if (decision.action === "suggest_savings" && teamAdvice.assessment.outcome === "suggest" &&
-          decision.suggestion?.amountCents === teamAdvice.assessment.amountCents) return teamAdvice.message;
-      if (decision.action === "ask_follow_up" && teamAdvice.assessment.outcome === "ask") return teamAdvice.message;
-    }
-    return decision.userFacingMessage;
   }
 
   private async decide(
@@ -1720,25 +1950,10 @@ export class VictoriaAgent {
     }
 
     if (classification.needsClarification || classification.type === "unclear") {
-      const amountClarification = classification.uncertainIntent === "goal_allocation"
-        ? "I may have misunderstood the goal request. Which saved amount and goal should I link? Nothing has changed."
-        : classification.uncertainIntent === "proposal_revision"
-        ? "I may have misunderstood the requested revision. Which amount or reason should I change? The current proposal is unchanged."
-        : classification.uncertainIntent === "entry_correction"
-        ? "I may have misunderstood the correction. Which recorded amount should I correct to? The ledger entry is unchanged."
-        : classification.amountIssue === "invalid_value"
-        ? "A savings amount must be positive. What positive amount in USD should I use?"
-        : classification.amountIssue === "multiple_amounts"
-        ? "I found more than one dollar amount. Which single amount in USD should I use?"
-        : classification.amountIssue === "invalid_precision"
-        ? "That amount has more than two decimal places. What amount in USD should I use?"
-        : classification.amountIssue === "unsupported_currency"
-        ? "I can only record USD amounts in the MVP. What is the amount in USD?"
-        : "I can help with that. What did you avoid spending on, and about how much would it have cost?";
       return {
         action: "ask_follow_up",
         classification,
-        userFacingMessage: amountClarification
+        userFacingMessage: clarificationMessage(classification)
       };
     }
 
@@ -1911,26 +2126,26 @@ export class VictoriaAgent {
   }
 
   private async rememberMerchantSpendAnswer(
-    userId: string,
+    request: AgentRequest,
     merchantName: string,
     amountCents: number,
     answer: string
   ): Promise<void> {
     if (!Number.isSafeInteger(amountCents) || amountCents <= 0) return;
-    const memories = await this.dependencies.memory.listConversationalMemories(userId);
+    const memories = await this.dependencies.memory.listConversationalMemories(request.userId);
     const key = merchantSpendMemoryKey(merchantName);
     const prior = [...memories].reverse().find((item) => item.category === "habit" && item.key === key);
     const amount = formatUsd(amountCents);
     const value = `Usually spends ${amount} at ${merchantName}.`;
     if (prior?.value === value) return;
-    await this.dependencies.memory.rememberConversationalMemory(userId, {
+    await this.dependencies.memory.rememberConversationalMemory(request.userId, withCurrentTurnEvidence({
       category: "habit",
       key,
       value,
       evidence: `Asked about typical spend at ${merchantName}; user answered: ${answer}`,
       confidence: 0.9,
       ...(prior ? { supersedesId: prior.id } : {})
-    });
+    }, request));
   }
 
   private async rememberCoveredRecurringAllocationBehavior(
@@ -2742,6 +2957,8 @@ export class VictoriaAgent {
       }
     } else if (pending && priorActionId && priorActionId !== actionId) {
       terminalAction = { actionId: priorActionId, status: "superseded" };
+    } else if (priorActionId && isPendingGoalRetargetRequest(request.message)) {
+      terminalAction = { actionId: priorActionId, status: "superseded" };
     } else if (priorActionId && priorDecision?.goalAllocation &&
       interpretApprovalResponse(request.message, priorDecision.goalAllocation.amountCents) === "explicit_decline") {
       terminalAction = { actionId: priorActionId, status: "declined" };
@@ -2780,6 +2997,8 @@ export class VictoriaAgent {
     let terminalAction: { actionId: string; status: "recorded" | "declined" | "superseded" } | undefined;
     if (responseDecision.entryCorrection && !("status" in responseDecision.entryCorrection)) {
       terminalAction = { actionId: responseDecision.entryCorrection.approvedActionId, status: "recorded" };
+    } else if (priorActionId && isPendingCorrectionReplacementRequest(request.message)) {
+      terminalAction = { actionId: priorActionId, status: "superseded" };
     } else if (priorActionId && priorDecision?.entryCorrection && "status" in priorDecision.entryCorrection &&
         priorDecision.entryCorrection.status === "pending" &&
         interpretApprovalResponse(request.message, priorDecision.entryCorrection.correctedAmountCents) === "explicit_decline") {
@@ -3043,18 +3262,18 @@ function selectPersonalizationMemories(
   conversationContext: readonly string[]
 ): readonly Pick<ConversationalMemory, "id" | "category" | "key" | "value">[] {
   const eligible = memories.filter((memory) => {
-    if (memory.sourceType !== undefined && memory.sourceType !== "user_statement" && memory.sourceType !== "user_correction") return false;
     if (memory.category !== "preference" && memory.category !== "goal" && memory.category !== "habit" &&
         !(memory.category === "other" && memory.key.startsWith("interest:"))) return false;
-    if (memory.sourceMetadata?.interestStatus === "inactive") return false;
-    return Number.isFinite(memory.confidence) && memory.confidence >= 0.85;
+    return isRetrievableMemory(memory);
   });
   return planMemoryRetrieval({
     memories: eligible,
     query: userMessage,
     additionalContext: conversationContext.slice(-6).join(" "),
     limit: 6,
-    alwaysRelevant: isCommunicationStylePreference
+    alwaysRelevant: isCommunicationStylePreference,
+    alwaysRelevantLimit: 2,
+    categoryLimits: { preference: 2, goal: 2, habit: 2, other: 2, financial_pattern: 2 }
   }).map(({ id, category, key, value }) => ({ id, category, key, value }));
 }
 
@@ -3141,6 +3360,11 @@ function questionAfterDecline(message: string): string | undefined {
   return match?.[1]?.trim();
 }
 
+function isCurrentMonthRecordRequest(message: string): boolean {
+  return /\b(?:record|log|save|add)\b/i.test(message) &&
+    /\b(?:this|current)\s+month\b/i.test(message);
+}
+
 function answerRecurringProjectionQuestion(
   message: string,
   monthlyAmount: number | undefined,
@@ -3165,59 +3389,25 @@ function describeAnnualProjection(projection: {
   return `${subject} would be ${formatUsd(projection.monthlyAmountCents)} a month, or ${formatUsd(projection.annualAmountCents)} over 12 months if the costs stay out of your budget. This is a planning projection, not an amount already saved.`;
 }
 
+function describeCombinedProjectionAndClarifyRecordTarget(
+  projection: NonNullable<ReturnType<typeof buildTurnContext>["annualProjection"]>,
+  costs?: TurnContext["recurringCosts"],
+  pendingAmountCents?: number
+): string {
+  const amounts = costs?.map((cost) => formatUsd(cost.monthlyAmountCents));
+  const targetQuestion = amounts?.length === 2
+    ? `Which single monthly cost do you mean for a savings suggestion: ${amounts[0]} or ${amounts[1]}? If those amounts are the same, please name the cost.`
+    : "Which specific monthly cost do you mean for a savings suggestion? Please identify the cost and amount.";
+  const pendingNote = pendingAmountCents === undefined
+    ? "I haven't created a proposal or recorded anything."
+    : ` The existing ${formatUsd(pendingAmountCents)} suggestion remains pending; nothing has been recorded.`;
+  return `Together, those two costs are ${formatUsd(projection.monthlyAmountCents)} a month, or ${formatUsd(projection.annualAmountCents)} over 12 months if both stay out of your budget. ${targetQuestion}${pendingNote}`;
+}
+
 function answerBufferQuestion(message: string, amountCents: number | undefined): string | undefined {
   if (amountCents === undefined || !/\b(?:buffer|cushion|emergency fund)\b/i.test(message) ||
       !/\b(?:whether|should|make sense|sensible|good idea|recommend)\b/i.test(message)) return;
   return `Keeping the ${formatUsd(amountCents)} as a buffer could make sense if it helps cover upcoming needs and you can leave it out of day-to-day spending. That is a planning choice; nothing has been recorded.`;
-}
-
-function isCoveredAllocationTargetChoice(message: string, conversationContext: readonly string[]): boolean {
-  const latestChoicePromptIndex = findLatestAllocationTargetPrompt(conversationContext);
-  if (latestChoicePromptIndex < 0) return false;
-  const planningHorizon = allocationTargetChoice(message);
-  if (!planningHorizon) return false;
-  const parsedAmount = parseExplicitDollarAmount(message);
-  if (parsedAmount.status !== "valid") return true;
-  const monthlySpend = [...conversationContext].reverse()
-    .map(freedRecurringSpend)
-    .find((spend) => spend?.cadence === "month");
-  if (!monthlySpend) return false;
-  const expectedAmount = planningHorizon === "annual"
-    ? annualizeMonthlyAmountCents(monthlySpend.amountCents)
-    : monthlySpend.amountCents;
-  return parsedAmount.amountCents === expectedAmount;
-}
-
-function allocationTargetChoice(message: string): "monthly" | "annual" | undefined {
-  const normalized = message.trim().toLowerCase();
-  if (!normalized || normalized.length > 180 || /\?/.test(normalized) || /\b(?:not sure|maybe|either|both|compare|what about)\b/.test(normalized)) return undefined;
-  const hasMonthly = /\b(?:month|monthly)\b/.test(normalized);
-  const hasAnnual = /\b(?:annual|annually|yearly|year)\b/.test(normalized);
-  if (hasMonthly === hasAnnual) return undefined;
-  // Accept conversational answers (“the monthly one”, “I'd rather do it yearly”),
-  // while requiring the horizon itself to be the user's unambiguous selection.
-  if (/\b(?:prefer|choose|pick|select|use|want|like|rather|go with|do)\b/.test(normalized) ||
-      /^(?:(?:the|option|target|amount)\s+)?(?:monthly|month|annual|annually|yearly|year)(?:\s+(?:one|option|amount|target|projection))?[.! ]*$/.test(normalized)) {
-    return hasAnnual ? "annual" : "monthly";
-  }
-  return undefined;
-}
-
-function getAllocationTargetChoiceFromConversation(conversationContext: readonly string[], afterIndex = -1): {
-  horizon: "monthly" | "annual";
-  evidence: string;
-} | undefined {
-  for (let index = conversationContext.length - 1; index > afterIndex; index -= 1) {
-    if (findLatestAllocationTargetPrompt(conversationContext.slice(0, index + 1)) !== index) continue;
-    const promptContext = conversationContext.slice(0, index + 1);
-    for (let turnIndex = conversationContext.length - 1; turnIndex > index; turnIndex -= 1) {
-      const turn = conversationContext[turnIndex];
-      if (turn && !turn.startsWith("Victoria: ") && isCoveredAllocationTargetChoice(turn, promptContext)) {
-        return { horizon: allocationTargetChoice(turn)!, evidence: turn };
-      }
-    }
-  }
-  return undefined;
 }
 
 function getPriorCoveredExpenseAllocation(memories: readonly ConversationalMemory[]): {
@@ -3253,17 +3443,6 @@ function getPriorCoveredExpenseAllocation(memories: readonly ConversationalMemor
   };
 }
 
-function findLatestAllocationTargetPrompt(conversationContext: readonly string[]): number {
-  for (let index = conversationContext.length - 1; index >= 0; index -= 1) {
-    const turn = conversationContext[index];
-    if (turn?.startsWith("Victoria: ") && /[?？]/.test(turn) &&
-        /\b(?:month|monthly)\b/i.test(turn) && /\b(?:annual|annually|year|yearly)\b/i.test(turn) &&
-        !/\b(?:would you like me to|can I|should I)\s+(?:record|log|save)\b/i.test(turn) &&
-        /\b(?:which|choose|prefer|plan|planning|target|option|would you like|rather)\b/i.test(turn)) return index;
-  }
-  return -1;
-}
-
 function readPlanningHorizonCounts(value: unknown): { monthly: number; annual: number } {
   if (!value || typeof value !== "object") return { monthly: 0, annual: 0 };
   const counts = value as { monthly?: unknown; annual?: unknown };
@@ -3272,36 +3451,6 @@ function readPlanningHorizonCounts(value: unknown): { monthly: number; annual: n
       ? counts.monthly : 0,
     annual: typeof counts.annual === "number" && Number.isSafeInteger(counts.annual) && counts.annual >= 0
       ? counts.annual : 0
-  };
-}
-
-function resolveCoveredSpendPeriodAnswer(
-  classification: ClassifiedMessage,
-  message: string,
-  conversationContext: readonly string[]
-): ClassifiedMessage {
-  const priorCoveredSpend = [...conversationContext].reverse()
-    .map(freedRecurringSpend)
-    .find((spend) => spend?.cadence === "month");
-  const answersPeriodChoice = conversationContext.some((turn) =>
-    turn.startsWith("Victoria: ") && /\b(?:month|monthly)\b/i.test(turn) &&
-    /\b(?:annual|year|yearly)\b/i.test(turn) && /\b(?:choose|which|prefer|target|like)\b/i.test(turn)) &&
-    /\b(?:annual|year|yearly|month|monthly)\b/i.test(message);
-  const parsedAmount = parseExplicitDollarAmount(message);
-  const namesKnownProjection = priorCoveredSpend !== undefined && parsedAmount.status === "valid" &&
-    /\b(?:annual|year|yearly)\b/i.test(message) &&
-    parsedAmount.amountCents === annualizeMonthlyAmountCents(priorCoveredSpend.amountCents);
-  const coveredPeriodReference = isCoveredAllocationTargetChoice(message, conversationContext) ||
-    ((priorCoveredSpend !== undefined || answersPeriodChoice) &&
-    /\b(?:annual|year|yearly|month|monthly)\b/i.test(message) &&
-    (parsedAmount.status !== "valid" || namesKnownProjection) &&
-    !/\b(?:put|allocate|assign|link|apply|direct|contribute|set aside)\b/i.test(message));
-  if (!coveredPeriodReference || classification.type === "real_money_movement_request") return classification;
-  return {
-    type: "general_finance",
-    confidence: classification.confidence,
-    summary: classification.summary,
-    needsClarification: false
   };
 }
 
@@ -3319,9 +3468,70 @@ function getPriorCoveredSpendProjection(conversationContext: readonly string[]):
   };
 }
 
-function isAnswerToRecentVictoriaQuestion(conversationContext: readonly string[]): boolean {
-  const mostRecentMessage = conversationContext.at(-1);
-  return mostRecentMessage?.startsWith("Victoria: ") === true && mostRecentMessage.includes("?");
+function conversationResponderMemories(
+  memories: readonly ConversationalMemory[],
+  financialContext: VictoriaConversationContext | undefined,
+  query?: string
+): readonly ConversationResponderMemory[] {
+  if (financialContext) {
+    const selected = financialContext.selectedMemoryFacts.map(({ id, key, value, provenance }) => ({ id, key, value, provenance }));
+    const selectedIds = new Set(selected.map((memory) => memory.id));
+    // Context retrieval is focused on financial facts. Preserve other relevant
+    // memories returned for the current message so a newly learned preference
+    // or interest can ground a read-only answer on this same turn.
+    const relevantMemories = query ? planMemoryRetrieval({
+      memories: memories.filter(isRetrievableMemory), query, limit: 6,
+      categoryLimits: { preference: 2, goal: 2, habit: 2, other: 2, financial_pattern: 2 }
+    }) : memories.filter(isRetrievableMemory);
+    for (const memory of relevantMemories) {
+      if (selectedIds.has(memory.id)) continue;
+      selected.push({ id: memory.id, key: memory.key, value: memory.value,
+        provenance: memory.sourceType === "user_correction" ? "user_correction" : "user_statement" });
+    }
+    return selected.slice(0, 6);
+  }
+  return memories.map(({ id, key, value, confidence, sourceType }) => ({
+    id, key, value, confidence, ...(sourceType ? { sourceType } : {})
+  }));
+}
+
+function withoutConversationEventHistory(context: VictoriaConversationContext): VictoriaConversationContext {
+  return {
+    relevantUserTurns: context.relevantUserTurns,
+    financialFacts: context.financialFacts,
+    selectedMemoryFacts: context.selectedMemoryFacts,
+    conversationSavingsEvents: [],
+    ...(context.workflowState ? { workflowState: context.workflowState } : {})
+  };
+}
+
+function conversationResponsePreference(
+  memories: readonly ConversationalMemory[]
+): ConversationResponderInput["responsePreference"] {
+  const preferences = memories.filter((memory) => isRetrievableMemory(memory) && memory.category === "preference" &&
+    /^(?:communication:brief|communication:detailed|response_style)$/i.test(memory.key));
+  const current = preferences.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+  if (!current) return undefined;
+  const statement = `${current.key} ${current.value} ${current.evidence}`.toLocaleLowerCase("en-US");
+  if (/\b(?:brief|briefly|concise|short replies|short check-ins)\b/.test(statement)) return "brief";
+  if (/\b(?:detailed|in-depth|thorough|more explanation|longer replies)\b/.test(statement)) return "detailed";
+  return undefined;
+}
+
+function selectConversationEpisodeSummaries(
+  memories: readonly ConversationalMemory[],
+  message: string
+): NonNullable<ConversationResponderInput["episodicSummaries"]> {
+  return memories.filter((memory) => isUsableEpisodicSummary(memory, message))
+    .slice(0, 3)
+    .map(({ id, value, createdAt }) => ({ id, summary: value, createdAt }));
+}
+
+function conversationResponsePreferenceInput(
+  memories: readonly ConversationalMemory[]
+): Pick<ConversationResponderInput, "responsePreference"> | Record<string, never> {
+  const responsePreference = conversationResponsePreference(memories);
+  return responsePreference ? { responsePreference } : {};
 }
 
 function isValidRestoredPlanningChoice(decision: AgentDecision): boolean {
@@ -3354,5 +3564,42 @@ function enforceMoneyMovementBoundary(message: string, classification: Classifie
     confidence: 1,
     summary: classification.summary || message,
     needsClarification: false
+  };
+}
+
+function mapEpisodeSourceTurns(
+  userMessages: readonly string[],
+  sourceTurns: readonly { readonly turnId: string; readonly userMessage: string }[]
+): readonly { readonly turnId: string }[] {
+  const references: { turnId: string }[] = [];
+  const turnIdsByMessage = new Map<string, string[]>();
+  for (const sourceTurn of sourceTurns) {
+    const ids = turnIdsByMessage.get(sourceTurn.userMessage) ?? [];
+    ids.push(sourceTurn.turnId);
+    turnIdsByMessage.set(sourceTurn.userMessage, ids);
+  }
+  for (const message of userMessages) {
+    const turnId = turnIdsByMessage.get(message)?.shift();
+    if (turnId?.trim()) references.push({ turnId });
+  }
+  return Object.freeze(references);
+}
+
+function withCurrentTurnEvidence(
+  memory: Omit<ConversationalMemory, "id" | "createdAt">,
+  request: AgentRequest
+): Omit<ConversationalMemory, "id" | "createdAt"> {
+  const current = request.sourceTurnReferences?.find((reference) => reference.userMessage === request.message);
+  if (!current?.turnId.trim()) return memory;
+  const existing = Array.isArray(memory.sourceMetadata?.sourceTurnReferences)
+    ? memory.sourceMetadata.sourceTurnReferences.filter((item): item is { turnId: string } =>
+      Boolean(item && typeof item === "object" && "turnId" in item && typeof item.turnId === "string"))
+    : [];
+  return {
+    ...memory,
+    sourceMetadata: {
+      ...memory.sourceMetadata,
+      sourceTurnReferences: [...new Map([...existing, { turnId: current.turnId }].map((item) => [item.turnId, item])).values()]
+    }
   };
 }

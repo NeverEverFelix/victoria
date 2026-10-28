@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createMockAgentTeamSpecialists, MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
 import { buildTransactionFinancialProfile } from "../../../src/domain/financial-profile.js";
 import { MockProfileTransactionHistoryProvider } from "../../../src/app/financial-profile/mock-profile-transaction-history-provider.js";
 import { MockTransactionHistoryProvider } from "../../fixtures/mock-transaction-history-provider.js";
 import { extractConversationalMemories } from "../../../src/agent/memory/extract-preference.js";
 import { validateMemoryCandidates } from "../../../src/agent/memory/conversational-memory-extractor.js";
+import type { ConversationResponderInput } from "../../../src/agent/conversation-responder.js";
 
 describe("explicit savings preference memory", () => {
   it("keeps an ordinary reply preference in a covered-expense turn without an interest", async () => {
@@ -1055,6 +1056,66 @@ describe("general conversational memory extraction", () => {
     expect(response.decision.suggestion).toBeUndefined();
     expect(await tools.listSavingsEntries(userId)).toEqual([]);
     expect(await tools.listSavingsGoalAllocations(userId)).toEqual([]);
+  });
+
+  it("passes only a verified remembered response-depth preference to the read-only responder", async () => {
+    const memory = new MockMemoryProvider();
+    const userId = "user_response_depth_preference";
+    await memory.rememberConversationalMemory(userId, {
+      category: "preference", key: "communication:brief", value: "Prefers brief, practical check-ins.",
+      evidence: "I prefer brief, practical check-ins.", confidence: 0.95, sourceType: "user_statement"
+    });
+    const responder = vi.fn(async (input: ConversationResponderInput) => input.baselineReply);
+    const base = createMockAgentTeamSpecialists();
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools(),
+      conversationResponder: { respond: responder },
+      specialists: { ...base, financialMoment: { analyze: async ({ message }) => ({ classification: {
+        type: "general_finance", confidence: 0.9, summary: message, needsClarification: false
+      } }) } }
+    });
+
+    await agent.respond({ userId, conversationId: "response-depth-chat", message: "I'm feeling stuck. What might help?" });
+    await agent.respond({ userId, conversationId: "response-depth-chat", message: "Can you explain in detail what might help?" });
+
+    expect(responder.mock.calls[0]?.[0].responsePreference).toBe("brief");
+    expect(responder.mock.calls[0]?.[0].responseDepth).toBeUndefined();
+    expect(responder.mock.calls[1]?.[0].responsePreference).toBe("brief");
+    expect(responder.mock.calls[1]?.[0].responseDepth).toBeUndefined();
+    expect(responder.mock.calls[1]?.[0].message).toContain("in detail");
+  });
+
+  it("does not personalize from a legacy memory without provenance", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const received: string[][] = [];
+    const personalizer = {
+      async personalize({ memories }: { memories: readonly { id: string }[] }) {
+        received.push(memories.map(({ id }) => id));
+        return {
+          message: "I’ll keep it concise and practical. What would help most right now?",
+          usedMemoryIds: memories.map(({ id }) => id)
+        };
+      }
+    };
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools,
+      personalizedReplyPersonalizer: personalizer });
+    const userId = "user_legacy_memory_provenance";
+    await memory.rememberConversationalMemory(userId, {
+      category: "preference", key: "legacy_style", value: "Prefers practical replies.",
+      evidence: "I prefer practical replies.", confidence: 0.95
+    });
+    await memory.rememberConversationalMemory(userId, {
+      category: "preference", key: "verified_style", value: "Prefers concise, practical replies.",
+      evidence: "I prefer concise, practical replies.", confidence: 0.95, sourceType: "user_statement"
+    });
+
+    const response = await agent.respond({ userId, conversationId: "legacy-provenance-chat",
+      message: "I'm feeling stuck. What is a practical next step?" });
+
+    expect(received).toEqual([["memory_2"]]);
+    expect(response.message).toContain("concise and practical");
+    expect(response.decision.action).toBe("reflect");
   });
 
   it("keeps the deterministic ordinary reply when personalized wording fails validation", async () => {

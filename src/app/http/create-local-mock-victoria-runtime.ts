@@ -18,7 +18,7 @@ import { SEMANTIC_MEMORY_EMBEDDING_DIMENSIONS } from "../../agent/memory/semanti
 import { createPostgresTurnStore } from "../turns/postgres-pool.js";
 import { createVictoriaSessionAuthenticator } from "./signed-session-auth.js";
 import { createVictoriaChatHandler } from "./victoria-chat-handler.js";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { randomUUID } from "node:crypto";
 import { PostgresPendingAmountClarificationStore } from "../clarifications/postgres-pending-amount-clarification-store.js";
 import { PostgresPendingSavingsActionStore } from "../savings/postgres-pending-savings-action-store.js";
@@ -27,12 +27,21 @@ import { PostgresConversationSavingsEventStore } from "../savings/postgres-conve
 import { PostgresPendingGoalAllocationActionStore } from "../savings/postgres-pending-goal-allocation-store.js";
 import { PostgresPendingEntryCorrectionStore } from "../savings/postgres-pending-entry-correction-store.js";
 import { PostgresConversationCoordinator } from "../turns/postgres-conversation-coordinator.js";
+import { PostgresTurnRepository } from "../turns/postgres-turn-repository.js";
+import { createQueuedTurnProcessor } from "../turns/queued-turn-processor.js";
 import { createMemoryManagementHandlers } from "./memory-management-handler.js";
 import { createConversationFinishHandler } from "./conversation-finish-handler.js";
+import { createTurnResultHandler } from "./turn-result-handler.js";
+import { createQueuedTurnProcessHandler } from "./queued-turn-process-handler.js";
+import { createSubmitTurnHandler } from "./submit-turn-handler.js";
 
 export interface LocalMockVictoriaRuntime {
   readonly handler: ReturnType<typeof createVictoriaChatHandler>;
   readonly finishHandler: ReturnType<typeof createConversationFinishHandler>;
+  readonly processQueuedTurn?: ReturnType<typeof createQueuedTurnProcessor>;
+  readonly turnResultHandler?: ReturnType<typeof createTurnResultHandler>;
+  readonly processQueuedTurnHandler?: ReturnType<typeof createQueuedTurnProcessHandler>;
+  readonly submitTurnHandler?: ReturnType<typeof createSubmitTurnHandler>;
   readonly memoryManagementHandler?: ReturnType<typeof createMemoryManagementHandlers>;
   /** Adapter for a mock or injected sync service to publish its refreshed profile to chat. */
   readonly financialProfileWriter: {
@@ -62,6 +71,7 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
   let persistentSavingsTools: PostgresMockSavingsTools | undefined;
   let savingsEventStore: PostgresConversationSavingsEventStore | undefined;
   let conversationCoordinator: PostgresConversationCoordinator | undefined;
+  let turnRepository: PostgresTurnRepository | undefined;
   let persistentMemoryKey = "mock-memory";
   if (persistentMemoryEnabled) {
     try {
@@ -75,6 +85,7 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
         pool = createPostgresTurnStore(config.databaseUrl, { maxPoolSize: 2 }).pool;
         persistentPools.set(config.databaseUrl, pool);
       }
+      turnRepository = new PostgresTurnRepository(pool);
       const embeddings = embeddingsEnabled
           ? new OpenAiEmbeddingProvider({
             apiKey: openAiKey!,
@@ -164,12 +175,35 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
   const handler = createVictoriaChatHandler({
     authenticate: createVictoriaSessionAuthenticator(secret),
     agent,
-    ...(conversationCoordinator ? { conversationCoordinator } : {})
+    ...(conversationCoordinator ? { conversationCoordinator } : {}),
+    ...(turnRepository ? { turns: turnRepository } : {})
   });
+  const processQueuedTurn = turnRepository
+    ? createQueuedTurnProcessor({ turns: turnRepository, agent, ...(conversationCoordinator ? { conversationCoordinator } : {}) })
+    : undefined;
+  const turnResultHandler = turnRepository
+    ? createTurnResultHandler({ authenticate: createVictoriaSessionAuthenticator(secret), turns: turnRepository })
+    : undefined;
+  const processQueuedTurnHandler = processQueuedTurn
+    ? createQueuedTurnProcessHandler({ authenticate: createVictoriaSessionAuthenticator(secret), process: processQueuedTurn })
+    : undefined;
+  const submitTurnHandler = turnRepository
+    ? createSubmitTurnHandler({
+      authenticate: createVictoriaSessionAuthenticator(secret),
+      // Conversation IDs are user-scoped namespaces, not globally addressable resources.
+      ownsConversation: async (userId, conversationId) => Boolean(userId.trim() && conversationId.trim()),
+      fingerprintRequest: async (input) => createHmac("sha256", secret)
+        .update(input.userId).update("\0").update(input.conversationId).update("\0").update(input.message).digest("hex"),
+      createTurnId: randomUUID,
+      now: () => new Date().toISOString(),
+      turns: turnRepository
+    })
+    : undefined;
   const finishHandler = createConversationFinishHandler({
     authenticate: createVictoriaSessionAuthenticator(secret),
     agent,
-    ...(conversationCoordinator ? { conversationCoordinator } : {})
+    ...(conversationCoordinator ? { conversationCoordinator } : {}),
+    ...(turnRepository ? { turns: turnRepository } : {})
   });
   const memoryManagementHandler = persistentMemory
     ? createMemoryManagementHandlers({
@@ -180,6 +214,10 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
   const runtime = Object.freeze({
     handler,
     finishHandler,
+    ...(processQueuedTurn ? { processQueuedTurn } : {}),
+    ...(turnResultHandler ? { turnResultHandler } : {}),
+    ...(processQueuedTurnHandler ? { processQueuedTurnHandler } : {}),
+    ...(submitTurnHandler ? { submitTurnHandler } : {}),
     ...(memoryManagementHandler ? { memoryManagementHandler } : {}),
     financialProfileWriter: Object.freeze({
       rememberFinancialProfile: async (profile: TransactionFinancialProfile) => {

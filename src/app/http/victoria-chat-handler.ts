@@ -1,10 +1,14 @@
 import type { VictoriaAgent } from "../../agent/victoria-agent.js";
 import type { ConversationCoordinator } from "../turns/conversation-coordinator.js";
+import type { TurnRepository } from "../turns/turn-repository.js";
+import { createQueuedTurn } from "../../domain/turns/lifecycle.js";
+import { createHash, randomUUID } from "node:crypto";
 
 export interface VictoriaChatHandlerDependencies {
   authenticate(request: Request): Promise<{ readonly userId: string } | null>;
   agent: Pick<VictoriaAgent, "respond">;
   conversationCoordinator?: ConversationCoordinator;
+  turns?: TurnRepository;
 }
 
 export interface VictoriaChatRouteContext {
@@ -40,11 +44,48 @@ export function createVictoriaChatHandler(dependencies: VictoriaChatHandlerDepen
     if (!isMessageBody(body)) return respond(400, { error: "invalid_chat_request" });
 
     try {
-      const runAgent = () => dependencies.agent.respond({
-          userId: user.userId,
-          conversationId: context.conversationId,
-          message: body.message
+      const runAgent = async () => {
+        if (!dependencies.turns) {
+          return dependencies.agent.respond({ userId: user.userId, conversationId: context.conversationId, message: body.message });
+        }
+        const acceptedAt = new Date().toISOString();
+        const turn = createQueuedTurn({
+          id: randomUUID(), userId: user.userId, conversationId: context.conversationId,
+          idempotencyKey: randomUUID(), userMessage: body.message,
+          requestFingerprint: createHash("sha256").update(body.message).digest("hex"), acceptedAt
         });
+        const accepted = await dependencies.turns.accept(turn);
+        const running = await dependencies.turns.compareAndTransition({
+          userId: user.userId, conversationId: context.conversationId, turnId: accepted.turn.id,
+          expectedRevision: accepted.turn.revision, transition: { type: "start", at: new Date().toISOString() }
+        });
+        try {
+          const conversationTurns = dependencies.turns.listConversation
+            ? await dependencies.turns.listConversation(user.userId, context.conversationId)
+            : [accepted.turn];
+          const sourceTurnReferences = conversationTurns
+            .filter((item) => item.status === "completed" || item.id === accepted.turn.id)
+            .map((item) => ({ turnId: item.id, userMessage: item.userMessage }));
+          const response = await dependencies.agent.respond({
+            userId: user.userId, conversationId: context.conversationId, message: body.message, sourceTurnReferences
+          });
+          await dependencies.turns.compareAndTransition({
+            userId: user.userId, conversationId: context.conversationId, turnId: running.id,
+            expectedRevision: running.revision,
+            transition: { type: "complete", at: new Date().toISOString(), resultId: running.id }
+          });
+          return response;
+        } catch (error) {
+          try {
+            await dependencies.turns.compareAndTransition({
+              userId: user.userId, conversationId: context.conversationId, turnId: running.id,
+              expectedRevision: running.revision,
+              transition: { type: "fail", at: new Date().toISOString(), failureCode: "chat_turn_failed" }
+            });
+          } catch { /* Preserve the original failure; turn state remains recoverable from its current revision. */ }
+          throw error;
+        }
+      };
       const response = dependencies.conversationCoordinator
         ? await dependencies.conversationCoordinator.runExclusive(user.userId, context.conversationId, runAgent)
         : await runAgent();

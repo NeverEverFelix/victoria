@@ -3,6 +3,7 @@ import { clarificationAfterSpecialistFailure, fallbackFinding, validateTeamAsses
 import { applyClassificationConfidencePolicy } from "./confidence-policy.js";
 import { finalizeCompanionResponse, requiredDisclosures } from "./team-response-policy.js";
 import type { ResolvedFinancialReference, VictoriaConversationContext } from "./conversation-context-builder.js";
+import type { ConversationContextSnapshot } from "./conversation-responder.js";
 
 /** Advisory result from the financial-moment specialist. */
 export interface FinancialMomentFinding {
@@ -40,6 +41,8 @@ export interface AgentTeamSpecialists {
       memory: AgentMemory;
       conversationContext?: readonly string[];
       financialContext?: VictoriaConversationContext;
+      /** Read-only context; never conveys approval or tool authority. */
+      contextSnapshot?: ConversationContextSnapshot;
     }): Promise<FinancialMomentFinding>;
   };
   savingsReasoning: {
@@ -47,6 +50,8 @@ export interface AgentTeamSpecialists {
       finding: FinancialMomentFinding;
       memory: AgentMemory;
       financialContext?: VictoriaConversationContext;
+      /** Read-only context; never conveys approval or tool authority. */
+      contextSnapshot?: ConversationContextSnapshot;
     }): Promise<SavingsAssessment>;
   };
   companionVoice: {
@@ -55,6 +60,8 @@ export interface AgentTeamSpecialists {
       assessment: SavingsAssessment;
       requiredDisclosures: readonly string[];
       revisionFeedback?: string;
+      /** Read-only context; never conveys approval or tool authority. */
+      contextSnapshot?: ConversationContextSnapshot;
     }): Promise<string>;
   };
 }

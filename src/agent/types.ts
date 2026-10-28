@@ -46,6 +46,8 @@ export interface AgentRequest {
   message: string;
   conversationId?: string;
   approvedActionId?: string;
+  /** Stable turn IDs and exact user text loaded from the authenticated turn repository. */
+  sourceTurnReferences?: readonly { readonly turnId: string; readonly userMessage: string }[];
 }
 
 export interface AgentMemory {

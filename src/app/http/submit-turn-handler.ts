@@ -25,6 +25,7 @@ export interface SubmitTurnRouteContext {
 const MAX_MESSAGE_LENGTH = 10_000;
 const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
 const MAX_REQUEST_BYTES = 32_000;
+const CONVERSATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 /** Headless Web Request handler; framework routes can delegate to this boundary. */
 export function createSubmitTurnHandler(dependencies: SubmitTurnHandlerDependencies) {
@@ -32,6 +33,9 @@ export function createSubmitTurnHandler(dependencies: SubmitTurnHandlerDependenc
     const headers = { "Cache-Control": "no-store" };
     if (request.method !== "POST") {
       return jsonResponse(405, { error: "method_not_allowed" }, { ...headers, Allow: "POST" });
+    }
+    if (!CONVERSATION_ID_PATTERN.test(context.conversationId)) {
+      return jsonResponse(400, { error: "invalid_conversation_id" }, headers);
     }
 
     let user: AuthenticatedUser | null;
