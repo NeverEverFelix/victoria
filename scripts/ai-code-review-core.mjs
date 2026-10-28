@@ -40,7 +40,7 @@ export function formatPullRequestFilesDiff(files) {
 }
 
 /** Fetch every changed-file page without relying on GitHub's 300-file diff endpoint. */
-export async function fetchPullRequestFilesDiff({ apiUrl, token, fetchImpl = fetch }) {
+export async function fetchPullRequestFilesDiff({ apiUrl, token, fetchImpl = fetch, loadMissingPatch }) {
   const files = [];
   for (let page = 1; page <= 30; page += 1) {
     const separator = apiUrl.includes("?") ? "&" : "?";
@@ -60,7 +60,14 @@ export async function fetchPullRequestFilesDiff({ apiUrl, token, fetchImpl = fet
       throw new Error("GitHub pull request files response was not an array.");
     }
     files.push(...pageFiles);
-    if (pageFiles.length < 100) return formatPullRequestFilesDiff(files);
+    if (pageFiles.length < 100) {
+      const completeFiles = await Promise.all(files.map(async (file) => {
+        if (typeof file.patch === "string") return file;
+        if (typeof loadMissingPatch !== "function") return file;
+        return { ...file, patch: await loadMissingPatch(file) };
+      }));
+      return formatPullRequestFilesDiff(completeFiles);
+    }
   }
   throw new Error("GitHub changed-file listing reached the 3000-file API limit; no partial AI review was posted.");
 }
