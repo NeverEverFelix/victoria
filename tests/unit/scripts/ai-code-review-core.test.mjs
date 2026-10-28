@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildCompleteReviewComment,
   buildReviewRequest,
@@ -53,6 +53,22 @@ describe("AI code review core", () => {
     expect(urls[0].options.headers.Authorization).toBe("Bearer test-token");
     expect(diff).toContain("diff --git a/src/final.ts b/src/final.ts");
     expect(diff).toContain("diff --git a/docs/session-99.md b/docs/session-99.md");
+  });
+
+  it("loads an omitted large-file patch through the supplied safe data loader", async () => {
+    const loadMissingPatch = vi.fn(async () => "@@ -1 +1 @@\n-old\n+new");
+    const diff = await fetchPullRequestFilesDiff({
+      apiUrl: "https://api.github.com/repos/example/repo/pulls/1/files",
+      token: "test-token",
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => [{ filename: "src/large.ts", status: "modified", sha: "a".repeat(40) }]
+      }),
+      loadMissingPatch
+    });
+
+    expect(loadMissingPatch).toHaveBeenCalledWith(expect.objectContaining({ filename: "src/large.ts" }));
+    expect(diff).toContain("@@ -1 +1 @@\n-old\n+new");
   });
 
   it("uses a bounded default and allows a configured response-token limit", () => {
