@@ -5,6 +5,7 @@ import {
   buildReviewInput,
   buildReviewRequest,
   chunkDiffForReview,
+  fetchPullRequestFilesDiff,
   resolveReviewOutputTokenLimit,
   splitReviewChunkForRetry
 } from "./ai-code-review-core.mjs";
@@ -92,23 +93,10 @@ async function getPullRequestDiff() {
     );
   }
 
-  const response = await fetch(
-    `https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${PULL_REQUEST_NUMBER}`,
-    {
-      headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
-        Accept: "application/vnd.github.v3.diff",
-        "X-GitHub-Api-Version": "2022-11-28"
-      }
-    }
-  );
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`GitHub diff request failed: ${response.status} ${body}`);
-  }
-
-  return response.text();
+  return fetchPullRequestFilesDiff({
+    apiUrl: `https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${PULL_REQUEST_NUMBER}/files`,
+    token: GITHUB_TOKEN
+  });
 }
 
 async function getDiff() {

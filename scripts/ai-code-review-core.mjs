@@ -13,6 +13,58 @@ export function resolveReviewOutputTokenLimit(value) {
   return limit;
 }
 
+/** Rebuild a complete PR diff from paginated GitHub changed-file records. */
+export function formatPullRequestFilesDiff(files) {
+  if (!Array.isArray(files)) {
+    throw new Error("GitHub pull request files response must be an array.");
+  }
+  return files.map((file) => {
+    const filename = file?.filename;
+    const previousFilename = file?.previous_filename ?? filename;
+    if (typeof filename !== "string" || typeof previousFilename !== "string") {
+      throw new Error("GitHub pull request file record is missing a valid filename.");
+    }
+    if (typeof file.patch !== "string") {
+      throw new Error(`GitHub did not provide a text patch for changed file: ${filename}`);
+    }
+
+    const lines = [`diff --git a/${previousFilename} b/${filename}`];
+    if (file.status === "renamed") {
+      lines.push(`rename from ${previousFilename}`, `rename to ${filename}`);
+    }
+    lines.push(`--- ${file.status === "added" ? "/dev/null" : `a/${previousFilename}`}`);
+    lines.push(`+++ ${file.status === "removed" ? "/dev/null" : `b/${filename}`}`);
+    if (file.patch) lines.push(file.patch);
+    return lines.join("\n");
+  }).join("\n");
+}
+
+/** Fetch every changed-file page without relying on GitHub's 300-file diff endpoint. */
+export async function fetchPullRequestFilesDiff({ apiUrl, token, fetchImpl = fetch }) {
+  const files = [];
+  for (let page = 1; page <= 30; page += 1) {
+    const separator = apiUrl.includes("?") ? "&" : "?";
+    const response = await fetchImpl(`${apiUrl}${separator}per_page=100&page=${page}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      }
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`GitHub pull request files request failed: ${response.status} ${body}`);
+    }
+    const pageFiles = await response.json();
+    if (!Array.isArray(pageFiles)) {
+      throw new Error("GitHub pull request files response was not an array.");
+    }
+    files.push(...pageFiles);
+    if (pageFiles.length < 100) return formatPullRequestFilesDiff(files);
+  }
+  throw new Error("GitHub changed-file listing reached the 3000-file API limit; no partial AI review was posted.");
+}
+
 export function buildReviewRequest(model, input, maxOutputTokens) {
   const isReasoningModel = /^(?:gpt-5|o\d)/i.test(model);
   const reasoningEffort = /(?:^|-)pro(?:-|$)/i.test(model) ? "high" : "low";
