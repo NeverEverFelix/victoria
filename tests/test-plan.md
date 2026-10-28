@@ -305,6 +305,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Oversized diffs list every changed path, prioritize safety-sensitive excerpts, and cannot satisfy required AI review.
 - AI review uses a 2,000-token default per-pass output budget and rejects values outside the bounded range.
 - Pull request events trigger AI review through `pull_request_target` using trusted base-branch code; secret-bearing push reviews run only on `main`. Review passes are processed concurrently and adaptively split on output truncation.
+- Pull-request AI review paginates changed-file records so diffs over GitHub's 300-file diff endpoint limit still receive complete review; if any changed file has no text patch, the review fails without posting a partial result.
 - Large AI review diffs retain complete coverage; every pass must complete before any review is posted, within the configured bounded call cap.
 - GPT-5 AI review requests use low reasoning effort so internal reasoning does not consume the response-token allowance needed for findings.
 
