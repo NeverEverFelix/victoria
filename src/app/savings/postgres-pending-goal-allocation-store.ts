@@ -14,7 +14,19 @@ export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllo
 
   async getPending(userId: string, conversationId: string): Promise<PersistedPendingGoalAllocationAction | null> {
     const result = await this.db.query<{ action_id: string; decision: unknown; approval: unknown }>(
-      `SELECT p.action_id, p.user_id, p.decision,
+      `WITH expired AS (
+         INSERT INTO victoria_local_goal_allocation_transitions
+           (transition_id, proposal_id, user_id, conversation_id, action_id, status, created_at)
+         SELECT p.action_id || ':expired', p.proposal_id, p.user_id, p.conversation_id, p.action_id, 'expired', now()
+         FROM victoria_local_goal_allocation_proposals p
+         WHERE p.user_id = $1 AND p.conversation_id = $2
+           AND p.created_at <= now() - interval '24 hours'
+           AND NOT EXISTS (SELECT 1 FROM victoria_local_goal_allocation_transitions t
+                           WHERE t.user_id = p.user_id AND t.action_id = p.action_id)
+         ON CONFLICT (user_id, action_id) DO NOTHING
+         RETURNING action_id
+       )
+       SELECT p.action_id, p.user_id, p.decision,
          COALESCE(a.approval, CASE WHEN g.approved_action_id IS NOT NULL THEN
            jsonb_build_object('id', g.approval_id, 'userId', p.user_id, 'actionId', g.approved_action_id,
              'approvedAt', g.approved_at, 'source', 'user_message') END) AS approval
@@ -24,6 +36,7 @@ export class PostgresPendingGoalAllocationActionStore implements PendingGoalAllo
        LEFT JOIN victoria_local_savings_goal_allocations g
          ON g.user_id = p.user_id AND g.approved_action_id = p.action_id
        WHERE p.user_id = $1 AND p.conversation_id = $2
+         AND p.created_at > now() - interval '24 hours'
          AND NOT EXISTS (
            SELECT 1 FROM victoria_local_goal_allocation_transitions t
            WHERE t.user_id = p.user_id AND t.action_id = p.action_id

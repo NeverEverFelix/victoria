@@ -36,6 +36,7 @@ export interface CreateVictoriaAgentOptions {
   tools?: VictoriaTools;
   providerUsageReporter?: ProviderUsageReporter;
   onCompanionVoiceValidationFailure?: (issues: readonly VoiceDraftIssue[]) => void;
+  onFinancialMomentFallback?: (source: "classifier" | "specialist") => void;
   onConversationReplyFallback?: (reason: ConversationReplyFallbackReason) => void;
   onConversationTurnTrace?: (trace: ConversationTurnTrace) => void;
   pendingAmountClarifications?: PendingAmountClarificationStore;
@@ -90,6 +91,7 @@ export function createVictoriaAgent(options: CreateVictoriaAgentOptions): Victor
     ...(options.onCompanionVoiceValidationFailure
       ? { onCompanionVoiceValidationFailure: options.onCompanionVoiceValidationFailure }
       : {}),
+    ...(options.onFinancialMomentFallback ? { onFinancialMomentFallback: options.onFinancialMomentFallback } : {}),
     ...(options.onConversationReplyFallback ? { onConversationReplyFallback: options.onConversationReplyFallback } : {}),
     ...(options.onConversationTurnTrace ? { onConversationTurnTrace: options.onConversationTurnTrace } : {}),
     ...(options.pendingAmountClarifications ? { pendingAmountClarifications: options.pendingAmountClarifications } : {}),

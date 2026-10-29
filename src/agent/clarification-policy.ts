@@ -2,6 +2,9 @@ import type { ClassifiedMessage } from "./types.js";
 
 /** Choose a bounded, purpose-specific question without granting action authority. */
 export function clarificationMessage(classification: ClassifiedMessage): string {
+  if (classification.type === "unclear" && classification.uncertainIntent === "general_finance") {
+    return "I may have misunderstood. Could you tell me a little more about what you mean?";
+  }
   if (classification.uncertainIntent === "goal_allocation") {
     return "I may have misunderstood the goal request. Which saved amount and goal should I link? Nothing has changed.";
   }

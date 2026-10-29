@@ -2,6 +2,7 @@ import type { MoneyMovementMode } from "../domain/savings/types.js";
 
 export type AppEnv = "local" | "test" | "staging" | "production";
 export type PlaidEnv = "sandbox" | "development" | "production";
+export type VictoriaRuntimeProfile = "mock_tests" | "local_mock_ledger" | "local_provider" | "staging" | "production_mock_ledger";
 export type { MoneyMovementMode } from "../domain/savings/types.js";
 
 export interface VictoriaEnv {
@@ -20,6 +21,19 @@ export interface VictoriaEnv {
   isProduction: boolean;
   isTest: boolean;
   usesRealMoneyMovement: boolean;
+  runtimeProfile: VictoriaRuntimeProfile;
+}
+
+export function resolveVictoriaRuntimeProfile(input: {
+  readonly appEnv: AppEnv;
+  readonly providerConfigured: boolean;
+}): VictoriaRuntimeProfile {
+  switch (input.appEnv) {
+    case "test": return "mock_tests";
+    case "local": return input.providerConfigured ? "local_provider" : "local_mock_ledger";
+    case "staging": return "staging";
+    case "production": return "production_mock_ledger";
+  }
 }
 
 export type EnvSource = Record<string, string | undefined>;
@@ -51,6 +65,10 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
   assertRealMovementUsesProductionPlaid(moneyMovementMode, plaidEnv);
   assertProviderCredentialsAreAllowed(appEnv, openAiApiKey, plaidClientId, plaidSecret);
 
+  const providerConfigured = openAiModel !== "mock" &&
+    !/(?:local-openai|replace|example|placeholder|changeme)/i.test(openAiApiKey);
+  const providerSelected = providerConfigured && (openAiFinancialMomentEnabled || openAiAgentTeamEnabled);
+
   return {
     appEnv,
     nodeEnv,
@@ -66,7 +84,8 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
     authSecret,
     isProduction: appEnv === "production",
     isTest: appEnv === "test" || nodeEnv === "test",
-    usesRealMoneyMovement: moneyMovementMode === "real_transfer"
+    usesRealMoneyMovement: moneyMovementMode === "real_transfer",
+    runtimeProfile: resolveVictoriaRuntimeProfile({ appEnv, providerConfigured: providerSelected })
   };
 }
 

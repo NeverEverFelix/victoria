@@ -54,4 +54,63 @@ describe("provider comparison runner", () => {
     expect(report.arms[1]?.summary.costPerTurnUsd.sampleCount).toBe(1);
     expect(report.arms[1]?.summary.safetyFailures).toBe(0);
   });
+
+  it("records malformed provider outputs per turn and completes the comparison report", async () => {
+    const fetcher: typeof fetch = async () => new Response(JSON.stringify({
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ type: "unsupported" }) }] }]
+    }), { status: 200 });
+
+    const report = await runProviderComparison({
+      apiKey: "mock-test-key",
+      model: "gpt-mock-test",
+      rateCard: {
+        effectiveDate: "2026-10-01",
+        inputUsdPerMillionTokens: 1,
+        outputUsdPerMillionTokens: 2
+      },
+      fetcher,
+      caseIds: ["P01"]
+    });
+
+    expect(report.arms).toHaveLength(2);
+    for (const arm of report.arms) {
+      expect(arm.turns[0]?.id).toBe("P01");
+      expect(arm.turns[0]?.errors).toContain("intent_probe_failed");
+      expect(arm.turns[0]?.ledgerEntriesAdded).toBe(0);
+      expect(arm.summary.failedOrTimedOutTurns).toBe(1);
+      if (arm.turns[0]?.errors.includes("target_invalid_provider_output")) {
+        expect(arm.turns[0]).toMatchObject({ runtimeClassification: null, actualAction: null, response: null });
+      } else {
+        expect(arm.turns[0]).toMatchObject({ runtimeClassification: "unclear", actualAction: "ask_follow_up" });
+        expect(arm.turns[0]?.response).toMatch(/tell me a little more/i);
+      }
+    }
+  });
+
+  it("records provider failures during stateful case setup and continues the report", async () => {
+    const fetcher: typeof fetch = async () => new Response(JSON.stringify({
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ type: "unsupported" }) }] }]
+    }), { status: 200 });
+
+    const report = await runProviderComparison({
+      apiKey: "mock-test-key",
+      model: "gpt-mock-test",
+      rateCard: {
+        effectiveDate: "2026-10-01",
+        inputUsdPerMillionTokens: 1,
+        outputUsdPerMillionTokens: 2
+      },
+      fetcher,
+      caseIds: ["P31"]
+    });
+
+    for (const arm of report.arms) {
+      expect(arm.turns[0]?.errors.some((error) => error.startsWith("state_setup_"))).toBe(true);
+      expect(arm.turns[0]).toMatchObject({
+        id: "P31", probedIntent: null, runtimeClassification: null, actualAction: null,
+        intentProbeElapsedMs: null, targetElapsedMs: null, response: null
+      });
+      expect(arm.summary.failedOrTimedOutTurns).toBe(1);
+    }
+  });
 });

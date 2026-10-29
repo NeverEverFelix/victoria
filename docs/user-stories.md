@@ -29,6 +29,7 @@ Acceptance criteria:
 - Given Victoria asks because intent confidence is low, it uses that unresolved turn as context for the user's next reply and clears it when the user switches to a clear new intent.
 - Given the amount has more than two decimal places or uses a recognized non-USD currency, Victoria asks for a valid USD amount and creates no proposal.
 - Given the user has not confirmed, no savings ledger entry is created.
+- Given an unconfirmed savings proposal is more than 24 hours old, a later “yes” does not approve it; Victoria must make a fresh proposal and ask again.
 - Given the user asks whether to record an identified avoided-spend amount in the same message, Victoria may present the savings suggestion but must still wait for a separate explicit confirmation.
 - Given an active monthly recurring-cost suggestion and a combined annual-math/current-month record request, Victoria answers with the conditional annual projection and asks for confirmation of only the pending monthly amount.
 - Given the user confirms, Victoria creates a mocked ledger entry for 9000 cents.

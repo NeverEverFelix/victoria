@@ -1,5 +1,5 @@
 import type { ConversationResponderInput } from "./conversation-responder.js";
-import { isReadOnlyFinancialReflection } from "./conversation-routing.js";
+import { isOrdinaryQuestion, isReadOnlyFinancialReflection } from "./conversation-routing.js";
 
 function lowCostMealAnswer(message: string): string | undefined {
   if (/\b(?:low[- ]cost|budget[- ]friendly|inexpensive|affordable)\b/i.test(message) &&
@@ -11,6 +11,10 @@ function lowCostMealAnswer(message: string): string | undefined {
 
 /** Safe deterministic recovery for read-only conversation when generation is unavailable. */
 export function deterministicConversationFallback(input: ConversationResponderInput): string {
+  if (isOrdinaryQuestion(input.message) && /\b(?:weekend|rainy day)\b/i.test(input.message) &&
+      /\b(?:brainstorm|suggest|ideas|options|things to do)\b/i.test(input.message)) {
+    return "For a rainy weekend, you could visit a library or museum, watch a movie at home, or try a new recipe. Choose based on whether you want to stay in or get out.";
+  }
   if (input.responseFocus && /\bpodcasts?\b/i.test(input.responseFocus) && /\bwalks?\b/i.test(input.responseFocus)) {
     return "For a relaxed walk, try a conversational interview podcast or a short nature series; a 20–30 minute episode can fit the route.";
   }

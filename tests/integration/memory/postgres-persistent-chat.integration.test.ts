@@ -119,9 +119,9 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
       const restartedRepository = new PostgresMemoryRepository(store.pool);
       const lifecycleRecords = await restartedRepository.listCurrentConversationalMemories(lifecycleUserId, true);
       const visibleRecords = await restartedRepository.listCurrentConversationalMemories(lifecycleUserId, false);
-      expect(visibleRecords.some((memory) => memory.id === episode?.id)).toBe(false);
-      expect(suppressLifecycleConflictingEpisodes(visibleRecords, lifecycleRecords).map((memory) => memory.id))
-        .not.toContain(episode?.id);
+      const currentContext = suppressLifecycleConflictingEpisodes(visibleRecords, lifecycleRecords);
+      expect(currentContext.some((memory) => memory.id === episode?.id)).toBe(false);
+      expect(currentContext.map((memory) => memory.id)).not.toContain(episode?.id);
       expect(lifecycleRecords.find((memory) => memory.sourceType === "user_correction")?.sourceMetadata)
         .toMatchObject({ sourceTurnReferences: [{ turnId }] });
       const restartedMemoryRuntime = new MemoryOrchestrator(restartedRepository);

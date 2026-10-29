@@ -14,6 +14,17 @@ describe("ProviderUsageReporter", () => {
     expect(reporter.toJsonLines()).toBe(JSON.stringify(snapshot[0]));
   });
 
+  it("notifies a content-free observer without allowing telemetry errors to interrupt the caller", () => {
+    const observations: unknown[] = [];
+    const reporter = new ProviderUsageReporter((record) => observations.push(record));
+    reporter.report({ role: "companion_voice", elapsedMs: 18, inputTokens: 50, outputTokens: 12 });
+    expect(observations).toEqual([{ role: "companion_voice", elapsedMs: 18, inputTokens: 50, outputTokens: 12 }]);
+
+    const isolated = new ProviderUsageReporter(() => { throw new Error("telemetry unavailable"); });
+    expect(() => isolated.report({ role: "financial_moment", elapsedMs: 2 })).not.toThrow();
+    expect(isolated.snapshot()).toHaveLength(1);
+  });
+
   it("summarizes per-role usage and estimates cost from a dated rate card", () => {
     const reporter = new ProviderUsageReporter();
     reporter.report({ role: "financial_moment", inputTokens: 1_000, outputTokens: 500, requestId: "req-1" });

@@ -1,6 +1,7 @@
-import type { VictoriaEnv } from "./env.js";
+import type { VictoriaEnv, VictoriaRuntimeProfile } from "./env.js";
 
 export interface VictoriaFeatureFlags {
+  runtimeProfile: VictoriaRuntimeProfile;
   useMockAi: boolean;
   useProviderFinancialMoment: boolean;
   useProviderAgentTeam: boolean;
@@ -15,6 +16,7 @@ export function buildFeatureFlags(env: VictoriaEnv): VictoriaFeatureFlags {
   const useProviderAgentTeam = env.openAiAgentTeamEnabled && env.openAiModel !== "mock";
   const useProviderFinancialMoment = !useProviderAgentTeam && env.openAiFinancialMomentEnabled && env.openAiModel !== "mock";
   return {
+    runtimeProfile: env.runtimeProfile,
     useMockAi: !useProviderFinancialMoment && !useProviderAgentTeam,
     useProviderFinancialMoment,
     useProviderAgentTeam,

@@ -5,6 +5,7 @@ import { FINANCIAL_MOMENT_PROMPT_VERSION, OpenAiFinancialMomentAdapter } from ".
 import { ProviderUsageReporter } from "../../src/agent/telemetry/provider-usage-reporter.js";
 import { summarizeLatencies } from "./metrics.js";
 import { multiAgentReadinessScenarios } from "./fixtures/multi-agent-scenarios.js";
+import { parseExplicitDollarAmount } from "../../src/domain/financial-events/parse-explicit-amount.js";
 
 const enabled = process.env.RUN_PROVIDER_EVAL === "1";
 if (enabled && (process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true")) {
@@ -27,7 +28,15 @@ describe.skipIf(!enabled)("provider-backed Financial Moment evaluation", () => {
 
     const usageReporter = new ProviderUsageReporter();
     const adapter = new OpenAiFinancialMomentAdapter({ apiKey, model, usageReporter });
-    const results: Array<{ id: string; expected: string; actual: string; elapsedMs: number; amountMatches: boolean }> = [];
+    const results: Array<{
+      id: string;
+      expected: string;
+      actual: string;
+      elapsedMs: number;
+      amountMatches: boolean;
+      amountCents?: number;
+      expectedExplicitAmountCents?: number;
+    }> = [];
 
     for (const scenario of multiAgentReadinessScenarios) {
       const start = performance.now();
@@ -37,10 +46,22 @@ describe.skipIf(!enabled)("provider-backed Financial Moment evaluation", () => {
       });
       const elapsedMs = Math.round(performance.now() - start);
       const actual = applyClassificationConfidencePolicy(raw).type;
-      const amountMatches = scenario.expectedClassification !== "avoided_spend" ||
-        (raw.amountCents === scenario.expectedAmountCents &&
-          (scenario.expectedAmountCents !== undefined || raw.needsClarification));
-      results.push({ id: scenario.id, expected: scenario.expectedClassification, actual, elapsedMs, amountMatches });
+      const explicitAmount = parseExplicitDollarAmount(scenario.userMessage);
+      const expectedExplicitAmountCents = explicitAmount.status === "valid" ? explicitAmount.amountCents : undefined;
+      // The classifier may parse what the user said, but must not choose a remembered estimate.
+      // Typed services resolve habits and transaction facts in the full agent workflow.
+      const amountMatches = expectedExplicitAmountCents === undefined
+        ? raw.amountCents === undefined
+        : raw.amountCents === expectedExplicitAmountCents;
+      results.push({
+        id: scenario.id,
+        expected: scenario.expectedClassification,
+        actual,
+        elapsedMs,
+        amountMatches,
+        ...(raw.amountCents !== undefined ? { amountCents: raw.amountCents } : {}),
+        ...(expectedExplicitAmountCents !== undefined ? { expectedExplicitAmountCents } : {})
+      });
     }
 
     const usage = usageReporter.snapshot();
@@ -51,6 +72,7 @@ describe.skipIf(!enabled)("provider-backed Financial Moment evaluation", () => {
       corpusSize: results.length,
       classificationPasses: results.filter((result) => result.expected === result.actual).length,
       amountPasses: results.filter((result) => result.amountMatches).length,
+      amountValidationScope: "explicit_user_amounts_only; factual estimates belong to typed services",
       latency: summarizeLatencies(results.map((result) => result.elapsedMs)),
       inputTokens: usage.reduce((sum, record) => sum + (record.inputTokens ?? 0), 0),
       outputTokens: usage.reduce((sum, record) => sum + (record.outputTokens ?? 0), 0),

@@ -80,6 +80,7 @@ export interface EpisodicSummaryCandidate {
 
 export interface EpisodeEvidenceReference {
   readonly turnId: string;
+  readonly userMessage?: string;
 }
 
 export interface EpisodicMemorySummarizer {
@@ -134,7 +135,8 @@ export function validateEpisodicSummary(
         userMessages.some((message) => isExplicitUserEvidence(message, quote)))) return null;
   const evidence = candidate.evidenceQuotes.map((quote) => quote.trim()).join(" | ");
   if (evidence.length > 240 || evidenceReferences.length > 16 ||
-      evidenceReferences.some((reference) => !reference.turnId.trim()) ||
+      evidenceReferences.some((reference) => !reference.turnId.trim() ||
+        (reference.userMessage !== undefined && (typeof reference.userMessage !== "string" || reference.userMessage.length > 2_000))) ||
       authoritativeOutcomes.length > 8 || authoritativeOutcomes.some((outcome) =>
     outcome.kind !== "mocked_ledger_entry_recorded" || !outcome.userId.trim() || !outcome.eventId.trim() ||
     !outcome.entryId.trim() || !outcome.proposalId.trim() || !Number.isSafeInteger(outcome.amountCents) ||
@@ -150,6 +152,10 @@ export function validateEpisodicSummary(
       memoryKind: "episodic_summary",
       evidenceCount: candidate.evidenceQuotes.length,
       ...(evidenceReferences.length > 0 ? { sourceTurnReferences: Object.freeze([...new Map(evidenceReferences.map((reference) => [reference.turnId, reference])).values()]) } : {}),
+      ...(evidenceReferences.length > 0 ? { summaryCoverage: Object.freeze({
+        coveredTurnIds: Object.freeze([...new Set(evidenceReferences.map((reference) => reference.turnId))]),
+        throughTurnId: evidenceReferences.at(-1)!.turnId
+      }) } : {}),
       ...(authoritativeOutcomes.length > 0 ? { authoritativeWorkflowOutcomes: Object.freeze([...authoritativeOutcomes]) } : {})
     }
   });

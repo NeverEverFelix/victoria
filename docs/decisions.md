@@ -6,6 +6,28 @@ Use it to keep future development honest. If a coding agent runs into an unresol
 
 ## Decided
 
+### Pending Financial Proposals Expire After 24 Hours
+
+Decision: For the MVP, an unconfirmed savings proposal, entry correction, or goal allocation is actionable for 24 hours from creation. A later response cannot approve the stale proposal; Victoria must create a new proposal and request fresh approval. Expiration appends an `expired` terminal transition and does not delete or rewrite proposal history.
+
+Implications:
+
+- The 24-hour duration applies only to actionability. It does not shorten retention of immutable financial proposal, approval, or ledger history.
+- Durable stores append an immutable `expired` transition when an old proposal is encountered, then refuse to restore it; in-process agents discard expired pending state before interpreting the next user message.
+- Per-conversation PostgreSQL coordination remains the serialization boundary. Workflow versions are not duplicated while this lock is held for every persistent turn.
+
+### Conversation, Typed Services, And Deterministic Policy Have Separate Responsibilities
+
+Decision: Confirmed by the user on 2026-10-29. A conversational model handles interpretation, explanation, continuity, and phrasing. Typed services handle factual retrieval, calculations, permissions, and financial state changes. Deterministic policy validates every requested monetary operation.
+
+Implications:
+
+- Model interpretations and generated text are advisory and cannot authorize an operation or provide unverified financial facts.
+- Factual answers must be grounded in typed service results and clearly identify estimates or missing data.
+- Typed financial operations require deterministic policy validation and explicit user approval where required; the MVP remains mock-ledger only.
+- Natural-language responses may explain validated workflow outcomes, but they cannot change stored financial state.
+
+
 ### Conversation Understanding Flows Through Explicit Context And Workflow State
 
 Decision: Confirmed on 2026-10-25. Victoria's agent direction is a single orchestrator coordinating advisory specialists through bounded typed context, explicit reference resolution, and structured conversation workflow state. This extends the orchestrated multi-agent direction in [ADR 0001](architecture/decisions/0001-orchestrated-multi-agent-architecture.md); it does not grant specialists authority over proposals, approvals, tools, or ledger writes.

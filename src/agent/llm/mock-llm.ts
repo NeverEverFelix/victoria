@@ -139,6 +139,7 @@ export class MockLlmAdapter implements LlmAdapter {
     const naturalPersonalStatement = !directPersonalStatement &&
       !/[?]\s*$/.test(input.userMessage) && /\b(?:i|me|my|we|us|our)\b/i.test(input.userMessage) &&
       !/^\s*(?:how|what|why|when|where|who|can|could|would|should|do|does|did)\b/i.test(input.userMessage) &&
+      !/\b(?:maybe|i guess|not sure|perhaps|kind of|sort of)\b/i.test(input.userMessage) &&
       !/\$\s*\d|\b(?:estimate|amount|ledger|transaction|saved?|savings|money|spend(?:ing)?|purchase|purchased|bought|paid|transfer(?:red)?)\b/i.test(input.userMessage);
     if ((directPersonalStatement || naturalPersonalStatement) &&
         !/\b(?:spent|paid|bought|was charged|got charged|transferred|transfer money|moved money)\b/i.test(input.userMessage)) {

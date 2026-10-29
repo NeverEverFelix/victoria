@@ -20,6 +20,7 @@ import { createQueuedTurnProcessor } from "../turns/queued-turn-processor.js";
 import { createPostgresTurnStore } from "../turns/postgres-pool.js";
 import { createSupabaseBearerAuthenticator } from "../auth/supabase-bearer-auth.js";
 import { createVictoriaAgent } from "../create-victoria-agent.js";
+import { ProviderUsageReporter } from "../../agent/telemetry/provider-usage-reporter.js";
 import { createVictoriaChatHandler } from "./victoria-chat-handler.js";
 import { createRlsScopedMemoryManagement } from "./rls-scoped-memory-management.js";
 import { createMemoryManagementHandlers } from "./memory-management-handler.js";
@@ -76,10 +77,14 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
     const savingsEvents = new PostgresConversationSavingsEventStore(pool);
     const pendingGoalAllocationActions = new PostgresPendingGoalAllocationActionStore(pool);
     const pendingEntryCorrections = new PostgresPendingEntryCorrectionStore(pool);
+    const providerUsageReporter = new ProviderUsageReporter(({ role, elapsedMs, inputTokens, outputTokens }) => {
+      console.info("Victoria provider stage", { role, elapsedMs, inputTokens, outputTokens });
+    });
     const agent = createVictoriaAgent({
       env: { ...env, openAiAgentTeamEnabled: true }, memory, tools: new PostgresMockSavingsTools(pool), pendingAmountClarifications,
       savingsEvents,
       pendingSavingsActions, pendingGoalAllocationActions, pendingEntryCorrections, idFactory: randomUUID,
+      providerUsageReporter,
       ...(source.OPENAI_MEMORY_EXTRACTION_ENABLED !== "false" ? {
         conversationalMemoryExtractor: new OpenAiConversationalMemoryExtractor({
           apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})
@@ -92,6 +97,9 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
       } : {}),
       onCompanionVoiceValidationFailure: (issues) => {
         console.warn("Victoria companion voice draft remained invalid after revision; using guarded fallback.", { issues });
+      },
+      onFinancialMomentFallback: (source) => {
+        console.warn("Victoria financial interpretation used deterministic recovery.", { source });
       },
       onConversationReplyFallback: (reason) => {
         console.warn("Victoria conversation reply used deterministic recovery.", { schemaVersion: 1, reason });
@@ -110,7 +118,8 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
         })
       } : {}),
       conversationResponder: new OpenAiConversationResponder({
-        apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})
+        apiKey: env.openAiApiKey, model: env.openAiModel, usageReporter: providerUsageReporter,
+        ...(fetcher ? { fetcher } : {})
       }),
       ...(fetcher ? { fetcher } : {})
     });

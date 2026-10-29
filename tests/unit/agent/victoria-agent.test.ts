@@ -17,6 +17,85 @@ import type { PendingSavingsActionStore, PersistedPendingSavingsAction } from ".
 import type { ConversationResponderInput } from "../../../src/agent/conversation-responder.js";
 
 describe("VictoriaAgent", () => {
+  it("keeps hedged agreement ambiguous in the deterministic evaluation classifier", async () => {
+    const memory = new MockMemoryProvider();
+    const classification = await new MockLlmAdapter().classifyMessage({
+      userMessage: "Maybe, I guess.", memory: await memory.getMemoryForUser("hedged_reply_user"), conversationContext: []
+    });
+
+    expect(classification.type).toBe("unclear");
+  });
+
+  it("fails closed without recording an approval when durable pending state is unavailable", async () => {
+    const tools = new MockVictoriaTools();
+    const commit = vi.fn(async () => { throw new Error("database unavailable"); });
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      pendingSavingsActions: {
+        async getPending() { throw new Error("database unavailable"); },
+        commit
+      }
+    });
+
+    await expect(agent.respond({
+      userId: "pending_store_outage_user", conversationId: "pending_store_outage_chat", message: "Yes, record it."
+    })).rejects.toThrow("database unavailable");
+
+    expect(commit).not.toHaveBeenCalled();
+    expect(await tools.listSavingsEntries("pending_store_outage_user")).toEqual([]);
+  });
+
+  it("routes plain non-financial questions without invoking financial specialists", async () => {
+    const base = createMockAgentTeamSpecialists();
+    const specialists: AgentTeamSpecialists = {
+      financialMoment: { analyze: vi.fn((input) => base.financialMoment.analyze(input)) },
+      savingsReasoning: { assess: vi.fn((input) => base.savingsReasoning.assess(input)) },
+      companionVoice: { respond: vi.fn((input) => base.companionVoice.respond(input)) }
+    };
+    const responder = vi.fn(async () => "A library, a movie at home, or a new recipe could make a rainy weekend enjoyable.");
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools: new MockVictoriaTools(),
+      specialists, conversationResponder: { respond: responder }
+    });
+
+    const response = await agent.respond({
+      userId: "ordinary_fast_path_user", conversationId: "ordinary_fast_path_chat",
+      message: "Can you suggest a few things to do on a rainy weekend?"
+    });
+
+    expect(response.decision.action).toBe("reflect");
+    expect(responder).toHaveBeenCalledOnce();
+    expect(specialists.financialMoment.analyze).not.toHaveBeenCalled();
+    expect(specialists.savingsReasoning.assess).not.toHaveBeenCalled();
+    expect(specialists.companionVoice.respond).not.toHaveBeenCalled();
+  });
+
+  it("falls back conservatively when provider intent classification fails", async () => {
+    const tools = new MockVictoriaTools();
+    const fallbackStages: string[] = [];
+    const agent = new VictoriaAgent({
+      llm: {
+        async classifyMessage() { throw new Error("provider unavailable"); },
+        async draftResponse() { return ""; }
+      },
+      memory: new MockMemoryProvider(),
+      tools,
+      onFinancialMomentFallback: (source) => fallbackStages.push(source)
+    });
+
+    const response = await agent.respond({
+      userId: "classifier_failure_user",
+      conversationId: "classifier_failure_chat",
+      message: "I almost bought a $19.95 book but decided to wait."
+    });
+
+    expect(response.decision.action).toBe("ask_follow_up");
+    expect(response.decision.classification).toMatchObject({ type: "unclear", needsClarification: true });
+    expect(response.message).toMatch(/tell me a little more/i);
+    expect(fallbackStages).toEqual(["classifier"]);
+    expect(await tools.listSavingsEntries("classifier_failure_user")).toEqual([]);
+  });
+
   it("emits a privacy-safe structured turn trace", async () => {
     const traceObserver = vi.fn();
     const privateMessage = "I almost bought a $19.95 book but decided to wait.";
@@ -29,7 +108,8 @@ describe("VictoriaAgent", () => {
 
     expect(traceObserver).toHaveBeenCalledOnce();
     const trace = traceObserver.mock.calls[0]?.[0];
-    expect(trace).toMatchObject({ schemaVersion: 1, classification: "avoided_spend", action: "suggest_savings", ledgerWrite: false });
+    expect(trace).toMatchObject({ schemaVersion: 2, classification: "avoided_spend", action: "suggest_savings", ledgerWrite: false,
+      recentMessageCount: 0, historyRepresentation: "typed" });
     expect(JSON.stringify(trace)).not.toContain(privateMessage);
     expect(JSON.stringify(trace)).not.toContain("19.95");
   });
@@ -94,6 +174,27 @@ describe("VictoriaAgent", () => {
     const approved = await agent.respond({ ...request, message: "Yes" });
     expect(approved.decision.action).toBe("create_ledger_entry");
     expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);
+  });
+
+  it("does not accept an approval for an in-memory savings proposal older than 24 hours", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-29T12:00:00.000Z"));
+    const tools = new MockVictoriaTools();
+    const llm = new MockLlmAdapter();
+    vi.spyOn(llm, "classifyMessage").mockResolvedValue({ type: "avoided_spend", confidence: 0.95,
+      amountCents: 2_400, summary: "I avoided ordering takeout for $24.", needsClarification: false });
+    const agent = new VictoriaAgent({ llm, memory: new MockMemoryProvider(), tools });
+    const request = { userId: "expired_proposal_user", conversationId: "expired_proposal_chat" };
+
+    const proposed = await agent.respond({ ...request, message: "I avoided ordering takeout for $24." });
+    expect(proposed.decision.proposal?.status, JSON.stringify(proposed.decision)).toBe("pending");
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+
+    vi.setSystemTime(new Date("2026-10-30T13:00:00.000Z"));
+    const staleApproval = await agent.respond({ ...request, message: "Yes" });
+
+    expect(staleApproval.decision.action).not.toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
   });
 
   it("answers an ordinary question before the avoided-spend statement", async () => {
@@ -194,14 +295,14 @@ describe("VictoriaAgent", () => {
     });
 
     await agent.respond({ userId: "snapshot_memory_user", conversationId: "snapshot_memory_chat",
-      message: "What should I keep in mind for my Japan trip?" });
+      message: "What should I keep in mind for my Japan trip budget?" });
 
     const input = responder.mock.calls[0]?.[0];
     expect(input?.financialContext?.selectedMemoryFacts.map(({ id }) => id)).toEqual(["memory_1", "memory_2"]);
     expect(input?.memories.map(({ id }) => id)).toEqual(["memory_1", "memory_2"]);
     expect(input?.memories[0]).toMatchObject({ provenance: "user_statement", value: "Saving for a trip to Japan." });
     expect(input?.contextSnapshot).toMatchObject({
-      currentMessage: "What should I keep in mind for my Japan trip?",
+      currentMessage: "What should I keep in mind for my Japan trip budget?",
       selectedMemories: [{ id: "memory_1" }, { id: "memory_2" }],
       financialContext: input?.financialContext
     });
@@ -263,7 +364,7 @@ describe("VictoriaAgent", () => {
     });
 
     await agent.respond({ userId: "episode_snapshot_user", conversationId: "episode_snapshot_chat",
-      message: "Can you help me plan a steady weekend trail routine?" });
+      message: "Can you help me plan a budget for a steady weekend trail routine?" });
 
     const snapshot = responder.mock.calls[0]?.[0].contextSnapshot;
     expect(snapshot?.episodicSummaries).toMatchObject([{
@@ -912,6 +1013,41 @@ describe("VictoriaAgent", () => {
     expect(keys).toContain("communication:brief");
   });
 
+  it("answers a general-finance question after learning a volunteered fact", async () => {
+    const memory = new MockMemoryProvider();
+    const tools = new MockVictoriaTools();
+    const extractionFailure = vi.fn();
+    const extractor = { extract: vi.fn(async () => [{
+      category: "habit" as const, key: "friday_rideshare", value: "Usually takes a rideshare on Fridays.",
+      evidence: "I usually take a rideshare on Fridays", confidence: 0.95, subject: "user" as const,
+      assertion: "affirmed" as const, stability: "stable" as const, sensitivity: "ordinary" as const
+    }]) };
+    const responder = vi.fn(async () => "You could compare the weekly cost with a lower-cost option for one Friday and see how it feels.");
+    const llm = new MockLlmAdapter();
+    vi.spyOn(llm, "classifyMessage").mockResolvedValue({
+      type: "general_finance", confidence: 0.95,
+      summary: "The user wants to reduce Friday rideshare spending.", needsClarification: false
+    });
+    const agent = new VictoriaAgent({
+      llm, memory, tools,
+      conversationalMemoryExtractor: extractor,
+      onConversationalMemoryExtractionFailure: extractionFailure,
+      conversationResponder: { respond: responder }
+    });
+    const request = { userId: "memory_question_user", conversationId: "memory_question_chat" };
+
+    const response = await agent.respond({ ...request,
+      message: "I usually take a rideshare on Fridays, but I want to save more. Should I cut it down?" });
+
+    expect(response.message).toContain("compare the weekly cost");
+    expect(response.message).not.toBe("Got it. I'll keep that in mind for future conversations.");
+    expect(extractor.extract).toHaveBeenCalledOnce();
+    expect(extractionFailure).not.toHaveBeenCalled();
+    expect((await memory.listConversationalMemories(request.userId)).filter(({ key }) => key === "friday_rideshare"))
+      .toHaveLength(1);
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+  });
+
   it("[APR-004] lets a read-only financial reflection without question punctuation through a pending proposal", async () => {
     const tools = new MockVictoriaTools();
     const base = createMockAgentTeamSpecialists();
@@ -970,6 +1106,42 @@ describe("VictoriaAgent", () => {
     expect(reflection.message).toContain("what changed in your budget");
     expect(reflection.decision.action).toBe("reflect");
     expect(responder).toHaveBeenCalledOnce();
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+    const approved = await agent.respond({ ...request, message: "Yes" });
+    expect(approved.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);
+  });
+
+  it("routes a clear unrelated question before asking for an ambiguous pending approval", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    let responderInput: ConversationResponderInput | undefined;
+    const responder = vi.fn(async (input: ConversationResponderInput) => {
+      responderInput = input;
+      return "For a rainy weekend, you could try a library visit, a cozy movie, or cooking something new.";
+    });
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      conversationResponder: { respond: responder },
+      specialists: { ...base, financialMoment: { analyze: async ({ message }) => ({ classification: {
+        type: message.includes("brainstorm a few practical things") ? "general_finance" : "avoided_spend",
+        confidence: 0.9, summary: message, needsClarification: false,
+        ...(message.includes("brainstorm a few practical things") ? {} : { amountCents: 1_995 })
+      } }) } }
+    });
+    const request = { userId: "pending_unrelated_question_user", conversationId: "pending_unrelated_question_chat" };
+    await agent.respond({ ...request, message: "I almost bought a $19.95 book but decided to wait." });
+
+    const answer = await agent.respond({
+      ...request,
+      message: "Can you brainstorm a few practical things to do on a rainy weekend?"
+    });
+
+    expect(answer.message).toContain("rainy weekend");
+    expect(answer.decision.action).toBe("reflect");
+    expect(responder).toHaveBeenCalledOnce();
+    expect(responderInput?.pendingAction).toBe("savings_entry");
+    expect(responderInput?.financialContext?.workflowState?.status).toBe("awaiting_confirmation");
     expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
     const approved = await agent.respond({ ...request, message: "Yes" });
     expect(approved.decision.action).toBe("create_ledger_entry");
@@ -1823,7 +1995,7 @@ describe("VictoriaAgent", () => {
     });
     expect(response.message).toContain("$27.50");
     expect(response.message).toContain("mocked Victoria savings ledger");
-    expect(response.message).toContain("No real money has moved");
+    expect(response.message).toContain("No real money has moved yet. This is only a mocked ledger record.");
   });
 
   it("[COR-003] [COR-005] appends an approved correction and keeps the recorded entry unchanged", async () => {
@@ -1909,6 +2081,33 @@ describe("VictoriaAgent", () => {
       { savingsEntryId: original?.id, correctedAmountCents: 2400, adjustmentCents: -300 }
     ]);
     expect(await tools.getWeeklySavingsTotal("user_123")).toBe(2400);
+  });
+
+  it("resolves the latest completed entry from scoped history after the agent restarts", async () => {
+    const tools = new MockVictoriaTools();
+    const memory = new MockMemoryProvider();
+    const savingsEvents = new InMemoryConversationSavingsEventStore();
+    const request = { userId: "restart_entry_user", conversationId: "restart_entry_chat" };
+    const firstAgent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools, savingsEvents });
+    await firstAgent.respond({ ...request, message: "I almost bought a $27 pastry but decided to wait." });
+    await firstAgent.respond({ ...request, message: "Yes" });
+    const targetEntry = (await tools.listSavingsEntries(request.userId))[0]!;
+    const otherConversation = { ...request, conversationId: "other_restart_entry_chat" };
+    await firstAgent.respond({ ...otherConversation, message: "I skipped a $10 snack." });
+    await firstAgent.respond({ ...otherConversation, message: "Yes" });
+
+    const llm = new MockLlmAdapter();
+    vi.spyOn(llm, "classifyMessage").mockResolvedValue({
+      type: "entry_correction", confidence: 0.95, amountCents: 2_400,
+      summary: "Correct the just-recorded entry.", needsClarification: false
+    });
+    const restartedAgent = new VictoriaAgent({ llm, memory, tools, savingsEvents });
+
+    const correction = await restartedAgent.respond({ ...request, message: "Correct that recorded entry to $24." });
+
+    expect(correction.decision.entryCorrection?.savingsEntryId).toBe(targetEntry.id);
+    expect(correction.message).toContain("most recently recorded entry in this conversation is currently $27.00");
+    expect(await tools.listSavingsEntryCorrections(request.userId)).toEqual([]);
   });
 
   it("keeps a pending entry correction labeled during a separate conversational topic", async () => {
@@ -2536,7 +2735,7 @@ describe("VictoriaAgent", () => {
     expect(response.decision.action).toBe("summarize_progress");
     expect(response.message).toContain("No savings have been recorded");
     expect(response.message).toContain("mocked Victoria savings ledger");
-    expect(response.message).toContain("No real money has moved");
+    expect(response.message).toContain("No real money has moved yet. This is only a mocked ledger record.");
   });
 
   it("does not mistake a future savings intention for a progress question", async () => {
@@ -2903,7 +3102,7 @@ describe("VictoriaAgent", () => {
       approval: { actionId: updatedActionId }
     });
     expect(confirmation.message).toContain("Emergency fund");
-    expect(confirmation.message).toContain("No real money has moved");
+    expect(confirmation.message).toContain("No real money has moved yet. This is only a mocked ledger record.");
     expect(await tools.listSavingsEntries("user_123")).toMatchObject([
       { amountCents: 4500, goalName: "Emergency fund", movementMode: "mock_ledger" }
     ]);
@@ -3306,7 +3505,7 @@ describe("VictoriaAgent", () => {
     });
     expect(confirmation.message).toContain("$45.00");
     expect(confirmation.message).toContain("Emergency fund");
-    expect(confirmation.message).toContain("No real money has moved");
+    expect(confirmation.message).toContain("No real money has moved yet. This is only a mocked ledger record.");
     expect(await tools.listSavingsEntries("user_123")).toEqual([originalEntry]);
     const allocations = await tools.listSavingsGoalAllocations("user_123");
     expect(allocations).toMatchObject([
@@ -3479,7 +3678,7 @@ describe("VictoriaAgent", () => {
       ? confirmation.decision.proposal.approval.approvedAt
       : "")).not.toBeNaN();
     expect(confirmation.message).toBe(
-      "Done. I recorded $90.00 in your Victoria savings ledger. Your total in the mocked Victoria savings ledger this week is $90.00. No real money has moved yet."
+      "Done. I recorded $90.00 in your Victoria savings ledger. Your total in the mocked Victoria savings ledger this week is $90.00. No real money has moved yet. This is only a mocked ledger record."
     );
     expect(await tools.listSavingsEntries("user_123")).toMatchObject([
       {
@@ -3610,7 +3809,7 @@ describe("VictoriaAgent", () => {
     expect(response.decision.toolCall?.requiresApproval).toBe(true);
     expect(response.message).toContain("$27.46");
     expect(response.message).toContain("record");
-    expect(response.message).toContain("No real money has moved yet.");
+    expect(response.message).toContain("No real money has moved yet. This is only a mocked ledger record.");
   });
 
   it("[AUD-001] prefers a user-provided amount over merchant history when both are present", async () => {
@@ -3716,7 +3915,7 @@ describe("VictoriaAgent", () => {
 
     expect(approvalResponse.decision.action).toBe("create_ledger_entry");
     expect(approvalResponse.message).toBe(
-      "Done. I recorded $27.46 in your Victoria savings ledger. Your total in the mocked Victoria savings ledger this week is $27.46. No real money has moved yet."
+      "Done. I recorded $27.46 in your Victoria savings ledger. Your total in the mocked Victoria savings ledger this week is $27.46. No real money has moved yet. This is only a mocked ledger record."
     );
   });
 
@@ -3739,7 +3938,7 @@ describe("VictoriaAgent", () => {
     expect(response.decision.action).toBe("create_ledger_entry");
     expect(response.message).toContain("Done. I recorded $12.00");
     expect(response.message).toContain("couldn't load your weekly total");
-    expect(response.message).toContain("No real money has moved yet");
+    expect(response.message).toContain("No real money has moved yet. This is only a mocked ledger record.");
     expect(await tools.listSavingsEntries("user_123")).toHaveLength(1);
     expect(suggestion.decision.proposal?.status).toBe("pending");
   });
@@ -4374,7 +4573,7 @@ describe("VictoriaAgent", () => {
     });
     expect(proposed.decision.action).toBe("suggest_savings");
     expect(proposed.message).toContain("Please confirm");
-    expect(proposed.message).toContain("No real money has moved");
+    expect(proposed.message).toContain("No real money has moved.");
     expect(await proposalTools.listSavingsEntries("user_123")).toEqual([]);
   });
 

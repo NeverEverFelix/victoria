@@ -11,6 +11,7 @@ describe("financial event domain", () => {
     expect(parseExplicitDollarAmountCents("I skipped a $6.75 coffee.")).toBe(675);
     expect(parseExplicitDollarAmountCents("I passed on a $1,200 TV.")).toBe(120000);
     expect(parseExplicitDollarAmountCents("It cost $1,200.50.")).toBe(120050);
+    expect(parseExplicitDollarAmountCents("The jacket was $90, and I decided not to get it.")).toBe(9000);
   });
 
   it("does not parse malformed comma grouping as a smaller amount", () => {

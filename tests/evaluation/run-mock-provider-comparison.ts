@@ -120,6 +120,11 @@ async function runArm(
       userId,
       conversationId
     });
+    const intentProbe = await llm.classifyMessage({
+      userMessage: scenario.message,
+      memory: await memory.getMemoryForUser(userId),
+      conversationContext: scenario.context
+    });
     const entriesBefore = await tools.listSavingsEntries(userId);
     const correctionsBefore = await tools.listSavingsEntryCorrections(userId);
     const response = await agent.respond({ userId, conversationId, message: scenario.message });
@@ -150,7 +155,7 @@ async function runArm(
     turns.push({
       id: scenario.id,
       expectedIntent: scenario.expectedIntent,
-      actualIntent: response.decision.classification.type,
+      actualIntent: intentProbe.type,
       runtimeClassification: response.decision.classification.type,
       intentPass: scenario.expectedIntent === response.decision.classification.type,
       expectedAction: scenario.expectedAction,

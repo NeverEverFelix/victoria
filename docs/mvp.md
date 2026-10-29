@@ -19,6 +19,8 @@ The MVP is successful if a user can:
 - See the saved amount recorded in a mocked ledger.
 - Understand that no real money has moved yet.
 
+A pending financial proposal can be explicitly confirmed for 24 hours after it is created. After that, Victoria treats it as expired and requires a fresh proposal and confirmation. Expiration only closes the active workflow; it does not rewrite or delete the immutable proposal history.
+
 ## First User
 
 The first user is someone who wants to save more money but does not want to manage a full budget.

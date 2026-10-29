@@ -314,9 +314,7 @@ export class MemoryOrchestrator implements MemoryProvider {
 function sourceTurnEvidenceMetadata(memory: ConversationalMemory): Readonly<Record<string, unknown>> {
   const references = memory.sourceMetadata?.sourceTurnReferences;
   if (!Array.isArray(references)) return {};
-  const valid = references.filter((reference): reference is { turnId: string } =>
-    Boolean(reference && typeof reference === "object" && "turnId" in reference &&
-      typeof reference.turnId === "string" && reference.turnId.trim()));
+  const valid = normalizeSourceTurnReferences(references);
   return valid.length ? { sourceTurnReferences: Object.freeze([...valid]) } : {};
 }
 
@@ -337,15 +335,24 @@ function mergeSourceTurnEvidence(
   const references = [
     ...(Array.isArray(prior?.sourceMetadata?.sourceTurnReferences) ? prior.sourceMetadata.sourceTurnReferences : []),
     ...(Array.isArray(incoming?.sourceTurnReferences) ? incoming.sourceTurnReferences : [])
-  ].filter((reference): reference is { turnId: string } =>
-    Boolean(reference && typeof reference === "object" && "turnId" in reference &&
-      typeof reference.turnId === "string" && reference.turnId.trim()));
+  ];
+  const valid = normalizeSourceTurnReferences(references);
   return {
     ...incoming,
-    ...(references.length ? {
-      sourceTurnReferences: Object.freeze([...new Map(references.map((reference) => [reference.turnId, reference])).values()])
+    ...(valid.length ? {
+      sourceTurnReferences: Object.freeze([...new Map(valid.map((reference) => [reference.turnId, reference])).values()])
     } : {})
   };
+}
+
+function normalizeSourceTurnReferences(value: readonly unknown[]): Array<{ turnId: string; userMessage?: string }> {
+  return value.flatMap((reference) => {
+    if (!reference || typeof reference !== "object" || !("turnId" in reference) ||
+        typeof reference.turnId !== "string" || !reference.turnId.trim()) return [];
+    const userMessage = "userMessage" in reference && typeof reference.userMessage === "string" &&
+      reference.userMessage.length <= 2_000 ? reference.userMessage : undefined;
+    return [{ turnId: reference.turnId, ...(userMessage === undefined ? {} : { userMessage }) }];
+  });
 }
 
 function memoryAuthority(memory: ConversationalMemory): number {

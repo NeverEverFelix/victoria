@@ -7,6 +7,15 @@ import {
 
 export type PendingWorkflowKind = "savings_entry" | "entry_correction" | "goal_allocation";
 
+/** Exact financial-action approvals are only actionable for one day after proposal creation. */
+export const PENDING_FINANCIAL_WORKFLOW_TTL_MS = 24 * 60 * 60 * 1_000;
+
+export function isPendingFinancialWorkflowExpired(createdAt: string, now: number = Date.now()): boolean {
+  const createdAtMs = Date.parse(createdAt);
+  return !Number.isFinite(createdAtMs) || !Number.isFinite(now) || createdAtMs > now ||
+    now - createdAtMs >= PENDING_FINANCIAL_WORKFLOW_TTL_MS;
+}
+
 export type PendingWorkflowMessageResolution = ApprovalResponse | "replacement_request" | "read_only_topic";
 
 /** Resolve only how a message relates to an existing proposal; never grants mutation authority. */

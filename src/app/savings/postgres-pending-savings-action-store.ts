@@ -17,7 +17,20 @@ export class PostgresPendingSavingsActionStore implements PendingSavingsActionSt
       awaiting_valid_revision: boolean;
       awaiting_revision_target: boolean;
     }>(
-      `SELECT p.action_id, p.decision,
+      `WITH expired AS (
+         INSERT INTO victoria_local_savings_proposal_transitions
+           (transition_id, proposal_id, user_id, conversation_id, action_id, from_status, to_status, snapshot, created_at)
+         SELECT p.action_id || ':expired', p.proposal_id, p.user_id, p.conversation_id, p.action_id,
+           'pending', 'expired', p.decision, now()
+         FROM victoria_local_savings_proposals p
+         WHERE p.user_id = $1 AND p.conversation_id = $2
+           AND p.created_at <= now() - interval '24 hours'
+           AND NOT EXISTS (SELECT 1 FROM victoria_local_savings_proposal_transitions t
+                           WHERE t.user_id = p.user_id AND t.proposal_id = p.proposal_id)
+         ON CONFLICT (user_id, proposal_id) DO NOTHING
+         RETURNING proposal_id
+       )
+       SELECT p.action_id, p.decision,
          EXISTS (
            SELECT 1 FROM victoria_local_savings_revision_clarifications c
            WHERE c.user_id = p.user_id AND c.conversation_id = p.conversation_id
@@ -30,6 +43,7 @@ export class PostgresPendingSavingsActionStore implements PendingSavingsActionSt
          ) AS awaiting_revision_target
        FROM victoria_local_savings_proposals p
        WHERE p.user_id = $1 AND p.conversation_id = $2
+         AND p.created_at > now() - interval '24 hours'
          AND NOT EXISTS (
            SELECT 1 FROM victoria_local_savings_proposal_transitions t
            WHERE t.user_id = p.user_id AND t.proposal_id = p.proposal_id

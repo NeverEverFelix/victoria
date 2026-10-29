@@ -100,6 +100,17 @@ describe("deterministicConversationFallback", () => {
     expect(reply).not.toMatch(/record|ledger|\$\d/i);
   });
 
+  it("answers an unrelated weekend brainstorm without pulling the pending proposal into the fallback", () => {
+    const reply = deterministicConversationFallback(input(
+      "Can you brainstorm a few practical things to do on a rainy weekend?",
+      { pendingAction: "savings_entry" }
+    ));
+
+    expect(reply).toMatch(/library|museum/);
+    expect(reply).toMatch(/movie|recipe/);
+    expect(reply).not.toMatch(/ledger|record|\$\d/i);
+  });
+
   it("uses the supplied baseline when a financial workflow is active", () => {
     const baseline = "The $35 suggestion is still pending. What would you like to discuss?";
     expect(deterministicConversationFallback(input("I'm anxious about my promotion", {

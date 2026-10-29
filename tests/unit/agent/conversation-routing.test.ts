@@ -4,12 +4,20 @@ import {
   isExplicitFinancialActionQuestion,
   isSafePendingWorkflowTopicSwitch,
   isOrdinaryQuestion,
+  canSkipFinancialClassification,
   shouldRouteToConversationResponder,
   isReadOnlyEventHistoryQuestion,
   independentOrdinaryQuestion
 } from "../../../src/agent/conversation-routing.js";
 
 describe("conversation routing helpers", () => {
+  it("skips financial classification only for plain read-only non-financial questions", () => {
+    expect(canSkipFinancialClassification("Can you suggest a few rainy weekend activities?" )).toBe(true);
+    expect(canSkipFinancialClassification("What did I say about my travel goal?" )).toBe(false);
+    expect(canSkipFinancialClassification("How much did I save this week?" )).toBe(false);
+    expect(canSkipFinancialClassification("I skipped a $20 book. What are good podcasts for walks?" )).toBe(false);
+  });
+
   it("recognizes ordinary questions and statement topic switches", () => {
     expect(isOrdinaryQuestion("What would help me unwind?")).toBe(true);
     expect(isConversationTopicTurn("Let's talk about how my promotion feels.")).toBe(true);

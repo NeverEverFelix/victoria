@@ -7,6 +7,11 @@ export function isOrdinaryQuestion(message: string): boolean {
     !/\b(?:record|log|add|transfer|deposit|move)\b[^?]*\b(?:savings|money|funds|ledger|entry)\b/i.test(message);
 }
 
+/** Skip financial specialists only for a plain, read-only non-financial question. */
+export function canSkipFinancialClassification(message: string): boolean {
+  return isOrdinaryQuestion(message) && !hasFinancialActionSignal(message);
+}
+
 export function isReadOnlyEventHistoryQuestion(message: string): boolean {
   if (/^\s*(?:yes|no|nope|nah|sure|confirm|approve)\b/i.test(message)) return false;
   const question = message.replace(/\b(?:not|never|don't|do not)\s+(?:to\s+)?(?:record|log|save|add|transfer|move)\b/gi, " ");

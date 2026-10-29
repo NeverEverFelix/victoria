@@ -25,7 +25,9 @@ export function validateTeamFinding(
 
 export function fallbackFinding(summary: string): FinancialMomentFinding {
   return Object.freeze({
-    classification: Object.freeze({ type: "unclear", confidence: 0, summary, needsClarification: true })
+    classification: Object.freeze({
+      type: "unclear", confidence: 0, summary, needsClarification: true, uncertainIntent: "general_finance"
+    })
   });
 }
 

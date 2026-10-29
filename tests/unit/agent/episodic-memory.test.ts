@@ -71,7 +71,10 @@ describe("episodic memory summaries", () => {
     };
     expect(validateEpisodicSummary(valid, messages, [], [{ turnId: "turn-user-a-1" }])).toMatchObject({
       category: "other", sourceType: "system_inference",
-      sourceMetadata: { memoryKind: "episodic_summary", sourceTurnReferences: [{ turnId: "turn-user-a-1" }] }
+      sourceMetadata: {
+        memoryKind: "episodic_summary", sourceTurnReferences: [{ turnId: "turn-user-a-1" }],
+        summaryCoverage: { coveredTurnIds: ["turn-user-a-1"], throughTurnId: "turn-user-a-1" }
+      }
     });
     expect(validateEpisodicSummary({ ...valid, evidenceQuotes: ["I have a different job now."] }, messages)).toBeNull();
     const longMessage = "I prefer using a simple weekend savings routine. ".repeat(3).trim();
@@ -183,7 +186,9 @@ describe("episodic memory summaries", () => {
     ])).resolves.toBe(true);
     const episode = (await memory.listConversationalMemories("user_episode_lifecycle"))
       .find((item) => item.sourceMetadata?.memoryKind === "episodic_summary");
-    expect(episode?.sourceMetadata?.sourceTurnReferences).toEqual([{ turnId: "turn-hiking-source" }]);
+    expect(episode?.sourceMetadata?.sourceTurnReferences).toEqual([{
+      turnId: "turn-hiking-source", userMessage: "I love hiking on weekends."
+    }]);
 
     await memory.correctMemory("user_episode_lifecycle", fact.id, "I don't enjoy hiking anymore.");
     const later = await agent.respond({ userId: "user_episode_lifecycle", conversationId: "later-chat",
@@ -275,5 +280,58 @@ describe("episodic memory summaries", () => {
     }
     expect(calls).toBe(0);
     expect(await memory.listConversationalMemories("user_episode_sensitive")).toEqual([]);
+  });
+
+  it("uses episode coverage checkpoints to summarize only previously uncovered turns", async () => {
+    const memory = new MockMemoryProvider();
+    const summarized: string[][] = [];
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools(),
+      episodicMemorySummarizer: {
+        async summarize({ userMessages }) {
+          summarized.push([...userMessages]);
+          return {
+            summary: "The user is working toward a practical, repeatable everyday routine.",
+            evidenceQuotes: [userMessages[0]!], confidence: 0.92, sensitivity: "ordinary"
+          };
+        }
+      }
+    });
+    const first = [
+      "I want a practical routine for weeknights after work.",
+      "Victoria: What kind of routine might fit your evenings?",
+      "I would like to build a repeatable walk after dinner."
+    ];
+    const firstRefs = [
+      { turnId: "episode-turn-1", userMessage: first[0]! },
+      { turnId: "episode-turn-2", userMessage: first[2]! }
+    ];
+    await memory.setConversationContext("episode-coverage-user", "episode-coverage-chat", first);
+    await agent.finishConversation("episode-coverage-user", "episode-coverage-chat", firstRefs);
+
+    const second = [...first, "Victoria: Would a short route feel manageable?",
+      "I can try a shorter path on the busiest evenings.",
+      "Victoria: What would help you remember the plan?",
+      "A reminder on my calendar would make that easier to keep doing."];
+    const allRefs = [...firstRefs, {
+      turnId: "episode-turn-3", userMessage: "I can try a shorter path on the busiest evenings."
+    }, { turnId: "episode-turn-4", userMessage: "A reminder on my calendar would make that easier to keep doing." }];
+    await memory.setConversationContext("episode-coverage-user", "episode-coverage-chat", second);
+    await agent.finishConversation("episode-coverage-user", "episode-coverage-chat", allRefs);
+
+    expect(summarized).toHaveLength(2);
+    expect(summarized[1]).toEqual([
+      "I can try a shorter path on the busiest evenings.",
+      "A reminder on my calendar would make that easier to keep doing."
+    ]);
+    const episodes = (await memory.listConversationalMemories("episode-coverage-user"))
+      .filter((item) => item.sourceMetadata?.memoryKind === "episodic_summary");
+    expect(episodes).toHaveLength(2);
+    expect(episodes.some((episode) => {
+      const coverage = episode.sourceMetadata?.summaryCoverage;
+      if (typeof coverage !== "object" || coverage === null || !("coveredTurnIds" in coverage) ||
+          !Array.isArray(coverage.coveredTurnIds)) return false;
+      return coverage.coveredTurnIds.includes("episode-turn-3");
+    })).toBe(true);
   });
 });

@@ -2,8 +2,27 @@ import { describe, expect, it, vi } from "vitest";
 import { MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
 import { buildConversationContextSnapshot, OpenAiConversationResponder, validateConversationReply, validateConversationReplyDetailed } from "../../../src/agent/conversation-responder.js";
 import type { ConversationResponderInput } from "../../../src/agent/conversation-responder.js";
+import { ProviderUsageReporter } from "../../../src/agent/telemetry/provider-usage-reporter.js";
 
 describe("conversation response boundary", () => {
+  it("reports response-stage latency and token usage without exposing the prompt", async () => {
+    const usageReporter = new ProviderUsageReporter();
+    const responder = new OpenAiConversationResponder({
+      apiKey: "test-key", model: "test-model", usageReporter,
+      fetcher: async () => new Response(JSON.stringify({
+        output: [{ content: [{ type: "output_text", text: JSON.stringify({ text: "A short answer." }) }] }],
+        usage: { input_tokens: 41, output_tokens: 8 }
+      }), { headers: { "x-request-id": "provider-request-id" } })
+    });
+
+    await responder.respond({ message: "What can I do?", recentTurns: [], memories: [], baselineReply: "Try one small step." });
+
+    expect(usageReporter.snapshot()).toMatchObject([{
+      role: "companion_voice", inputTokens: 41, outputTokens: 8, requestId: "provider-request-id"
+    }]);
+    expect(JSON.stringify(usageReporter.snapshot())).not.toContain("What can I do?");
+  });
+
   it("builds a frozen role-tagged dialogue from the transcript and current turn", () => {
     const snapshot = buildConversationContextSnapshot({
       message: "What should I try next?",
@@ -59,6 +78,7 @@ describe("conversation response boundary", () => {
     expect(reply).toContain("more flexible boundary");
     expect(requestBody?.instructions).toContain("If the user corrects or pushes back on earlier advice");
     expect(requestBody?.instructions).toContain("concrete account and conversation identifiers are intentionally omitted");
+    expect(requestBody?.instructions).toContain("An action-pending reference must never make an unrelated question sound like an approval prompt.");
     const providerInput = JSON.parse(String(requestBody?.input)) as { contextSnapshot: {
       scope: { user: string; conversation: string };
       dialogueTurns: Array<{ role: string; content: string }>;

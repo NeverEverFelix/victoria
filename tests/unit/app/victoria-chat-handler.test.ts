@@ -114,7 +114,7 @@ describe("Victoria chat HTTP boundary", () => {
         { conversationId: "response-mode-chat" });
       expect(response.status).toBe(200);
       expect((await response.json()).message).toContain("easy evening routine");
-      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(fetcher).toHaveBeenCalledOnce();
     } finally {
       vi.unstubAllGlobals();
     }

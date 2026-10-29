@@ -41,6 +41,52 @@ describe("contextual multi-intent plan", () => {
     expect(plan.requestedActions).toEqual([]);
     expect(plan.needsClarification).toBe(false);
     expect(mayDispatchConversationIntent(plan)).toBe(false);
+    expect(plan.dialogueActs).toContain("attempt_confirmation");
+    expect(plan.workflowRelation).toBe("none");
+  });
+
+  it("interprets a short answer and a mixed confirmation/revision relative to pending state without granting approval", () => {
+    const shortAnswer = buildConversationIntentPlan({
+      message: "Monthly.",
+      recentTurns: ["Victoria: Would you like to plan a monthly target or record this once?"],
+      hasPendingWorkflow: true
+    });
+    expect(shortAnswer.dialogueActs).toContain("answer_question");
+    expect(shortAnswer.workflowRelation).toBe("references_pending");
+
+    const mixed = buildConversationIntentPlan({ message: "Yes, but make it $20 instead.", hasPendingWorkflow: true });
+    expect(mixed.dialogueActs).toEqual(expect.arrayContaining(["attempt_confirmation", "revise"]));
+    expect(mixed.workflowRelation).toBe("revises_pending");
+    expect(mixed.requestedActions).toEqual([]);
+    expect(mayDispatchConversationIntent(mixed)).toBe(false);
+  });
+
+  it("separates planning, mocked record requests, and real-movement intent descriptively", () => {
+    const plan = buildConversationIntentPlan({ message: "I want to save for Europe, maybe $25 a month." });
+    const record = buildConversationIntentPlan({ message: "Please record this $25 savings entry." });
+    const transfer = buildConversationIntentPlan({ message: "Move the money into savings." });
+    const noTransfer = buildConversationIntentPlan({ message: "I don't want to move money; I only want to discuss my budget." });
+
+    expect(plan.actionRequest).toEqual({ kind: "plan_only" });
+    expect(plan.expressesUncertainty).toBe(true);
+    expect(record.actionRequest).toMatchObject({ kind: "mock_ledger_record" });
+    expect(transfer.actionRequest).toMatchObject({ kind: "real_money_movement" });
+    expect(noTransfer.actionRequest).toEqual({ kind: "none" });
+    for (const candidate of [plan, record, transfer, noTransfer]) {
+      expect(candidate.requestedActions).not.toContainEqual(expect.objectContaining({ kind: "approve" }));
+    }
+  });
+
+  it("marks contextual referents as hints without resolving or authorizing them", () => {
+    const plan = buildConversationIntentPlan({
+      message: "Actually, change that to $20 instead.",
+      recentTurns: ["Victoria: Would you like to revise the pending amount?"],
+      hasPendingWorkflow: true
+    });
+    expect(plan.referentHints).toEqual(["unresolved_contextual_reference"]);
+    expect(plan.ambiguous).toBe(true);
+    expect(plan.workflowRelation).toBe("revises_pending");
+    expect(plan.requestedActions).toEqual([]);
   });
 
   it.each([

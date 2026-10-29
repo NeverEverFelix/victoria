@@ -10,7 +10,7 @@ import { OpenAiPersonalizedReply } from "../../agent/memory/openai-personalized-
 import { OpenAiEpisodicMemorySummarizer } from "../../agent/memory/openai-episodic-memory-summarizer.js";
 import { MockProfileTransactionHistoryProvider } from "../financial-profile/mock-profile-transaction-history-provider.js";
 import type { TransactionFinancialProfile } from "../../domain/financial-profile.js";
-import { parseVictoriaEnv } from "../../config/env.js";
+import { parseVictoriaEnv, resolveVictoriaRuntimeProfile } from "../../config/env.js";
 import { PostgresMemoryRepository } from "../../agent/memory/postgres-memory-repository.js";
 import { MemoryOrchestrator } from "../../agent/memory/memory-orchestrator.js";
 import { OpenAiEmbeddingProvider } from "../../agent/memory/openai-embedding-provider.js";
@@ -61,7 +61,11 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
   const hasRealOpenAiKey = Boolean(openAiKey) &&
     !/(?:local-openai|replace|example|placeholder|changeme)/i.test(openAiKey ?? "");
   const embeddingsEnabled = hasRealOpenAiKey;
-  const providerEnabled = hasRealOpenAiKey && Boolean(env.OPENAI_MODEL?.trim()) && env.OPENAI_MODEL !== "mock";
+  const runtimeProfile = resolveVictoriaRuntimeProfile({
+    appEnv: "local",
+    providerConfigured: hasRealOpenAiKey && Boolean(env.OPENAI_MODEL?.trim()) && env.OPENAI_MODEL !== "mock"
+  });
+  const providerEnabled = runtimeProfile === "local_provider";
   const persistentMemoryEnabled = Boolean(env.DATABASE_URL?.trim());
   let persistentMemory: MemoryOrchestrator | undefined;
   let pendingAmountClarificationStore: PostgresPendingAmountClarificationStore | undefined;

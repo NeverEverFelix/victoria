@@ -30,6 +30,18 @@ describe("PostgresPendingSavingsActionStore", () => {
     });
   });
 
+  it("restores only proposals inside the 24-hour confirmation window", async () => {
+    let selectSql = "";
+    const pool = createPool(async (sql) => {
+      if (sql.includes("SELECT p.action_id, p.decision")) selectSql = sql;
+      return { rows: [], rowCount: 0 };
+    });
+
+    await new PostgresPendingSavingsActionStore(pool).getPending("user-1", "conversation-1");
+
+    expect(selectSql).toContain("p.created_at > now() - interval '24 hours'");
+  });
+
   it("restores a target clarification separately from an amount clarification", async () => {
     const pool = createPool(async (sql) => sql.includes("SELECT p.action_id, p.decision")
       ? {

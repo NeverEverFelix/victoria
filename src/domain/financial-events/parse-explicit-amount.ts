@@ -23,7 +23,11 @@ export function parseExplicitDollarAmount(message: string): ExplicitDollarAmount
     return { status: "absent" };
   }
 
-  const [, amountText] = match;
+  const [, capturedAmountText] = match;
+  const amountText = capturedAmountText?.endsWith(",") &&
+    /^\s*(?:and|but|so)\b/i.test(message.slice((match.index ?? 0) + match[0].length))
+    ? capturedAmountText.slice(0, -1)
+    : capturedAmountText;
   if (match[0].includes("-")) {
     return { status: "invalid_value" };
   }

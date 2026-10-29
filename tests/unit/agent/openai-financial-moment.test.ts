@@ -31,6 +31,31 @@ describe("OpenAiFinancialMomentAdapter", () => {
     expect(usageReporter.snapshot()[0]?.elapsedMs).toEqual(expect.any(Number));
   });
 
+  it("uses a grounded remembered merchant name while leaving its factual amount to typed services", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
+        type: "avoided_spend", confidence: 0.9, merchantName: "streaming add-on", goalName: null,
+        revisionReason: null, referenceFactId: null, referencePeriod: null,
+        summary: "Did not renew a streaming service", needsClarification: false
+      }) }] }]
+    }));
+    const adapter = new OpenAiFinancialMomentAdapter({ apiKey: "test-key", model: "gpt-test", fetcher });
+
+    const result = await adapter.classifyMessage({
+      userMessage: "I didn't renew the extra streaming channel.",
+      memory: { habits: [{
+        id: "streaming_habit", userId: "user", merchantName: "streaming add-on",
+        typicalAmountCents: 799, currency: "USD", confidence: 0.9
+      }], goals: [], recentDecisions: [] }
+    });
+
+    expect(result).toMatchObject({ type: "avoided_spend", merchantName: "streaming add-on" });
+    expect(result.amountCents).toBeUndefined();
+    const request = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
+    expect(request.input).toContain('"availableSpendingHabits":[{"merchantName":"streaming add-on","confidence":0.9}]');
+    expect(request.input).not.toContain("799");
+  });
+
   it("marks malformed explicit amounts for clarification", async () => {
     const adapter = new OpenAiFinancialMomentAdapter({
       apiKey: "test-key",
@@ -68,6 +93,7 @@ describe("OpenAiFinancialMomentAdapter", () => {
     expect(result.type).toBe("real_money_movement_request");
     const request = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
     expect(request.instructions).toContain("do not classify from a keyword or phrase alone");
+    expect(request.instructions).toContain("a statement such as 'I saved money today' is not a progress question");
     expect(request.instructions).toContain("saving more is not automatically the right answer");
     expect(request.input).toContain("I almost bought lunch for $37.46, but skipped it.");
     expect(request.input).toContain("Can we move the $37.46 we discussed into savings?");
@@ -127,13 +153,18 @@ describe("OpenAiFinancialMomentAdapter", () => {
     await expect(failed.classifyMessage({ userMessage: "hello", memory: { habits: [], goals: [], recentDecisions: [] } }))
       .rejects.toThrow("OpenAI classification request failed (429)");
 
+    const invalidUsage = new ProviderUsageReporter();
     const invalid = new OpenAiFinancialMomentAdapter({
       apiKey: "test-key", model: "gpt-test", fetcher: async () => jsonResponse({
+        usage: { input_tokens: 8, output_tokens: 3 },
         output: [{ type: "message", content: [{ type: "output_text", text: "{}" }] }]
-      })
+      }), usageReporter: invalidUsage
     });
     await expect(invalid.classifyMessage({ userMessage: "hello", memory: { habits: [], goals: [], recentDecisions: [] } }))
       .rejects.toThrow("did not match the expected schema");
+    expect(invalidUsage.snapshot()).toMatchObject([
+      { role: "financial_moment", inputTokens: 8, outputTokens: 3 }
+    ]);
   });
 });
 

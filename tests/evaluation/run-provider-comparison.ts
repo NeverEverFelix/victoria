@@ -40,15 +40,15 @@ export interface ProviderComparisonTurn {
   id: string;
   expectedIntent: string;
   probedIntent: string | null;
-  runtimeClassification: string;
+  runtimeClassification: string | null;
   expectedAction: ExpectedAction;
-  actualAction: AgentActionType;
+  actualAction: AgentActionType | null;
   expectedAmountCents?: number;
   actualAmountCents?: number;
   intentProbeElapsedMs: number | null;
-  targetElapsedMs: number;
+  targetElapsedMs: number | null;
   estimatedCostUsd: number | null;
-  response: string;
+  response: string | null;
   setupActions: AgentActionType[];
   ledgerEntriesAdded: number;
   correctionsAdded: number;
@@ -188,11 +188,51 @@ async function runArm(
           })
         });
 
-    const setupResponses = await applyProviderEvalStateSetup({ caseId: scenario.id, agent, tools, userId, conversationId });
+    const errors: string[] = [];
+    let setupResponses: Awaited<ReturnType<typeof applyProviderEvalStateSetup>> = [];
+    let setupFailed = false;
+    try {
+      setupResponses = await applyProviderEvalStateSetup({ caseId: scenario.id, agent, tools, userId, conversationId });
+    } catch (error) {
+      setupFailed = true;
+      errors.push(classifySetupFailure(error));
+    }
+    if (setupFailed) {
+      const usage = providerUsageReporter.snapshot().slice(recordsBeforeCase);
+      const [entries, corrections] = await Promise.all([
+        tools.listSavingsEntries(userId),
+        tools.listSavingsEntryCorrections(userId)
+      ]);
+      turns.push({
+        id: scenario.id,
+        expectedIntent: scenario.expectedIntent,
+        probedIntent: null,
+        runtimeClassification: null,
+        expectedAction: scenario.expectedAction,
+        actualAction: null,
+        ...(scenario.expectedAmountCents !== undefined ? { expectedAmountCents: scenario.expectedAmountCents } : {}),
+        intentProbeElapsedMs: null,
+        targetElapsedMs: null,
+        estimatedCostUsd: estimateCost(usage, options.rateCard),
+        response: null,
+        setupActions: [],
+        ledgerEntriesAdded: entries.length,
+        correctionsAdded: corrections.length,
+        usage,
+        safetyFailures: findSafetyFailures({
+          expectedIntent: scenario.expectedIntent,
+          responseMessage: "",
+          responseAction: null,
+          ledgerEntriesAdded: entries.length,
+          correctionsAdded: corrections.length
+        }),
+        errors
+      });
+      continue;
+    }
     const probeStarted = performance.now();
     let probedIntent: string | null = null;
     let intentProbeElapsedMs: number | null = null;
-    const errors: string[] = [];
     try {
       const probe = await llm.classifyMessage({
         userMessage: scenario.message,
@@ -208,7 +248,12 @@ async function runArm(
     const entriesBefore = await tools.listSavingsEntries(userId);
     const correctionsBefore = await tools.listSavingsEntryCorrections(userId);
     const targetStarted = performance.now();
-    const response = await agent.respond({ userId, conversationId, message: scenario.message });
+    let response: Awaited<ReturnType<VictoriaAgent["respond"]>> | undefined;
+    try {
+      response = await agent.respond({ userId, conversationId, message: scenario.message });
+    } catch (error) {
+      errors.push(classifyTargetFailure(error));
+    }
     const targetElapsedMs = Math.max(0, Math.round(performance.now() - targetStarted));
     const entriesAfter = await tools.listSavingsEntries(userId);
     const correctionsAfter = await tools.listSavingsEntryCorrections(userId);
@@ -216,27 +261,27 @@ async function runArm(
     const correctionsAdded = correctionsAfter.length - correctionsBefore.length;
     const safetyFailures = findSafetyFailures({
       expectedIntent: scenario.expectedIntent,
-      responseMessage: response.message,
-      responseAction: response.decision.action,
+      responseMessage: response?.message ?? "",
+      responseAction: response?.decision.action ?? null,
       ledgerEntriesAdded,
       correctionsAdded
     });
-    const actualAmountCents = readActualAmount(response);
+    const actualAmountCents = response ? readActualAmount(response) : undefined;
     const usage = providerUsageReporter.snapshot().slice(recordsBeforeCase);
 
     turns.push({
       id: scenario.id,
       expectedIntent: scenario.expectedIntent,
       probedIntent,
-      runtimeClassification: response.decision.classification.type,
+      runtimeClassification: response?.decision.classification.type ?? null,
       expectedAction: scenario.expectedAction,
-      actualAction: response.decision.action,
+      actualAction: response?.decision.action ?? null,
       ...(scenario.expectedAmountCents !== undefined ? { expectedAmountCents: scenario.expectedAmountCents } : {}),
       ...(actualAmountCents !== undefined ? { actualAmountCents } : {}),
       intentProbeElapsedMs,
       targetElapsedMs,
       estimatedCostUsd: estimateCost(usage, options.rateCard),
-      response: response.message,
+      response: response?.message ?? null,
       setupActions: setupResponses.map((item) => item.decision.action),
       ledgerEntriesAdded,
       correctionsAdded,
@@ -260,7 +305,9 @@ async function runArm(
       intentPasses: turns.filter((turn) => turn.probedIntent === turn.expectedIntent).length,
       actionPasses: turns.filter((turn) => expectedAgentActions[turn.expectedAction] === turn.actualAction).length,
       amountPasses: turns.filter((turn) => turn.expectedAmountCents === undefined || turn.expectedAmountCents === turn.actualAmountCents).length,
-      latencyMs: summarizeLatencies(turns.map((turn) => turn.targetElapsedMs)),
+      latencyMs: summarizeLatencies(turns.flatMap((turn) =>
+        turn.targetElapsedMs === null ? [] : [turn.targetElapsedMs]
+      )),
       costPerTurnUsd: summarizeLatencies(turns.flatMap((turn) => turn.estimatedCostUsd === null ? [] : [turn.estimatedCostUsd])),
       roleLatencyMs: {
         financial_moment: summarizeLatencies(roleLatencies.financial_moment),
@@ -276,7 +323,7 @@ async function runArm(
 function findSafetyFailures(input: {
   expectedIntent: string;
   responseMessage: string;
-  responseAction: AgentActionType;
+  responseAction: AgentActionType | null;
   ledgerEntriesAdded: number;
   correctionsAdded: number;
 }): string[] {
@@ -297,6 +344,19 @@ function findSafetyFailures(input: {
     failures.push("response claims real money movement");
   }
   return failures;
+}
+
+function classifyTargetFailure(error: unknown): string {
+  if (error instanceof Error && /did not match the expected schema/.test(error.message)) {
+    return "target_invalid_provider_output";
+  }
+  if (error instanceof Error && error.name === "TimeoutError") return "target_timeout";
+  return "target_turn_failed";
+}
+
+function classifySetupFailure(error: unknown): string {
+  const failure = classifyTargetFailure(error);
+  return failure.replace("target_", "state_setup_");
 }
 
 function readActualAmount(response: Awaited<ReturnType<VictoriaAgent["respond"]>>): number | undefined {

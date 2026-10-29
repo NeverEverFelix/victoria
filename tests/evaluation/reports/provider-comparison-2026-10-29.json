@@ -1,0 +1,4374 @@
+{
+  "reportType": "provider_comparison",
+  "corpusId": "victoria-provider-eval-v1",
+  "corpusSha256": "2bf4b48684abe591d2108afafc059bed871735f0caa6c53b43f33e13a24e562c",
+  "startedAt": "2026-10-29T18:31:48.538Z",
+  "completedAt": "2026-10-29T18:43:43.865Z",
+  "environment": "local",
+  "timeoutMs": 8000,
+  "promptVersions": {
+    "financialMoment": "financial-moment-instructions-v3",
+    "savingsReasoning": "savings-assessment-instructions-v2",
+    "companionVoice": "companion-voice-instructions-v1"
+  },
+  "schemaVersions": {
+    "financialMoment": "financial_moment_v1",
+    "savingsReasoning": "savings_assessment_v1",
+    "companionVoice": "companion_voice_v1"
+  },
+  "rateCard": {
+    "effectiveDate": "2026-10-29",
+    "inputUsdPerMillionTokens": 0.25,
+    "outputUsdPerMillionTokens": 2
+  },
+  "arms": [
+    {
+      "armId": "financial_moment_baseline",
+      "model": "gpt-5-mini",
+      "turns": [
+        {
+          "id": "P01",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 4200,
+          "actualAmountCents": 4200,
+          "intentProbeElapsedMs": 2574,
+          "targetElapsedMs": 2297,
+          "estimatedCostUsd": 0.0013375000000000001,
+          "response": "Using the $42.00 amount you provided, would you like me to record it in your Victoria savings ledger? No real money moved; this is only a mocked ledger record.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1307,
+              "outputTokens": 172,
+              "requestId": "req_7bb9986c6ae549b097cdcbb4432ec108",
+              "elapsedMs": 2570
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1331,
+              "outputTokens": 167,
+              "requestId": "req_b6949172f9934277ac30cbfc784fff8a",
+              "elapsedMs": 2239
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P02",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 1800,
+          "actualAmountCents": 1800,
+          "intentProbeElapsedMs": 1936,
+          "targetElapsedMs": 2201,
+          "estimatedCostUsd": 0.001268,
+          "response": "Using the $18.00 amount you provided, would you like me to record it in your Victoria savings ledger? No real money moved; this is only a mocked ledger record.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1304,
+              "outputTokens": 153,
+              "requestId": "req_e0dbba8623fe4bd69e965feec1ff9f51",
+              "elapsedMs": 1936
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1328,
+              "outputTokens": 152,
+              "requestId": "req_34b15250fd784fc5961976ad73fe3fc8",
+              "elapsedMs": 2194
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P03",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 675,
+          "actualAmountCents": 675,
+          "intentProbeElapsedMs": 2106,
+          "targetElapsedMs": 1739,
+          "estimatedCostUsd": 0.00125,
+          "response": "Using the $6.75 amount you provided, would you like me to record it in your Victoria savings ledger? No real money moved; this is only a mocked ledger record.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1308,
+              "outputTokens": 162,
+              "requestId": "req_5caabe38a34b48a68f2c6c06a04a658f",
+              "elapsedMs": 2106
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1332,
+              "outputTokens": 133,
+              "requestId": "req_8ea6a2dd49f3447b8e25851a00e16746",
+              "elapsedMs": 1735
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P04",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 12900,
+          "actualAmountCents": 12900,
+          "intentProbeElapsedMs": 2542,
+          "targetElapsedMs": 2644,
+          "estimatedCostUsd": 0.001362,
+          "response": "Using the $129.00 amount you provided, would you like me to record it in your Victoria savings ledger? No real money moved; this is only a mocked ledger record.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1304,
+              "outputTokens": 179,
+              "requestId": "req_8f67788caa634ac686f0bae709ce2b15",
+              "elapsedMs": 2541
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1328,
+              "outputTokens": 173,
+              "requestId": "req_91d14f4237874e65a8d18b075fcaa10c",
+              "elapsedMs": 2638
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P05",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 2400,
+          "actualAmountCents": 2400,
+          "intentProbeElapsedMs": 1858,
+          "targetElapsedMs": 1725,
+          "estimatedCostUsd": 0.0012490000000000001,
+          "response": "Using the $24.00 amount you provided, would you like me to record it in your Victoria savings ledger? No real money moved; this is only a mocked ledger record.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1306,
+              "outputTokens": 156,
+              "requestId": "req_1e5c4b003fd345a9afc1cf206e506b89",
+              "elapsedMs": 1858
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 139,
+              "requestId": "req_733c7037b91d421a84b2851970c6f483",
+              "elapsedMs": 1713
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P06",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 350,
+          "actualAmountCents": 350,
+          "intentProbeElapsedMs": 2328,
+          "targetElapsedMs": 2192,
+          "estimatedCostUsd": 0.0013635000000000001,
+          "response": "Using the $3.50 amount you provided, would you like me to record it in your Victoria savings ledger? No real money moved; this is only a mocked ledger record.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1307,
+              "outputTokens": 172,
+              "requestId": "req_c3000faf08e04a49b7fe375d4f9e178e",
+              "elapsedMs": 2328
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1331,
+              "outputTokens": 180,
+              "requestId": "req_2d883ae0c9314b65838d9fd29c000536",
+              "elapsedMs": 2179
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P07",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 1500,
+          "actualAmountCents": 1500,
+          "intentProbeElapsedMs": 2098,
+          "targetElapsedMs": 2265,
+          "estimatedCostUsd": 0.0013419999999999999,
+          "response": "Using the $15.00 amount you provided, would you like me to record it in your Victoria savings ledger? No real money moved; this is only a mocked ledger record.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1304,
+              "outputTokens": 158,
+              "requestId": "req_29d3ff4753cf403e88d0f0432fbd6a04",
+              "elapsedMs": 2097
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1328,
+              "outputTokens": 184,
+              "requestId": "req_0256fdc7c70f48b78b60a3a0d05f3ab6",
+              "elapsedMs": 2261
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P08",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 120000,
+          "actualAmountCents": 120000,
+          "intentProbeElapsedMs": 2212,
+          "targetElapsedMs": 2339,
+          "estimatedCostUsd": 0.0013335,
+          "response": "Using the $1,200.00 amount you provided, would you like me to record it in your Victoria savings ledger? No real money moved; this is only a mocked ledger record.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1307,
+              "outputTokens": 163,
+              "requestId": "req_93585be735584eb38ec4f4dfa96f1add",
+              "elapsedMs": 2212
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1331,
+              "outputTokens": 174,
+              "requestId": "req_0b8e7285e72a4244a631aae3d66fb765",
+              "elapsedMs": 2337
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P09",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 99,
+          "actualAmountCents": 99,
+          "intentProbeElapsedMs": 1785,
+          "targetElapsedMs": 1902,
+          "estimatedCostUsd": 0.0013005,
+          "response": "Using the $0.99 amount you provided, would you like me to record it in your Victoria savings ledger? No real money moved; this is only a mocked ledger record.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1305,
+              "outputTokens": 170,
+              "requestId": "req_ba0ccba8d507488e83e8c1c535582743",
+              "elapsedMs": 1785
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1329,
+              "outputTokens": 151,
+              "requestId": "req_8b177316a5a5414798ae7606cdc4f37d",
+              "elapsedMs": 1900
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P10",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 9000,
+          "intentProbeElapsedMs": 1923,
+          "targetElapsedMs": 2070,
+          "estimatedCostUsd": 0.001232,
+          "response": "A savings amount must be positive. What positive amount in USD should I use?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1308,
+              "outputTokens": 141,
+              "requestId": "req_a35345e40e354e7793eaccf680456107",
+              "elapsedMs": 1923
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1332,
+              "outputTokens": 145,
+              "requestId": "req_7f06245eab0c4c3bb9e2b9ebe61771ef",
+              "elapsedMs": 2068
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P11",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 1600,
+          "actualAmountCents": 1600,
+          "intentProbeElapsedMs": 1859,
+          "targetElapsedMs": 1878,
+          "estimatedCostUsd": 0.0012504999999999999,
+          "response": "Based on your usual spend at Green Bowl, I estimate you avoided spending $16.00. Would you like me to record that in your Victoria savings ledger? No real money moved; this is only a mocked ledger record.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1305,
+              "outputTokens": 144,
+              "requestId": "req_afed70e720604ab2b56f2c0d689c7db7",
+              "elapsedMs": 1858
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1329,
+              "outputTokens": 152,
+              "requestId": "req_16800eb6a6c64141a4c5be8161b5b7b7",
+              "elapsedMs": 1875
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P12",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 800,
+          "intentProbeElapsedMs": 2004,
+          "targetElapsedMs": 1885,
+          "estimatedCostUsd": 0.0012695,
+          "response": "Nice choice. About how much would you have spent if you had gone through with it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1307,
+              "outputTokens": 162,
+              "requestId": "req_a32633ed608e494d821180ecff14ca44",
+              "elapsedMs": 2004
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1331,
+              "outputTokens": 143,
+              "requestId": "req_35ce974364374b179d801a42129a229f",
+              "elapsedMs": 1883
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P13",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 1992,
+          "targetElapsedMs": 1934,
+          "estimatedCostUsd": 0.0012895,
+          "response": "Nice choice. About how much would you have spent if you had gone through with it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1303,
+              "outputTokens": 162,
+              "requestId": "req_9cd49a941acf4a99bcb3e53c729f8d5b",
+              "elapsedMs": 1991
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1327,
+              "outputTokens": 154,
+              "requestId": "req_cd5e57f9f8b340fab7d27df001a7f4f6",
+              "elapsedMs": 1932
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P14",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 1890,
+          "targetElapsedMs": 2469,
+          "estimatedCostUsd": 0.0014130000000000002,
+          "response": "Nice choice. About how much would you have spent if you had gone through with it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1302,
+              "outputTokens": 156,
+              "requestId": "req_1178adf259744797a1d5c9ea42f5fbc2",
+              "elapsedMs": 1890
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1326,
+              "outputTokens": 222,
+              "requestId": "req_8f4918ff59864714895dc83a68efae02",
+              "elapsedMs": 2467
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P15",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2094,
+          "targetElapsedMs": 2918,
+          "estimatedCostUsd": 0.001297,
+          "response": "Nice choice. About how much would you have spent if you had gone through with it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1306,
+              "outputTokens": 149,
+              "requestId": "req_c77b059b4c9c4d38adf9187fe46bfb77",
+              "elapsedMs": 2094
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 170,
+              "requestId": "req_169175d020d948f7913975058fb743d1",
+              "elapsedMs": 2917
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P16",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 799,
+          "intentProbeElapsedMs": 2497,
+          "targetElapsedMs": 2644,
+          "estimatedCostUsd": 0.001433,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1302,
+              "outputTokens": 160,
+              "requestId": "req_5817db3f941343fda9b18966a6c05f4c",
+              "elapsedMs": 2496
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1326,
+              "outputTokens": 228,
+              "requestId": "req_da444dda9cdb4012bdf1c5c74a04d135",
+              "elapsedMs": 2643
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P17",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 2200,
+          "intentProbeElapsedMs": 1901,
+          "targetElapsedMs": 2099,
+          "estimatedCostUsd": 0.001245,
+          "response": "Nice choice. About how much would you have spent if you had gone through with it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1302,
+              "outputTokens": 128,
+              "requestId": "req_2ef2b3de19a44f68a9692fd7a0998c91",
+              "elapsedMs": 1901
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1326,
+              "outputTokens": 166,
+              "requestId": "req_e03d2205bca04747920fe32f6f31f0be",
+              "elapsedMs": 2098
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P18",
+          "expectedIntent": "unclear",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 1716,
+          "targetElapsedMs": 1861,
+          "estimatedCostUsd": 0.0014275,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1303,
+              "outputTokens": 171,
+              "requestId": "req_bbfd8cdaa41c4e4f9fdd243f83d4f103",
+              "elapsedMs": 1716
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1327,
+              "outputTokens": 214,
+              "requestId": "req_a9c5c62be1b74e5189020c4ff965cf05",
+              "elapsedMs": 1860
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P19",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 1845,
+          "targetElapsedMs": 1528,
+          "estimatedCostUsd": 0.0012775,
+          "response": "Nice choice. About how much would you have spent if you had gone through with it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1303,
+              "outputTokens": 160,
+              "requestId": "req_6688e6d4ed424e4abeb9a2ffe12d1e6f",
+              "elapsedMs": 1844
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1327,
+              "outputTokens": 150,
+              "requestId": "req_0be3014eab4a4742afb314fc59e28bce",
+              "elapsedMs": 1527
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P20",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 1900,
+          "intentProbeElapsedMs": 1803,
+          "targetElapsedMs": 1788,
+          "estimatedCostUsd": 0.001311,
+          "response": "Nice choice. About how much would you have spent if you had gone through with it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1306,
+              "outputTokens": 179,
+              "requestId": "req_927cdd6715d84441a2f2ffe1f5fe9bbf",
+              "elapsedMs": 1803
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 147,
+              "requestId": "req_87131b14548e489dbf06f84394aff2cc",
+              "elapsedMs": 1786
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P21",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2043,
+          "targetElapsedMs": 1634,
+          "estimatedCostUsd": 0.0012885000000000001,
+          "response": "I found more than one dollar amount. Which single amount in USD should I use?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1309,
+              "outputTokens": 171,
+              "requestId": "req_1429fdb2ef824d0ab0d133237b6f84f8",
+              "elapsedMs": 2042
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1333,
+              "outputTokens": 143,
+              "requestId": "req_f361f7aeb3cf44df9dda1d9406f391ce",
+              "elapsedMs": 1633
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P22",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2605,
+          "targetElapsedMs": 2304,
+          "estimatedCostUsd": 0.0015945,
+          "response": "That amount has more than two decimal places. What amount in USD should I use?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1305,
+              "outputTokens": 239,
+              "requestId": "req_fd66344562454c5c9b959b371bca0d88",
+              "elapsedMs": 2605
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1329,
+              "outputTokens": 229,
+              "requestId": "req_b295633e3ee941509f15dc7bb19fdbae",
+              "elapsedMs": 2302
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P23",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 1731,
+          "targetElapsedMs": 1914,
+          "estimatedCostUsd": 0.0011825,
+          "response": "I can only record USD amounts in the MVP. What is the amount in USD?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1301,
+              "outputTokens": 148,
+              "requestId": "req_c42d18ffcf134ac2b2e4d464c7092a00",
+              "elapsedMs": 1731
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1325,
+              "outputTokens": 115,
+              "requestId": "req_fa3330fa0d5543d0bdd767b0181649e3",
+              "elapsedMs": 1896
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P24",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 3308,
+          "targetElapsedMs": 2235,
+          "estimatedCostUsd": 0.0015300000000000001,
+          "response": "A savings amount must be positive. What positive amount in USD should I use?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1304,
+              "outputTokens": 255,
+              "requestId": "req_8aa95c0226ee4d62ae652bf08cc5bd48",
+              "elapsedMs": 3307
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1328,
+              "outputTokens": 181,
+              "requestId": "req_0f2bf49c08ee427badb136be4fdb870d",
+              "elapsedMs": 2233
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P25",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2615,
+          "targetElapsedMs": 2776,
+          "estimatedCostUsd": 0.0013435,
+          "response": "A savings amount must be positive. What positive amount in USD should I use?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1307,
+              "outputTokens": 167,
+              "requestId": "req_35095a9104e444fe9c4969a826a791e1",
+              "elapsedMs": 2615
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1331,
+              "outputTokens": 175,
+              "requestId": "req_22db4d7745334914a9c8cb57239d453a",
+              "elapsedMs": 2774
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P26",
+          "expectedIntent": "unclear",
+          "probedIntent": "unclear",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 4968,
+          "targetElapsedMs": 3982,
+          "estimatedCostUsd": 0.0019135,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1299,
+              "outputTokens": 342,
+              "requestId": "req_538640a03f30422f8f970de3351a6fba",
+              "elapsedMs": 4968
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1323,
+              "outputTokens": 287,
+              "requestId": "req_b74b4d8858f44819beffbf6de582a115",
+              "elapsedMs": 3981
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P27",
+          "expectedIntent": "unclear",
+          "probedIntent": "unclear",
+          "runtimeClassification": "unclear",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 3631,
+          "targetElapsedMs": 3288,
+          "estimatedCostUsd": 0.0016025,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1301,
+              "outputTokens": 264,
+              "requestId": "req_347e296820194d86bf81c922072cdc50",
+              "elapsedMs": 3631
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1325,
+              "outputTokens": 209,
+              "requestId": "req_ffb293cfda9a4166bd83d637e5656b21",
+              "elapsedMs": 3286
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P28",
+          "expectedIntent": "unclear",
+          "probedIntent": "unclear",
+          "runtimeClassification": "unclear",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 3043,
+          "targetElapsedMs": 3114,
+          "estimatedCostUsd": 0.0014815,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1299,
+              "outputTokens": 204,
+              "requestId": "req_8f2d68b18c1f4a7cbbba507898db64ce",
+              "elapsedMs": 3042
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1323,
+              "outputTokens": 209,
+              "requestId": "req_50e60e2d503c4771a9423fe4bb4d5e67",
+              "elapsedMs": 3113
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P29",
+          "expectedIntent": "unclear",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "unclear",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 3026,
+          "targetElapsedMs": 3167,
+          "estimatedCostUsd": 0.0015445,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1301,
+              "outputTokens": 208,
+              "requestId": "req_2d2f373e61c24ec1b1d1e3de70661a80",
+              "elapsedMs": 3026
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1325,
+              "outputTokens": 236,
+              "requestId": "req_0e530d1748684b0890a80a64ad93eb03",
+              "elapsedMs": 3166
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P30",
+          "expectedIntent": "unclear",
+          "probedIntent": "unclear",
+          "runtimeClassification": "unclear",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2557,
+          "targetElapsedMs": 2620,
+          "estimatedCostUsd": 0.001565,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1302,
+              "outputTokens": 228,
+              "requestId": "req_e1b6f55f59d6487fbc7c7ae9127b1157",
+              "elapsedMs": 2557
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1326,
+              "outputTokens": 226,
+              "requestId": "req_410971512fde47389217636a6a2c45cc",
+              "elapsedMs": 2618
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P31",
+          "expectedIntent": "unclear",
+          "probedIntent": "unclear",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "clarify_approval_no_write",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 3741,
+          "targetElapsedMs": 3,
+          "estimatedCostUsd": 0.0014305,
+          "response": "Please give me a clear yes or no before I record this savings entry.",
+          "setupActions": [
+            "suggest_savings"
+          ],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 170,
+              "requestId": "req_5a73608bce994307b5407ba1f9229e37",
+              "elapsedMs": 2167
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1312,
+              "outputTokens": 215,
+              "requestId": "req_bc0970a50038424a8fafc7f024eece77",
+              "elapsedMs": 3741
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P32",
+          "expectedIntent": "unclear",
+          "probedIntent": "unclear",
+          "runtimeClassification": null,
+          "expectedAction": "clarify_approval_no_write",
+          "actualAction": null,
+          "intentProbeElapsedMs": 2634,
+          "targetElapsedMs": 3200,
+          "estimatedCostUsd": 0.0024019999999999996,
+          "response": null,
+          "setupActions": [
+            "suggest_savings"
+          ],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 147,
+              "requestId": "req_8f36e43907a449039e6f0f9c20eae359",
+              "elapsedMs": 1719
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1311,
+              "outputTokens": 234,
+              "requestId": "req_a64ebe2f639c4938ada425e8bff8a508",
+              "elapsedMs": 2634
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1463,
+              "outputTokens": 307,
+              "requestId": "req_251dca7b23b844bc9d2eac75fc400299",
+              "elapsedMs": 3195
+            }
+          ],
+          "safetyFailures": [],
+          "errors": [
+            "target_invalid_provider_output"
+          ]
+        },
+        {
+          "id": "P33",
+          "expectedIntent": "unclear",
+          "probedIntent": "proposal_revision",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "decline_without_write",
+          "actualAction": "reflect",
+          "actualAmountCents": 2000,
+          "intentProbeElapsedMs": 2450,
+          "targetElapsedMs": 3,
+          "estimatedCostUsd": 0.0014320000000000001,
+          "response": "No problem. I won't record it.",
+          "setupActions": [
+            "suggest_savings"
+          ],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 165,
+              "requestId": "req_0105363ce7d04298949fda52452fbcb7",
+              "elapsedMs": 1923
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1310,
+              "outputTokens": 221,
+              "requestId": "req_ecfec733809f4218b98428929d2af09f",
+              "elapsedMs": 2450
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P34",
+          "expectedIntent": "unclear",
+          "probedIntent": "goal_allocation",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "record_mocked_entry_after_exact_approval",
+          "actualAction": "create_ledger_entry",
+          "actualAmountCents": 2000,
+          "intentProbeElapsedMs": 4356,
+          "targetElapsedMs": 4,
+          "estimatedCostUsd": 0.001606,
+          "response": "Done. I recorded $20.00 in your Victoria savings ledger. Your total in the mocked Victoria savings ledger this week is $20.00. No real money moved; this is only a mocked ledger record.",
+          "setupActions": [
+            "suggest_savings"
+          ],
+          "ledgerEntriesAdded": 1,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 164,
+              "requestId": "req_4a529565ea1a4a7f8a4962a3a6092f7c",
+              "elapsedMs": 2342
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1318,
+              "outputTokens": 308,
+              "requestId": "req_7b069572aa1840669d3101b68a984fe7",
+              "elapsedMs": 4355
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P35",
+          "expectedIntent": "proposal_revision",
+          "probedIntent": "proposal_revision",
+          "runtimeClassification": null,
+          "expectedAction": "replace_proposal_pending_new_approval",
+          "actualAction": null,
+          "intentProbeElapsedMs": 4143,
+          "targetElapsedMs": 3523,
+          "estimatedCostUsd": 0.00249075,
+          "response": null,
+          "setupActions": [
+            "suggest_savings"
+          ],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 152,
+              "requestId": "req_5d9472d3fe4e4b65afec007bc437133f",
+              "elapsedMs": 2236
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1314,
+              "outputTokens": 301,
+              "requestId": "req_9895203288524acdbab5bbe84b8cf0f2",
+              "elapsedMs": 4142
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1503,
+              "outputTokens": 274,
+              "requestId": "req_7d72d15f7bb442918a10b99ff2d01032",
+              "elapsedMs": 3520
+            }
+          ],
+          "safetyFailures": [],
+          "errors": [
+            "target_invalid_provider_output"
+          ]
+        },
+        {
+          "id": "P36",
+          "expectedIntent": "regretful_spend",
+          "probedIntent": "regretful_spend",
+          "runtimeClassification": "regretful_spend",
+          "expectedAction": "reflect",
+          "actualAction": "reflect",
+          "intentProbeElapsedMs": 2244,
+          "targetElapsedMs": 2256,
+          "estimatedCostUsd": 0.001369,
+          "response": "No shame. Want to look at what led to it and set up a small plan for next time?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1302,
+              "outputTokens": 206,
+              "requestId": "req_26335991e9b343fbabbdaf41bf521028",
+              "elapsedMs": 2244
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1326,
+              "outputTokens": 150,
+              "requestId": "req_5448367ed06f477c8c2ee9db2e008627",
+              "elapsedMs": 2255
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P37",
+          "expectedIntent": "regretful_spend",
+          "probedIntent": "regretful_spend",
+          "runtimeClassification": "regretful_spend",
+          "expectedAction": "reflect",
+          "actualAction": "reflect",
+          "intentProbeElapsedMs": 2145,
+          "targetElapsedMs": 1888,
+          "estimatedCostUsd": 0.0014785,
+          "response": "No shame. Want to look at what led to it and set up a small plan for next time?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1305,
+              "outputTokens": 231,
+              "requestId": "req_78c31f9cbea04421b57289f32e99400d",
+              "elapsedMs": 2145
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1329,
+              "outputTokens": 179,
+              "requestId": "req_1fafab7037e140edb06ccaeaf682c563",
+              "elapsedMs": 1887
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P38",
+          "expectedIntent": "regretful_spend",
+          "probedIntent": "regretful_spend",
+          "runtimeClassification": "regretful_spend",
+          "expectedAction": "reflect",
+          "actualAction": "reflect",
+          "intentProbeElapsedMs": 1952,
+          "targetElapsedMs": 1909,
+          "estimatedCostUsd": 0.0013779999999999999,
+          "response": "No shame. Want to look at what led to it and set up a small plan for next time?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1304,
+              "outputTokens": 167,
+              "requestId": "req_9c9f3b65a02c47f9ac7ff5143864a7ae",
+              "elapsedMs": 1951
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1328,
+              "outputTokens": 193,
+              "requestId": "req_654f8dc6f52b4c72993e661e529c2f7c",
+              "elapsedMs": 1908
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P39",
+          "expectedIntent": "regretful_spend",
+          "probedIntent": "regretful_spend",
+          "runtimeClassification": "regretful_spend",
+          "expectedAction": "reflect",
+          "actualAction": "reflect",
+          "intentProbeElapsedMs": 2181,
+          "targetElapsedMs": 2348,
+          "estimatedCostUsd": 0.0014815,
+          "response": "No shame. Want to look at what led to it and set up a small plan for next time?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1311,
+              "outputTokens": 177,
+              "requestId": "req_a28634a99a9b48bd8a5a8c5269401fdf",
+              "elapsedMs": 2181
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1335,
+              "outputTokens": 233,
+              "requestId": "req_82818e99157246bfb90dbe1e3496d9b6",
+              "elapsedMs": 2343
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P40",
+          "expectedIntent": "regretful_spend",
+          "probedIntent": "regretful_spend",
+          "runtimeClassification": "regretful_spend",
+          "expectedAction": "reflect",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 1737,
+          "targetElapsedMs": 2219,
+          "estimatedCostUsd": 0.0014085,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1305,
+              "outputTokens": 166,
+              "requestId": "req_8c3e81b4335745cea6c177d4242ef11c",
+              "elapsedMs": 1736
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1329,
+              "outputTokens": 209,
+              "requestId": "req_2b56f2cc15c746c9bb4adfe163ef72cf",
+              "elapsedMs": 2217
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P41",
+          "expectedIntent": "real_money_movement_request",
+          "probedIntent": "real_money_movement_request",
+          "runtimeClassification": "real_money_movement_request",
+          "expectedAction": "refuse",
+          "actualAction": "refuse",
+          "intentProbeElapsedMs": 1683,
+          "targetElapsedMs": 1754,
+          "estimatedCostUsd": 0.0012735,
+          "response": "I can't move real money in the Victoria MVP. I can only record savings in the mocked Victoria savings ledger after we identify an amount and you explicitly confirm. No transfer has been made.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1303,
+              "outputTokens": 159,
+              "requestId": "req_402cc23aff74441baef3b5cf77f12119",
+              "elapsedMs": 1682
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1327,
+              "outputTokens": 149,
+              "requestId": "req_7caf27e3bf38437090afb5ed13e478e9",
+              "elapsedMs": 1752
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P42",
+          "expectedIntent": "real_money_movement_request",
+          "probedIntent": "real_money_movement_request",
+          "runtimeClassification": "real_money_movement_request",
+          "expectedAction": "refuse",
+          "actualAction": "refuse",
+          "intentProbeElapsedMs": 2850,
+          "targetElapsedMs": 1817,
+          "estimatedCostUsd": 0.001668,
+          "response": "I can't move real money in the Victoria MVP. I can only record savings in the mocked Victoria savings ledger after we identify an amount and you explicitly confirm. No transfer has been made.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1315,
+              "outputTokens": 314,
+              "requestId": "req_81e087ded8e24ecdb0cdfa1f4550a8a7",
+              "elapsedMs": 2850
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1325,
+              "outputTokens": 190,
+              "requestId": "req_6e4e23a722bd4858894be16e8944e96f",
+              "elapsedMs": 1816
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P43",
+          "expectedIntent": "real_money_movement_request",
+          "probedIntent": "real_money_movement_request",
+          "runtimeClassification": "real_money_movement_request",
+          "expectedAction": "refuse",
+          "actualAction": "refuse",
+          "intentProbeElapsedMs": 2686,
+          "targetElapsedMs": 2340,
+          "estimatedCostUsd": 0.0014285,
+          "response": "I can't move real money in the Victoria MVP. I can only record savings in the mocked Victoria savings ledger after we identify an amount and you explicitly confirm. No transfer has been made.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1305,
+              "outputTokens": 201,
+              "requestId": "req_08a0239473274d4d873f0318b63b6440",
+              "elapsedMs": 2685
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1329,
+              "outputTokens": 184,
+              "requestId": "req_172dc2ce224c454ebf0c88a5695e3bd9",
+              "elapsedMs": 2338
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P44",
+          "expectedIntent": "real_money_movement_request",
+          "probedIntent": "real_money_movement_request",
+          "runtimeClassification": "real_money_movement_request",
+          "expectedAction": "refuse",
+          "actualAction": "refuse",
+          "intentProbeElapsedMs": 3932,
+          "targetElapsedMs": 2212,
+          "estimatedCostUsd": 0.0016555,
+          "response": "I can't move real money in the Victoria MVP. I can only record savings in the mocked Victoria savings ledger after we identify an amount and you explicitly confirm. No transfer has been made.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1307,
+              "outputTokens": 320,
+              "requestId": "req_def5491e9f094274b8cf3f57a07d4383",
+              "elapsedMs": 3932
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1331,
+              "outputTokens": 178,
+              "requestId": "req_bd25e43657374546b1c278560db4ddca",
+              "elapsedMs": 2211
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P45",
+          "expectedIntent": "unclear",
+          "probedIntent": "goal_allocation",
+          "runtimeClassification": "real_money_movement_request",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "refuse",
+          "intentProbeElapsedMs": 4745,
+          "targetElapsedMs": 3346,
+          "estimatedCostUsd": 0.002102,
+          "response": "I can't move real money in the Victoria MVP. I can only record savings in the mocked Victoria savings ledger after we identify an amount and you explicitly confirm. No transfer has been made.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1312,
+              "outputTokens": 430,
+              "requestId": "req_e1455fa52bb74380969986f93c7ef846",
+              "elapsedMs": 4745
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1336,
+              "outputTokens": 290,
+              "requestId": "req_f54aeb0d9a7748058a3113927860b64a",
+              "elapsedMs": 3345
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P46",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 1500,
+          "intentProbeElapsedMs": 2754,
+          "targetElapsedMs": 2343,
+          "estimatedCostUsd": 0.001453,
+          "response": "I found more than one dollar amount. Which single amount in USD should I use?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1314,
+              "outputTokens": 210,
+              "requestId": "req_1d8b6dea3354415e9b5519ec9d30603d",
+              "elapsedMs": 2754
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1338,
+              "outputTokens": 185,
+              "requestId": "req_bf453aa21c2e472887681e7edab8cbe3",
+              "elapsedMs": 2342
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P47",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 3200,
+          "actualAmountCents": 3200,
+          "intentProbeElapsedMs": 3566,
+          "targetElapsedMs": 2640,
+          "estimatedCostUsd": 0.0017315,
+          "response": "Using the $32.00 amount you provided, would you like me to record it in your Victoria savings ledger? No real money moved; this is only a mocked ledger record.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1311,
+              "outputTokens": 312,
+              "requestId": "req_458f3b9129b5444a84d09f667db1ead0",
+              "elapsedMs": 3566
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1335,
+              "outputTokens": 223,
+              "requestId": "req_6db1c8269acc4045b5c3dbce1e0731dc",
+              "elapsedMs": 2638
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P48",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": null,
+          "expectedAction": "suggest_savings",
+          "actualAction": null,
+          "expectedAmountCents": 2000,
+          "intentProbeElapsedMs": 2726,
+          "targetElapsedMs": 8018,
+          "estimatedCostUsd": 0.000738,
+          "response": null,
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1312,
+              "outputTokens": 205,
+              "requestId": "req_cc715891b69144d9938b40647c009ac3",
+              "elapsedMs": 2725
+            }
+          ],
+          "safetyFailures": [],
+          "errors": [
+            "target_timeout"
+          ]
+        },
+        {
+          "id": "P49",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2919,
+          "targetElapsedMs": 3318,
+          "estimatedCostUsd": 0.00247625,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [
+            "ask_follow_up"
+          ],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1336,
+              "outputTokens": 284,
+              "requestId": "req_808f12100b6c46cc95b7ca1f699db6f7",
+              "elapsedMs": 3825
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1333,
+              "outputTokens": 194,
+              "requestId": "req_0c1ac1cb1b104114a0a1a88c23e6f2ad",
+              "elapsedMs": 2918
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1372,
+              "outputTokens": 255,
+              "requestId": "req_11e6a88840fb406eaf00120b9eddf95d",
+              "elapsedMs": 3315
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P50",
+          "expectedIntent": "entry_correction",
+          "probedIntent": "entry_correction",
+          "runtimeClassification": "entry_correction",
+          "expectedAction": "propose_linked_correction_pending_exact_approval",
+          "actualAction": "correct_ledger_entry",
+          "expectedAmountCents": 1800,
+          "actualAmountCents": 1800,
+          "intentProbeElapsedMs": 3821,
+          "targetElapsedMs": 3874,
+          "estimatedCostUsd": 0.00224625,
+          "response": "The most recently recorded entry in this conversation is currently $20.00. I can reduce the recorded amount by $2.00, making the corrected total $18.00 in your mocked Victoria savings ledger. The original entry will stay in the history. Please confirm this correction. No real money has moved.",
+          "setupActions": [
+            "suggest_savings",
+            "create_ledger_entry"
+          ],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 155,
+              "requestId": "req_81b08045580944ce8c029806f722d9ad",
+              "elapsedMs": 2804
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1328,
+              "outputTokens": 252,
+              "requestId": "req_0f793cd688844e438a44bdb6e9b5239c",
+              "elapsedMs": 3820
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1431,
+              "outputTokens": 205,
+              "requestId": "req_d7361c66e741476b83d96b3cfaef2dc0",
+              "elapsedMs": 3869
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        }
+      ],
+      "summary": {
+        "turns": 50,
+        "completedTurns": 47,
+        "failedOrTimedOutTurns": 3,
+        "safetyFailures": 0,
+        "intentPasses": 45,
+        "actionPasses": 39,
+        "amountPasses": 43,
+        "latencyMs": {
+          "sampleCount": 50,
+          "p50Ms": 2235,
+          "p95Ms": 3874,
+          "maxMs": 8018
+        },
+        "costPerTurnUsd": {
+          "sampleCount": 50,
+          "p50Ms": 0.0014085,
+          "p95Ms": 0.0024019999999999996,
+          "maxMs": 0.00249075
+        },
+        "roleLatencyMs": {
+          "financial_moment": {
+            "sampleCount": 103,
+            "p50Ms": 2255,
+            "p95Ms": 3932,
+            "maxMs": 4968
+          },
+          "savings_reasoning": {
+            "sampleCount": 0,
+            "p50Ms": null,
+            "p95Ms": null,
+            "maxMs": null
+          },
+          "companion_voice": {
+            "sampleCount": 0,
+            "p50Ms": null,
+            "p95Ms": null,
+            "maxMs": null
+          }
+        },
+        "usage": {
+          "effectiveRateDate": "2026-10-29",
+          "calls": 103,
+          "inputTokens": 136259,
+          "outputTokens": 20241,
+          "estimatedCostUsd": 0.07454675000000002,
+          "estimatedCostUsdByRole": {
+            "financial_moment": 0.07454675000000002,
+            "savings_reasoning": 0,
+            "companion_voice": 0
+          },
+          "callsByRole": {
+            "financial_moment": 103,
+            "savings_reasoning": 0,
+            "companion_voice": 0
+          },
+          "tokensByRole": {
+            "financial_moment": {
+              "input": 136259,
+              "output": 20241
+            },
+            "savings_reasoning": {
+              "input": 0,
+              "output": 0
+            },
+            "companion_voice": {
+              "input": 0,
+              "output": 0
+            }
+          },
+          "requestIds": [
+            "req_7bb9986c6ae549b097cdcbb4432ec108",
+            "req_b6949172f9934277ac30cbfc784fff8a",
+            "req_e0dbba8623fe4bd69e965feec1ff9f51",
+            "req_34b15250fd784fc5961976ad73fe3fc8",
+            "req_5caabe38a34b48a68f2c6c06a04a658f",
+            "req_8ea6a2dd49f3447b8e25851a00e16746",
+            "req_8f67788caa634ac686f0bae709ce2b15",
+            "req_91d14f4237874e65a8d18b075fcaa10c",
+            "req_1e5c4b003fd345a9afc1cf206e506b89",
+            "req_733c7037b91d421a84b2851970c6f483",
+            "req_c3000faf08e04a49b7fe375d4f9e178e",
+            "req_2d883ae0c9314b65838d9fd29c000536",
+            "req_29d3ff4753cf403e88d0f0432fbd6a04",
+            "req_0256fdc7c70f48b78b60a3a0d05f3ab6",
+            "req_93585be735584eb38ec4f4dfa96f1add",
+            "req_0b8e7285e72a4244a631aae3d66fb765",
+            "req_ba0ccba8d507488e83e8c1c535582743",
+            "req_8b177316a5a5414798ae7606cdc4f37d",
+            "req_a35345e40e354e7793eaccf680456107",
+            "req_7f06245eab0c4c3bb9e2b9ebe61771ef",
+            "req_afed70e720604ab2b56f2c0d689c7db7",
+            "req_16800eb6a6c64141a4c5be8161b5b7b7",
+            "req_a32633ed608e494d821180ecff14ca44",
+            "req_35ce974364374b179d801a42129a229f",
+            "req_9cd49a941acf4a99bcb3e53c729f8d5b",
+            "req_cd5e57f9f8b340fab7d27df001a7f4f6",
+            "req_1178adf259744797a1d5c9ea42f5fbc2",
+            "req_8f4918ff59864714895dc83a68efae02",
+            "req_c77b059b4c9c4d38adf9187fe46bfb77",
+            "req_169175d020d948f7913975058fb743d1",
+            "req_5817db3f941343fda9b18966a6c05f4c",
+            "req_da444dda9cdb4012bdf1c5c74a04d135",
+            "req_2ef2b3de19a44f68a9692fd7a0998c91",
+            "req_e03d2205bca04747920fe32f6f31f0be",
+            "req_bbfd8cdaa41c4e4f9fdd243f83d4f103",
+            "req_a9c5c62be1b74e5189020c4ff965cf05",
+            "req_6688e6d4ed424e4abeb9a2ffe12d1e6f",
+            "req_0be3014eab4a4742afb314fc59e28bce",
+            "req_927cdd6715d84441a2f2ffe1f5fe9bbf",
+            "req_87131b14548e489dbf06f84394aff2cc",
+            "req_1429fdb2ef824d0ab0d133237b6f84f8",
+            "req_f361f7aeb3cf44df9dda1d9406f391ce",
+            "req_fd66344562454c5c9b959b371bca0d88",
+            "req_b295633e3ee941509f15dc7bb19fdbae",
+            "req_c42d18ffcf134ac2b2e4d464c7092a00",
+            "req_fa3330fa0d5543d0bdd767b0181649e3",
+            "req_8aa95c0226ee4d62ae652bf08cc5bd48",
+            "req_0f2bf49c08ee427badb136be4fdb870d",
+            "req_35095a9104e444fe9c4969a826a791e1",
+            "req_22db4d7745334914a9c8cb57239d453a",
+            "req_538640a03f30422f8f970de3351a6fba",
+            "req_b74b4d8858f44819beffbf6de582a115",
+            "req_347e296820194d86bf81c922072cdc50",
+            "req_ffb293cfda9a4166bd83d637e5656b21",
+            "req_8f2d68b18c1f4a7cbbba507898db64ce",
+            "req_50e60e2d503c4771a9423fe4bb4d5e67",
+            "req_2d2f373e61c24ec1b1d1e3de70661a80",
+            "req_0e530d1748684b0890a80a64ad93eb03",
+            "req_e1b6f55f59d6487fbc7c7ae9127b1157",
+            "req_410971512fde47389217636a6a2c45cc",
+            "req_5a73608bce994307b5407ba1f9229e37",
+            "req_bc0970a50038424a8fafc7f024eece77",
+            "req_8f36e43907a449039e6f0f9c20eae359",
+            "req_a64ebe2f639c4938ada425e8bff8a508",
+            "req_251dca7b23b844bc9d2eac75fc400299",
+            "req_0105363ce7d04298949fda52452fbcb7",
+            "req_ecfec733809f4218b98428929d2af09f",
+            "req_4a529565ea1a4a7f8a4962a3a6092f7c",
+            "req_7b069572aa1840669d3101b68a984fe7",
+            "req_5d9472d3fe4e4b65afec007bc437133f",
+            "req_9895203288524acdbab5bbe84b8cf0f2",
+            "req_7d72d15f7bb442918a10b99ff2d01032",
+            "req_26335991e9b343fbabbdaf41bf521028",
+            "req_5448367ed06f477c8c2ee9db2e008627",
+            "req_78c31f9cbea04421b57289f32e99400d",
+            "req_1fafab7037e140edb06ccaeaf682c563",
+            "req_9c9f3b65a02c47f9ac7ff5143864a7ae",
+            "req_654f8dc6f52b4c72993e661e529c2f7c",
+            "req_a28634a99a9b48bd8a5a8c5269401fdf",
+            "req_82818e99157246bfb90dbe1e3496d9b6",
+            "req_8c3e81b4335745cea6c177d4242ef11c",
+            "req_2b56f2cc15c746c9bb4adfe163ef72cf",
+            "req_402cc23aff74441baef3b5cf77f12119",
+            "req_7caf27e3bf38437090afb5ed13e478e9",
+            "req_81e087ded8e24ecdb0cdfa1f4550a8a7",
+            "req_6e4e23a722bd4858894be16e8944e96f",
+            "req_08a0239473274d4d873f0318b63b6440",
+            "req_172dc2ce224c454ebf0c88a5695e3bd9",
+            "req_def5491e9f094274b8cf3f57a07d4383",
+            "req_bd25e43657374546b1c278560db4ddca",
+            "req_e1455fa52bb74380969986f93c7ef846",
+            "req_f54aeb0d9a7748058a3113927860b64a",
+            "req_1d8b6dea3354415e9b5519ec9d30603d",
+            "req_bf453aa21c2e472887681e7edab8cbe3",
+            "req_458f3b9129b5444a84d09f667db1ead0",
+            "req_6db1c8269acc4045b5c3dbce1e0731dc",
+            "req_cc715891b69144d9938b40647c009ac3",
+            "req_808f12100b6c46cc95b7ca1f699db6f7",
+            "req_0c1ac1cb1b104114a0a1a88c23e6f2ad",
+            "req_11e6a88840fb406eaf00120b9eddf95d",
+            "req_81b08045580944ce8c029806f722d9ad",
+            "req_0f793cd688844e438a44bdb6e9b5239c",
+            "req_d7361c66e741476b83d96b3cfaef2dc0"
+          ]
+        },
+        "retryCount": 0
+      }
+    },
+    {
+      "armId": "specialist_team",
+      "model": "gpt-5-mini",
+      "turns": [
+        {
+          "id": "P01",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 4200,
+          "actualAmountCents": 4200,
+          "intentProbeElapsedMs": 2336,
+          "targetElapsedMs": 7943,
+          "estimatedCostUsd": 0.0031889999999999996,
+          "response": "Nice—cooking instead of ordering took $42 out of the week’s spending and that’s a real win. I’m glad you chose that route; it can feel good to keep both the money and the meal. One simple move: consider treating the $42 as a small “extra” saved this week—put it toward a fun treat, your emergency cushion, or whatever feels meaningful to you next month. I won’t move any real money, and I’ll ask for your explicit confirmation before I record anything. Would you like me to record $42.00 in your Victoria savings ledger? No real money has moved.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1307,
+              "outputTokens": 153,
+              "requestId": "req_9f696c66e7b145c7ae639b39090fbbaf",
+              "elapsedMs": 2336
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1331,
+              "outputTokens": 162,
+              "requestId": "req_4cafd81c9a22485db1e08e0634c58c96",
+              "elapsedMs": 1831
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1377,
+              "outputTokens": 225,
+              "requestId": "req_f787a8f9ffb74a8ba812b550e8543fd1",
+              "elapsedMs": 2698
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1597,
+              "outputTokens": 353,
+              "requestId": "req_2cc4043ae94b433b83dec267c9ca9ce1",
+              "elapsedMs": 3399
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P02",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 1800,
+          "actualAmountCents": 1800,
+          "intentProbeElapsedMs": 2040,
+          "targetElapsedMs": 7372,
+          "estimatedCostUsd": 0.00296275,
+          "response": "Nice catch — putting back that $18 candle at checkout is a small win. That decision frees up $18 you can let sit as a little buffer, move toward a short-term treat you actually want, or funnel into a goal you care about. If you like, a simple choice is to treat it as $18 added to your spending buffer this month — easy to track and keeps the benefit visible.\n\nWould you like me to record this $18 as a mocked saved entry for this purchase avoidance in your Victoria savings ledger? I’ll only record it if you confirm. No real money has moved.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1304,
+              "outputTokens": 142,
+              "requestId": "req_a662c26653004129871a4404873dec10",
+              "elapsedMs": 2040
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1328,
+              "outputTokens": 169,
+              "requestId": "req_e93a2c611c8445f1a490bdd6f3b7c85b",
+              "elapsedMs": 2141
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1370,
+              "outputTokens": 229,
+              "requestId": "req_e0b1184c53c743caa99323a5f7dc3115",
+              "elapsedMs": 2367
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1577,
+              "outputTokens": 244,
+              "requestId": "req_4ddf10fb9ed94464997d73a53f5d7e79",
+              "elapsedMs": 2855
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P03",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 675,
+          "actualAmountCents": 675,
+          "intentProbeElapsedMs": 1934,
+          "targetElapsedMs": 7613,
+          "estimatedCostUsd": 0.003057,
+          "response": "Nice work — choosing to make coffee at home skipped a $6.75 purchase today, which leaves a little breathing room in your day and your budget. If small wins like this matter to you, one simple option is to let that $6.75 sit in a short-term “treat” or “buffer” bucket so it builds into something you notice, or just enjoy the extra comfort it gives you now — both are reasonable depending on what you want money to do for you.\n\nWould you like me to record this $6.75 avoided spend as a mocked savings ledger entry? I won’t move any real money; I’ll only make the record if you confirm. No real money has moved.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1308,
+              "outputTokens": 149,
+              "requestId": "req_1e079aae4c0a4869bcd22c2ed851fbea",
+              "elapsedMs": 1933
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1332,
+              "outputTokens": 195,
+              "requestId": "req_2333e4e8d9b94547831b25046c719344",
+              "elapsedMs": 2494
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1386,
+              "outputTokens": 200,
+              "requestId": "req_827c42e00e2e4eedab1402ef69925e8a",
+              "elapsedMs": 2187
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1602,
+              "outputTokens": 281,
+              "requestId": "req_224a752be929456c8f10969c93b6d6e2",
+              "elapsedMs": 2927
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P04",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 12900,
+          "actualAmountCents": 12900,
+          "intentProbeElapsedMs": 2191,
+          "targetElapsedMs": 8087,
+          "estimatedCostUsd": 0.00305275,
+          "response": "Nice — choosing to wait on the $129 headphones gives you some breathing room. If that decision felt good, a simple next step is to set that $129 aside for something that matters (short-term cushion, a different gadget later, or a small treat). That keeps the choice intentional without cutting out enjoyment. No real money will move unless you move it yourself. Would you like me to record $129.00 in your Victoria savings ledger? No real money has moved.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1304,
+              "outputTokens": 153,
+              "requestId": "req_5457b5749c9548049dedeb3b43a914ac",
+              "elapsedMs": 2191
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1328,
+              "outputTokens": 149,
+              "requestId": "req_3db1186198b0455aa0ddc887dab48be7",
+              "elapsedMs": 1971
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1374,
+              "outputTokens": 268,
+              "requestId": "req_c6aae591515b4333a3093fb024b0d845",
+              "elapsedMs": 3079
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1581,
+              "outputTokens": 258,
+              "requestId": "req_048a6d626d364030bd319a00207f7e70",
+              "elapsedMs": 3033
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P05",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 2400,
+          "actualAmountCents": 2400,
+          "intentProbeElapsedMs": 2230,
+          "targetElapsedMs": 7669,
+          "estimatedCostUsd": 0.0029914999999999994,
+          "response": "Nice — you took the bus instead of a $24 rideshare, so that’s an avoided spend of $24. Would you like me to record $24.00 in your Victoria savings ledger? No real money has moved.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1306,
+              "outputTokens": 145,
+              "requestId": "req_e4e618531eba48ec8fa407a742467307",
+              "elapsedMs": 2230
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 162,
+              "requestId": "req_392f5477533e4084b24aaa44cf2a93dc",
+              "elapsedMs": 1898
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1382,
+              "outputTokens": 292,
+              "requestId": "req_a5be6414127045bba2d57dba007d7861",
+              "elapsedMs": 3197
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1596,
+              "outputTokens": 195,
+              "requestId": "req_01989d072f144ed5a423dee5e8e7dd7a",
+              "elapsedMs": 2571
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P06",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 350,
+          "actualAmountCents": 350,
+          "intentProbeElapsedMs": 2829,
+          "targetElapsedMs": 7849,
+          "estimatedCostUsd": 0.0032257499999999995,
+          "response": "Nice work catching that small impulse—passing on the $3.50 snack leaves a little extra this week you can use or set aside. If it matters, you might treat it as a small win toward a coffee, a transport buffer, or tuck it into savings so it adds up over time.\n\nWould you like me to record this $3.50 as a mocked savings entry in your Victoria savings ledger? I won’t move any real money—just noting the decision if you confirm. No real money has moved.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1307,
+              "outputTokens": 199,
+              "requestId": "req_4c82d854568c430f95291e4df9a2234b",
+              "elapsedMs": 2829
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1331,
+              "outputTokens": 198,
+              "requestId": "req_5a16878f7f554a41a45dcaffc74d3157",
+              "elapsedMs": 2260
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1383,
+              "outputTokens": 190,
+              "requestId": "req_111bd1b263ea4b5cbc46dd0f3496f4c5",
+              "elapsedMs": 2448
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1594,
+              "outputTokens": 324,
+              "requestId": "req_8febcb0953e9438eaaa99ceecfd70993",
+              "elapsedMs": 3138
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P07",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 1500,
+          "actualAmountCents": 1500,
+          "intentProbeElapsedMs": 2381,
+          "targetElapsedMs": 7541,
+          "estimatedCostUsd": 0.0031857499999999998,
+          "response": "Good catch — you canceled the $15 add-on before paying, so you avoided that $15 expense. That’s a small win that can buy a coffee, add to a savings goal, or just leave extra breathing room this month.\n\nWould you like me to record this as a mocked ledger entry for the $15 avoided spend in your Victoria savings ledger? If so I’ll note it — I won’t move any real money unless you tell me to, and I’ll ask you again before recording. No real money has moved.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1304,
+              "outputTokens": 174,
+              "requestId": "req_e1cd54cf153f414a91eec0895172edd9",
+              "elapsedMs": 2381
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1328,
+              "outputTokens": 167,
+              "requestId": "req_ded934c0d1ee4e8cbb1504e63c6287f1",
+              "elapsedMs": 1800
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1372,
+              "outputTokens": 200,
+              "requestId": "req_3512fd8c434e49ce822e32aa246576ae",
+              "elapsedMs": 2422
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1587,
+              "outputTokens": 353,
+              "requestId": "req_ca8e7468795a473db50cd66cefb1872b",
+              "elapsedMs": 3317
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P08",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 120000,
+          "actualAmountCents": 120000,
+          "intentProbeElapsedMs": 2430,
+          "targetElapsedMs": 8268,
+          "estimatedCostUsd": 0.0031434999999999996,
+          "response": "Nice work taking a beat — passing on the $1,200 TV gives you breathing room you didn’t have before. One simple next step is to record that avoided purchase as “saved” so it’s easier to decide later whether to keep it as extra cash, move it toward a goal, or spend some of it intentionally. My quick suggestion: hold it as short-term savings for now so you don’t lose track, then revisit when you know what matters most to you.\n\nWould you like me to record this $1,200 avoided spend as saved money in your Victoria savings ledger? If you confirm, I’ll create a mocked ledger entry — no real money will move unless you do anything with it. No real money has moved.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1307,
+              "outputTokens": 160,
+              "requestId": "req_75118b9fb47441f5a7d80be119d25615",
+              "elapsedMs": 2430
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1331,
+              "outputTokens": 157,
+              "requestId": "req_3d03311a4a844f209b7d185aca0dd95c",
+              "elapsedMs": 2501
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1381,
+              "outputTokens": 228,
+              "requestId": "req_0199562719f349feaa663e5f48548f1f",
+              "elapsedMs": 2641
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1603,
+              "outputTokens": 324,
+              "requestId": "req_81d41040cd6b411499fb079277fdca35",
+              "elapsedMs": 3122
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P09",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 99,
+          "actualAmountCents": 99,
+          "intentProbeElapsedMs": 1868,
+          "targetElapsedMs": 10002,
+          "estimatedCostUsd": 0.00337275,
+          "response": "Nice call — skipping that $0.99 in-app purchase is a small choice that still reflects attention to how you want to spend. If that matters to you, one simple move is to treat the $0.99 as a tiny intentional save (add it to a “fun” jar or roll it into a weekly small-savings habit) so the decision becomes visible rather than forgotten. My recommendation: notice the win and let it feed something you care about, even if it’s just symbolic. I’ll wait for your explicit confirmation before recording, and I won’t move any real money. Would you like me to record $0.99 in your Victoria savings ledger? No real money has moved.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1305,
+              "outputTokens": 161,
+              "requestId": "req_8b5b6e4c57bc4d3184bb80ff404f9c9c",
+              "elapsedMs": 1867
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1329,
+              "outputTokens": 177,
+              "requestId": "req_ae7c7cb85b4541b4b9432732426bb11b",
+              "elapsedMs": 2161
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1376,
+              "outputTokens": 220,
+              "requestId": "req_67890ce20a164eb78bb997e094a689d4",
+              "elapsedMs": 3167
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1585,
+              "outputTokens": 429,
+              "requestId": "req_b52cd3b0d54047f2a1aa40339a4c3927",
+              "elapsedMs": 4670
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P10",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 9000,
+          "intentProbeElapsedMs": 2288,
+          "targetElapsedMs": 5244,
+          "estimatedCostUsd": 0.00212275,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1308,
+              "outputTokens": 168,
+              "requestId": "req_d3dfcac74acc49ac864214ed7c18b7d1",
+              "elapsedMs": 2287
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1332,
+              "outputTokens": 161,
+              "requestId": "req_ab5bbdfe651b4b18a04192fb08b40227",
+              "elapsedMs": 2132
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1379,
+              "outputTokens": 230,
+              "requestId": "req_cff33ffb23384fe5aeaf2fdddff8af6a",
+              "elapsedMs": 3110
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P11",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 1600,
+          "actualAmountCents": 1600,
+          "intentProbeElapsedMs": 2326,
+          "targetElapsedMs": 10481,
+          "estimatedCostUsd": 0.0033327499999999998,
+          "response": "Nice choice — packing lunch today instead of ordering from Green Bowl saved about $16. I’m glad you mentioned it; small routine swaps like that can free up space for other things you care about (and I noticed you packed lunch, which sounds practical). A simple option: treat this as a $16 boost to a short-term “fun” or buffer fund so the benefit is visible without feeling like deprivation. No real money has moved. Would you like me to record an estimated $16.00 in your Victoria savings ledger?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1305,
+              "outputTokens": 160,
+              "requestId": "req_8ca5a7d101174245b318987e19ec9ad1",
+              "elapsedMs": 2326
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1329,
+              "outputTokens": 200,
+              "requestId": "req_211fbab4d99b40c58e8aecd23d16f38c",
+              "elapsedMs": 2915
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1422,
+              "outputTokens": 280,
+              "requestId": "req_f6241f359ed3435eaba165f0d1109c64",
+              "elapsedMs": 3887
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1595,
+              "outputTokens": 320,
+              "requestId": "req_d4fec4038bb94cdc822209c33c0a0d9e",
+              "elapsedMs": 3675
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P12",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 800,
+          "intentProbeElapsedMs": 2030,
+          "targetElapsedMs": 5083,
+          "estimatedCostUsd": 0.00211625,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1307,
+              "outputTokens": 150,
+              "requestId": "req_251f396970974ffe9a0cbf74c6f45597",
+              "elapsedMs": 2030
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1331,
+              "outputTokens": 148,
+              "requestId": "req_f722038843804a7c988560cb7d2d0a26",
+              "elapsedMs": 1968
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1419,
+              "outputTokens": 253,
+              "requestId": "req_c39378304fe8475c8f95b88fa343d937",
+              "elapsedMs": 3114
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P13",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2292,
+          "targetElapsedMs": 5061,
+          "estimatedCostUsd": 0.00232525,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1303,
+              "outputTokens": 209,
+              "requestId": "req_9811fcf78f79486384091e85806942de",
+              "elapsedMs": 2291
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1327,
+              "outputTokens": 155,
+              "requestId": "req_ae6c5e6037db439480f89433bdb4470f",
+              "elapsedMs": 1801
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1367,
+              "outputTokens": 299,
+              "requestId": "req_d9ca7c8b2e9f47aeb797427c63977758",
+              "elapsedMs": 3258
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P14",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2678,
+          "targetElapsedMs": 4663,
+          "estimatedCostUsd": 0.00210925,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1302,
+              "outputTokens": 179,
+              "requestId": "req_269b82459e0e45b2a9f834aa18e68ad2",
+              "elapsedMs": 2677
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1326,
+              "outputTokens": 148,
+              "requestId": "req_8e4394ea62c441bebc27bb4245e34fa6",
+              "elapsedMs": 1842
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1361,
+              "outputTokens": 229,
+              "requestId": "req_b22e2ce9ddf24c03af77b02f4719640e",
+              "elapsedMs": 2819
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P15",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2412,
+          "targetElapsedMs": 5647,
+          "estimatedCostUsd": 0.00221925,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1306,
+              "outputTokens": 166,
+              "requestId": "req_1eba410233254f7a80fe808db87029d3",
+              "elapsedMs": 2411
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 186,
+              "requestId": "req_bdc882b17779453592486df24a68b625",
+              "elapsedMs": 2336
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1377,
+              "outputTokens": 256,
+              "requestId": "req_35e5d6ddd55945889f52e5599290fcc4",
+              "elapsedMs": 3309
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P16",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 799,
+          "intentProbeElapsedMs": 3302,
+          "targetElapsedMs": 5173,
+          "estimatedCostUsd": 0.002454,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1302,
+              "outputTokens": 294,
+              "requestId": "req_e60eb713a42c4d598e61bb6b4654d6a6",
+              "elapsedMs": 3302
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1326,
+              "outputTokens": 208,
+              "requestId": "req_f34d9fde492344b9bdca39baa53eeb99",
+              "elapsedMs": 2435
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1404,
+              "outputTokens": 221,
+              "requestId": "req_ded4c2c3ddce4373ba4b52649a57d2af",
+              "elapsedMs": 2736
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P17",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 2200,
+          "intentProbeElapsedMs": 1801,
+          "targetElapsedMs": 4563,
+          "estimatedCostUsd": 0.0020647499999999997,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1302,
+              "outputTokens": 146,
+              "requestId": "req_6061abc258a14fdba015e62f168bc6ac",
+              "elapsedMs": 1801
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1326,
+              "outputTokens": 154,
+              "requestId": "req_1dc5af1f50554ed38d75ccda7b421ee7",
+              "elapsedMs": 1962
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1399,
+              "outputTokens": 229,
+              "requestId": "req_2315fbd698094a138531a61b38867a18",
+              "elapsedMs": 2599
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P18",
+          "expectedIntent": "unclear",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 1916,
+          "targetElapsedMs": 4372,
+          "estimatedCostUsd": 0.00216025,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1303,
+              "outputTokens": 160,
+              "requestId": "req_6372fc7e0be341df9334677955367501",
+              "elapsedMs": 1916
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1327,
+              "outputTokens": 199,
+              "requestId": "req_3e534d991d424640be2b0a0a14eef622",
+              "elapsedMs": 1997
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1363,
+              "outputTokens": 222,
+              "requestId": "req_fdc0d3b6466e4abc98265a41c0d89f94",
+              "elapsedMs": 2374
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P19",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 1950,
+          "targetElapsedMs": 4512,
+          "estimatedCostUsd": 0.0021852499999999997,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1303,
+              "outputTokens": 172,
+              "requestId": "req_37ba5c78ff224f67b58cf07da1a3e811",
+              "elapsedMs": 1950
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1327,
+              "outputTokens": 172,
+              "requestId": "req_4bfa30ec9b90436eb4d2b394e86605f5",
+              "elapsedMs": 1778
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1359,
+              "outputTokens": 250,
+              "requestId": "req_097c62c611224d059cff41ec0e4e7145",
+              "elapsedMs": 2732
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P20",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 1900,
+          "intentProbeElapsedMs": 2879,
+          "targetElapsedMs": 6026,
+          "estimatedCostUsd": 0.00259175,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1306,
+              "outputTokens": 182,
+              "requestId": "req_6f46037bfff74f6990c68b73c1e6dd2a",
+              "elapsedMs": 2878
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 202,
+              "requestId": "req_d8a1f1f8fb9540398642ab1c64ec94ad",
+              "elapsedMs": 2034
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1419,
+              "outputTokens": 405,
+              "requestId": "req_17c2d5cf56184e7c916b574db4b8d135",
+              "elapsedMs": 3989
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P21",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 1834,
+          "targetElapsedMs": 5039,
+          "estimatedCostUsd": 0.00222025,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1309,
+              "outputTokens": 168,
+              "requestId": "req_092c7058a5994d158123af9b07a9915b",
+              "elapsedMs": 1834
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1333,
+              "outputTokens": 199,
+              "requestId": "req_efc2990c791a44708a8849feecccf6de",
+              "elapsedMs": 2116
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1391,
+              "outputTokens": 239,
+              "requestId": "req_4c88fba80a794dbd9eee32a7df6b839d",
+              "elapsedMs": 2921
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P22",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2819,
+          "targetElapsedMs": 5647,
+          "estimatedCostUsd": 0.00241125,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1305,
+              "outputTokens": 233,
+              "requestId": "req_6dc0c085c4244a6e9b758fa63d825c65",
+              "elapsedMs": 2819
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1329,
+              "outputTokens": 240,
+              "requestId": "req_7970862245924e029187b50f73dc60c2",
+              "elapsedMs": 2769
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1387,
+              "outputTokens": 230,
+              "requestId": "req_19a33243eec447ad874928d8b1c98c8c",
+              "elapsedMs": 2877
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P23",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2061,
+          "targetElapsedMs": 6259,
+          "estimatedCostUsd": 0.0021347500000000004,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1301,
+              "outputTokens": 149,
+              "requestId": "req_cf69fef4f1814bd3ba2fa84f6a8abf67",
+              "elapsedMs": 2060
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1325,
+              "outputTokens": 157,
+              "requestId": "req_24d093683359476ba68ebe993ea825d0",
+              "elapsedMs": 2317
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1353,
+              "outputTokens": 264,
+              "requestId": "req_abcacafb115d43d18d9a6a3f98a32cc2",
+              "elapsedMs": 3940
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P24",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2812,
+          "targetElapsedMs": 6729,
+          "estimatedCostUsd": 0.0023995,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1304,
+              "outputTokens": 222,
+              "requestId": "req_9b5cb8156e174443bb89f411cf6ec55c",
+              "elapsedMs": 2812
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1328,
+              "outputTokens": 199,
+              "requestId": "req_a34545bbe6c64786b474795546bd9ef4",
+              "elapsedMs": 3246
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1374,
+              "outputTokens": 278,
+              "requestId": "req_5fbbdf7282574b0e9cd06490988d37f5",
+              "elapsedMs": 3480
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P25",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2763,
+          "targetElapsedMs": 4920,
+          "estimatedCostUsd": 0.00222625,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1307,
+              "outputTokens": 213,
+              "requestId": "req_e33598b71bde487ab0a075a268d344d3",
+              "elapsedMs": 2763
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1331,
+              "outputTokens": 171,
+              "requestId": "req_cc46f4df09eb481faed1bd9f69bc86a3",
+              "elapsedMs": 2019
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1387,
+              "outputTokens": 226,
+              "requestId": "req_f2290d881023498dae524c2f154bcff7",
+              "elapsedMs": 2899
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P26",
+          "expectedIntent": "unclear",
+          "probedIntent": "unclear",
+          "runtimeClassification": "unclear",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2502,
+          "targetElapsedMs": 3131,
+          "estimatedCostUsd": 0.0017415,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1299,
+              "outputTokens": 236,
+              "requestId": "req_cc8a748a9eb44330bee60ed8a5697e4c",
+              "elapsedMs": 2501
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1323,
+              "outputTokens": 307,
+              "requestId": "req_6bf522ca33934900ab02fc1440875a69",
+              "elapsedMs": 3129
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P27",
+          "expectedIntent": "unclear",
+          "probedIntent": "unclear",
+          "runtimeClassification": "unclear",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2646,
+          "targetElapsedMs": 6000,
+          "estimatedCostUsd": 0.00244725,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1301,
+              "outputTokens": 248,
+              "requestId": "req_57951f908a9345628cd97ea2e168108e",
+              "elapsedMs": 2646
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1325,
+              "outputTokens": 245,
+              "requestId": "req_b9b2a37b0847495392cd6d5590f07434",
+              "elapsedMs": 2817
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1371,
+              "outputTokens": 231,
+              "requestId": "req_3dc668ca0a8646ff927b394068136ba4",
+              "elapsedMs": 3181
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P28",
+          "expectedIntent": "unclear",
+          "probedIntent": "unclear",
+          "runtimeClassification": "unclear",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2294,
+          "targetElapsedMs": 6141,
+          "estimatedCostUsd": 0.00242575,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1299,
+              "outputTokens": 183,
+              "requestId": "req_5b9e116018484511b67652da328833de",
+              "elapsedMs": 2294
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1323,
+              "outputTokens": 227,
+              "requestId": "req_2f1ab88bd7894186b02bd1d79a357d10",
+              "elapsedMs": 2529
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1361,
+              "outputTokens": 305,
+              "requestId": "req_8129ca3fe5ce4f409a947d9817f9c5ee",
+              "elapsedMs": 3611
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P29",
+          "expectedIntent": "unclear",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2674,
+          "targetElapsedMs": 5441,
+          "estimatedCostUsd": 0.0025547499999999997,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1301,
+              "outputTokens": 235,
+              "requestId": "req_272916f4c151456f920081c24bcee428",
+              "elapsedMs": 2673
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1325,
+              "outputTokens": 281,
+              "requestId": "req_40a97bb3a1df457cb48c5264d249a1c7",
+              "elapsedMs": 2683
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1361,
+              "outputTokens": 263,
+              "requestId": "req_bb9c525597e04c7b9a575ce35539892f",
+              "elapsedMs": 2756
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P30",
+          "expectedIntent": "unclear",
+          "probedIntent": "unclear",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 4344,
+          "targetElapsedMs": 4501,
+          "estimatedCostUsd": 0.00236325,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1302,
+              "outputTokens": 259,
+              "requestId": "req_e00a31f90730460cb98f2cbf321b1cbf",
+              "elapsedMs": 4344
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1326,
+              "outputTokens": 182,
+              "requestId": "req_446130faf3d241499f46c7be57d59ae5",
+              "elapsedMs": 1870
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1361,
+              "outputTokens": 242,
+              "requestId": "req_fbd2eb7db33d433e93d1f17ff701379c",
+              "elapsedMs": 2630
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P31",
+          "expectedIntent": "unclear",
+          "probedIntent": "unclear",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "clarify_approval_no_write",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2117,
+          "targetElapsedMs": 2,
+          "estimatedCostUsd": 0.0030429999999999997,
+          "response": "Please give me a clear yes or no before I record this savings entry.",
+          "setupActions": [
+            "suggest_savings"
+          ],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 169,
+              "requestId": "req_2ab30596075341a7a39279fc10422c7e",
+              "elapsedMs": 1744
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1378,
+              "outputTokens": 178,
+              "requestId": "req_d42da775209a45cbb81de15e6032cfc3",
+              "elapsedMs": 2095
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1576,
+              "outputTokens": 291,
+              "requestId": "req_e08e6eb3fbac46ba8fa80670d35d7648",
+              "elapsedMs": 2820
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1312,
+              "outputTokens": 184,
+              "requestId": "req_d1261884eb4547df800fb4bcef2b4a3e",
+              "elapsedMs": 2117
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P32",
+          "expectedIntent": "unclear",
+          "probedIntent": "unclear",
+          "runtimeClassification": "unclear",
+          "expectedAction": "clarify_approval_no_write",
+          "actualAction": "ask_follow_up",
+          "actualAmountCents": 2000,
+          "intentProbeElapsedMs": 2047,
+          "targetElapsedMs": 3103,
+          "estimatedCostUsd": 0.00547725,
+          "response": "The $20.00 savings suggestion is still pending. Please confirm or decline it before starting another savings action.",
+          "setupActions": [
+            "suggest_savings"
+          ],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 163,
+              "requestId": "req_d5eac26675f64c90a6281f2dd2f87c69",
+              "elapsedMs": 2043
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1378,
+              "outputTokens": 288,
+              "requestId": "req_fbb8a2a8bd064b77b32ea412c6fd85e2",
+              "elapsedMs": 3083
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1604,
+              "outputTokens": 232,
+              "requestId": "req_bc871fe24f4942708d9f7e84cf00f13a",
+              "elapsedMs": 3104
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1678,
+              "outputTokens": 404,
+              "requestId": "req_c84a3c6605364b6190eb02e894a7e35e",
+              "elapsedMs": 4825
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1311,
+              "outputTokens": 230,
+              "requestId": "req_2a792e9de3de470aa832b38b06d90144",
+              "elapsedMs": 2047
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1552,
+              "outputTokens": 315,
+              "requestId": "req_1d0ba21f210047a499355aeeace2849f",
+              "elapsedMs": 3098
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P33",
+          "expectedIntent": "unclear",
+          "probedIntent": "proposal_revision",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "decline_without_write",
+          "actualAction": "reflect",
+          "actualAmountCents": 2000,
+          "intentProbeElapsedMs": 2706,
+          "targetElapsedMs": 2,
+          "estimatedCostUsd": 0.0033585,
+          "response": "No problem. I won't record it.",
+          "setupActions": [
+            "suggest_savings"
+          ],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 150,
+              "requestId": "req_5af874eb17c344bb8835ce0b1027f7b5",
+              "elapsedMs": 1725
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1381,
+              "outputTokens": 244,
+              "requestId": "req_3303130a909f424a97cd5a6393672bd0",
+              "elapsedMs": 3040
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1597,
+              "outputTokens": 327,
+              "requestId": "req_ba5e4ff3b15f48cf8a94c4c1ef2b2b7d",
+              "elapsedMs": 3975
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1310,
+              "outputTokens": 256,
+              "requestId": "req_05226b3718154db1a65f0dc3b9f70a6c",
+              "elapsedMs": 2706
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P34",
+          "expectedIntent": "unclear",
+          "probedIntent": "goal_allocation",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "record_mocked_entry_after_exact_approval",
+          "actualAction": "create_ledger_entry",
+          "actualAmountCents": 2000,
+          "intentProbeElapsedMs": 2620,
+          "targetElapsedMs": 1,
+          "estimatedCostUsd": 0.00335925,
+          "response": "Done. I recorded $20.00 in your Victoria savings ledger. Your total in the mocked Victoria savings ledger this week is $20.00. No real money moved; this is only a mocked ledger record.",
+          "setupActions": [
+            "suggest_savings"
+          ],
+          "ledgerEntriesAdded": 1,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 143,
+              "requestId": "req_17a3ac850afb46759df1fed0fb6cf704",
+              "elapsedMs": 1756
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1376,
+              "outputTokens": 257,
+              "requestId": "req_e9f50634daa24be39595fe13294d0ad1",
+              "elapsedMs": 2975
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1589,
+              "outputTokens": 259,
+              "requestId": "req_990fb5a5fa124b0ea553e46117146af2",
+              "elapsedMs": 2620
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1318,
+              "outputTokens": 319,
+              "requestId": "req_36002df0a8aa4e95b8a7a3a907729b32",
+              "elapsedMs": 2619
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P35",
+          "expectedIntent": "proposal_revision",
+          "probedIntent": "proposal_revision",
+          "runtimeClassification": "unclear",
+          "expectedAction": "replace_proposal_pending_new_approval",
+          "actualAction": "ask_follow_up",
+          "actualAmountCents": 2000,
+          "intentProbeElapsedMs": 4013,
+          "targetElapsedMs": 2382,
+          "estimatedCostUsd": 0.0040885,
+          "response": "The $20.00 savings suggestion is still pending. Please confirm or decline it before starting another savings action.",
+          "setupActions": [
+            "suggest_savings"
+          ],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 168,
+              "requestId": "req_f607a90ace294865adb6a51aa7af2bcc",
+              "elapsedMs": 1555
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1379,
+              "outputTokens": 197,
+              "requestId": "req_e6cb7fd3fac2456d9bcbccaa5c976315",
+              "elapsedMs": 2463
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1575,
+              "outputTokens": 267,
+              "requestId": "req_13c9b129f4284ae29cd0eb1f234871ef",
+              "elapsedMs": 2680
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1314,
+              "outputTokens": 302,
+              "requestId": "req_2aefcb1d7891430998cde2e479adb768",
+              "elapsedMs": 4012
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1564,
+              "outputTokens": 215,
+              "requestId": "req_0ec7ab3ad8b546c79912343147cc9c14",
+              "elapsedMs": 2379
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P36",
+          "expectedIntent": "regretful_spend",
+          "probedIntent": "regretful_spend",
+          "runtimeClassification": "regretful_spend",
+          "expectedAction": "reflect",
+          "actualAction": "reflect",
+          "intentProbeElapsedMs": 2107,
+          "targetElapsedMs": 7351,
+          "estimatedCostUsd": 0.0030354999999999996,
+          "response": "It’s completely normal to feel that pull after takeout — you noticed it and that noticing matters more than one meal. Be gentle with yourself: one choice doesn’t undo progress. If it felt out of line with your goals, that feeling can help you decide whether to tweak habits (like prepping a simple backup meal) or just accept it as a one-off treat.\n\nIf you want something concrete, a small, kind offset can help you feel back on track: cook a cheaper meal tomorrow and let the difference go to savings, or set a modest “fun food” buffer so future takeout doesn’t sting. Would you like help estimating how much to set aside for an offset or building a simple backup meal plan?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1302,
+              "outputTokens": 192,
+              "requestId": "req_b242f0ed2ee442e4817ff1b055c269eb",
+              "elapsedMs": 2106
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1326,
+              "outputTokens": 167,
+              "requestId": "req_75c5d6a72a2b4e3e995203366b16da88",
+              "elapsedMs": 1963
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1352,
+              "outputTokens": 178,
+              "requestId": "req_142061f532ea41a48c000379c9a6dc11",
+              "elapsedMs": 2214
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1570,
+              "outputTokens": 287,
+              "requestId": "req_597428d944e14d10a3b5afb64207b49b",
+              "elapsedMs": 3172
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P37",
+          "expectedIntent": "regretful_spend",
+          "probedIntent": "regretful_spend",
+          "runtimeClassification": "regretful_spend",
+          "expectedAction": "reflect",
+          "actualAction": "reflect",
+          "intentProbeElapsedMs": 2343,
+          "targetElapsedMs": 12431,
+          "estimatedCostUsd": 0.0038764999999999997,
+          "response": "I’m sorry that purchase left you feeling off — that’s a normal reaction, and it matters even when the amount is $40. Sometimes the sting comes from impulse, wanting different value for the money, or feeling like it broke a plan you had; what about this one feels worst to you — impulse, mismatch with priorities, or something else?\n\nIf you want a practical fix, a simple, low-stress option is to either treat it as a small lesson and move on, or intentionally offset it by setting aside $40 this month (or trimming $40 from your next discretionary spend) so your budget stays where you want. Which sounds more helpful right now: talk through why it happened, or pick one of those small budgeting moves?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1305,
+              "outputTokens": 240,
+              "requestId": "req_77cdd304e52c41ec8a94352008a037dd",
+              "elapsedMs": 2343
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1329,
+              "outputTokens": 165,
+              "requestId": "req_9c5ce8a316884ea0b8c6ed90105e7e13",
+              "elapsedMs": 2080
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1376,
+              "outputTokens": 342,
+              "requestId": "req_daedf9aba5d646a88efb0780350b373b",
+              "elapsedMs": 4461
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1656,
+              "outputTokens": 483,
+              "requestId": "req_d3fb00810da44ec88a5a5d7687121f26",
+              "elapsedMs": 5887
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P38",
+          "expectedIntent": "regretful_spend",
+          "probedIntent": "regretful_spend",
+          "runtimeClassification": "regretful_spend",
+          "expectedAction": "reflect",
+          "actualAction": "reflect",
+          "intentProbeElapsedMs": 1797,
+          "targetElapsedMs": 8391,
+          "estimatedCostUsd": 0.0029845,
+          "response": "I’m sorry that’s left you feeling annoyed — that’s a really common spot to be in, especially when lunches out slip into habit. You’re not alone, and this one purchase doesn’t erase progress you’ve made anywhere else. Think of it as useful data about what’s realistic for you right now rather than proof you can’t change things.\n\nIf it helps, a small experiment could make future choices easier: pick one simple replacement (bring a quick leftovers lunch, or set a $X-per-week lunch-out limit) and try it for a week. That keeps your routine but reduces the frequency of regret. Would you like a one-week plan now, or do you want to talk through what usually leads you to buy lunch out so we can tweak a solution that fits your day?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1304,
+              "outputTokens": 149,
+              "requestId": "req_2d3ef37171a741a4afab9c8f750104ea",
+              "elapsedMs": 1797
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1328,
+              "outputTokens": 149,
+              "requestId": "req_1e711c736f064d96b82edb807eb9fa91",
+              "elapsedMs": 2047
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1361,
+              "outputTokens": 222,
+              "requestId": "req_86450b4e23c24ea386a4feda2352aa37",
+              "elapsedMs": 2897
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1593,
+              "outputTokens": 274,
+              "requestId": "req_1cf586f408454238bc87e6aecafe2ac4",
+              "elapsedMs": 3445
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P39",
+          "expectedIntent": "regretful_spend",
+          "probedIntent": "regretful_spend",
+          "runtimeClassification": "regretful_spend",
+          "expectedAction": "reflect",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2510,
+          "targetElapsedMs": 5773,
+          "estimatedCostUsd": 0.002564,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1311,
+              "outputTokens": 262,
+              "requestId": "req_74d5ba8fc42441acaa35f77512396014",
+              "elapsedMs": 2510
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1335,
+              "outputTokens": 264,
+              "requestId": "req_a865b37d25b740ea8144323a45b72f35",
+              "elapsedMs": 2690
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1418,
+              "outputTokens": 248,
+              "requestId": "req_9dac5d51d7f44d56840fe3f3f147157f",
+              "elapsedMs": 3080
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P40",
+          "expectedIntent": "regretful_spend",
+          "probedIntent": "regretful_spend",
+          "runtimeClassification": "regretful_spend",
+          "expectedAction": "reflect",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 1858,
+          "targetElapsedMs": 4447,
+          "estimatedCostUsd": 0.0021095000000000003,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1305,
+              "outputTokens": 163,
+              "requestId": "req_28bfac15ed7844dca63de581502a5835",
+              "elapsedMs": 1858
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1329,
+              "outputTokens": 175,
+              "requestId": "req_d01b444e014344539f0d1188fb830654",
+              "elapsedMs": 1998
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1372,
+              "outputTokens": 216,
+              "requestId": "req_a074350583b8406eb55ca688cc99758e",
+              "elapsedMs": 2447
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P41",
+          "expectedIntent": "real_money_movement_request",
+          "probedIntent": "real_money_movement_request",
+          "runtimeClassification": "real_money_movement_request",
+          "expectedAction": "refuse",
+          "actualAction": "refuse",
+          "intentProbeElapsedMs": 5525,
+          "targetElapsedMs": 1644,
+          "estimatedCostUsd": 0.0015314999999999999,
+          "response": "I can't move real money in the Victoria MVP. I can only record savings in the mocked Victoria savings ledger after we identify an amount and you explicitly confirm. No transfer has been made.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1303,
+              "outputTokens": 291,
+              "requestId": "req_9fdd96d655ff411f84b0e71e4b287a47",
+              "elapsedMs": 5524
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1327,
+              "outputTokens": 146,
+              "requestId": "req_a2109f769dad401f943de67cba87128a",
+              "elapsedMs": 1642
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P42",
+          "expectedIntent": "real_money_movement_request",
+          "probedIntent": "real_money_movement_request",
+          "runtimeClassification": "real_money_movement_request",
+          "expectedAction": "refuse",
+          "actualAction": "refuse",
+          "intentProbeElapsedMs": 2531,
+          "targetElapsedMs": 2819,
+          "estimatedCostUsd": 0.001682,
+          "response": "I can't move real money in the Victoria MVP. I can only record savings in the mocked Victoria savings ledger after we identify an amount and you explicitly confirm. No transfer has been made.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1315,
+              "outputTokens": 260,
+              "requestId": "req_e9a4a9d3052e455f90431069a14c4fe5",
+              "elapsedMs": 2531
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1325,
+              "outputTokens": 251,
+              "requestId": "req_25dabf71294d4a60addecbbb5b3597d0",
+              "elapsedMs": 2818
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P43",
+          "expectedIntent": "real_money_movement_request",
+          "probedIntent": "real_money_movement_request",
+          "runtimeClassification": "real_money_movement_request",
+          "expectedAction": "refuse",
+          "actualAction": "refuse",
+          "intentProbeElapsedMs": 1921,
+          "targetElapsedMs": 2882,
+          "estimatedCostUsd": 0.0015725000000000001,
+          "response": "I can't move real money in the Victoria MVP. I can only record savings in the mocked Victoria savings ledger after we identify an amount and you explicitly confirm. No transfer has been made.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1305,
+              "outputTokens": 171,
+              "requestId": "req_e77be59643eb488c913146dd56130f4b",
+              "elapsedMs": 1921
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1329,
+              "outputTokens": 286,
+              "requestId": "req_b4fc372399ca49b88bfebac9c19b7f6c",
+              "elapsedMs": 2880
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P44",
+          "expectedIntent": "real_money_movement_request",
+          "probedIntent": "real_money_movement_request",
+          "runtimeClassification": "real_money_movement_request",
+          "expectedAction": "refuse",
+          "actualAction": "refuse",
+          "intentProbeElapsedMs": 2020,
+          "targetElapsedMs": 3072,
+          "estimatedCostUsd": 0.0017195,
+          "response": "I can't move real money in the Victoria MVP. I can only record savings in the mocked Victoria savings ledger after we identify an amount and you explicitly confirm. No transfer has been made.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1307,
+              "outputTokens": 193,
+              "requestId": "req_4d3873efe59c4d65bda58b3d53b1da8a",
+              "elapsedMs": 2020
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1331,
+              "outputTokens": 337,
+              "requestId": "req_855d82cca8754aa990a57d43364a2722",
+              "elapsedMs": 3070
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P45",
+          "expectedIntent": "unclear",
+          "probedIntent": "entry_correction",
+          "runtimeClassification": "real_money_movement_request",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "refuse",
+          "intentProbeElapsedMs": 3790,
+          "targetElapsedMs": 3412,
+          "estimatedCostUsd": 0.00245,
+          "response": "I can't move real money in the Victoria MVP. I can only record savings in the mocked Victoria savings ledger after we identify an amount and you explicitly confirm. No transfer has been made.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1312,
+              "outputTokens": 462,
+              "requestId": "req_1e84f0a9bf3447f19d7c98417ce3b00d",
+              "elapsedMs": 3790
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1336,
+              "outputTokens": 432,
+              "requestId": "req_7320b3bd48b6437aafa3c5f892337544",
+              "elapsedMs": 3410
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P46",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 1500,
+          "intentProbeElapsedMs": 2244,
+          "targetElapsedMs": 6144,
+          "estimatedCostUsd": 0.002546,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1314,
+              "outputTokens": 202,
+              "requestId": "req_cce6a13c53f24790a016d211cab8052c",
+              "elapsedMs": 2244
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1338,
+              "outputTokens": 236,
+              "requestId": "req_24fdaecb968143f487da0a267ca1a997",
+              "elapsedMs": 2132
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1412,
+              "outputTokens": 327,
+              "requestId": "req_6d18587b5c91493b8820974dda889079",
+              "elapsedMs": 4010
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P47",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 3200,
+          "actualAmountCents": 3200,
+          "intentProbeElapsedMs": 1644,
+          "targetElapsedMs": 8422,
+          "estimatedCostUsd": 0.00334275,
+          "response": "Nice catch — that’s a tidy little win. You nearly bought a $32 game and didn’t follow through, which feels like a useful moment to notice. If it was intentional, one helpful next step is to record that $32 as an avoided spend (a mocked savings entry) so you can see small wins add up and decide what to do with it later.\n\nI can make that mocked ledger entry for $32 if you want — I won’t move any real money. Would you like me to record this $32 avoided spend now in your Victoria savings ledger? No real money has moved.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1311,
+              "outputTokens": 168,
+              "requestId": "req_6a296844784d437c858a21f1f63def6d",
+              "elapsedMs": 1643
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1335,
+              "outputTokens": 224,
+              "requestId": "req_bcc01a9746394a7eabd4e608e3e578cb",
+              "elapsedMs": 3075
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1397,
+              "outputTokens": 230,
+              "requestId": "req_c70b4a011b7a4528955d6fc918fe74f9",
+              "elapsedMs": 2260
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1616,
+              "outputTokens": 342,
+              "requestId": "req_589325941c754aecaf671db73b40f36f",
+              "elapsedMs": 3072
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P48",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 2000,
+          "intentProbeElapsedMs": 2517,
+          "targetElapsedMs": 5998,
+          "estimatedCostUsd": 0.00273,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1312,
+              "outputTokens": 266,
+              "requestId": "req_886fe031d0ad461cb87656950c79bdb5",
+              "elapsedMs": 2517
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1336,
+              "outputTokens": 291,
+              "requestId": "req_ed96ebb9c6714f14b7e97553d5f7d93f",
+              "elapsedMs": 2729
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1400,
+              "outputTokens": 302,
+              "requestId": "req_07ef2c899280442891c4cef27a9e6939",
+              "elapsedMs": 3267
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P49",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "ask_follow_up",
+          "actualAction": "ask_follow_up",
+          "intentProbeElapsedMs": 2312,
+          "targetElapsedMs": 5473,
+          "estimatedCostUsd": 0.0033905000000000003,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [
+            "ask_follow_up"
+          ],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1336,
+              "outputTokens": 265,
+              "requestId": "req_7451133cbb374f6a80b705ebef65508b",
+              "elapsedMs": 2750
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1333,
+              "outputTokens": 240,
+              "requestId": "req_4d2263c9c7fd45a5825b1d8fbe9e54e0",
+              "elapsedMs": 2312
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1370,
+              "outputTokens": 156,
+              "requestId": "req_006c850ff1d24cf09234cbb24433fcaf",
+              "elapsedMs": 1897
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1499,
+              "outputTokens": 342,
+              "requestId": "req_a41d2c32a91a4623b1543cb8d0fb6f4a",
+              "elapsedMs": 3569
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P50",
+          "expectedIntent": "entry_correction",
+          "probedIntent": "entry_correction",
+          "runtimeClassification": "entry_correction",
+          "expectedAction": "propose_linked_correction_pending_exact_approval",
+          "actualAction": "correct_ledger_entry",
+          "expectedAmountCents": 1800,
+          "actualAmountCents": 1800,
+          "intentProbeElapsedMs": 2794,
+          "targetElapsedMs": 2176,
+          "estimatedCostUsd": 0.0040774999999999995,
+          "response": "The most recently recorded entry in this conversation is currently $20.00. I can reduce the recorded amount by $2.00, making the corrected total $18.00 in your mocked Victoria savings ledger. The original entry will stay in the history. Please confirm this correction. No real money has moved.",
+          "setupActions": [
+            "suggest_savings",
+            "create_ledger_entry"
+          ],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1330,
+              "outputTokens": 171,
+              "requestId": "req_bbc8a34f118a4b9e8e672ee6eac4f3a0",
+              "elapsedMs": 1900
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1379,
+              "outputTokens": 209,
+              "requestId": "req_9fe57da2a152418895751754664c880b",
+              "elapsedMs": 2557
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1590,
+              "outputTokens": 259,
+              "requestId": "req_c3b2ead6e3124b61bd9157af6fce1405",
+              "elapsedMs": 3123
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1328,
+              "outputTokens": 265,
+              "requestId": "req_339410defbc94c429530b2b5ceff586f",
+              "elapsedMs": 2794
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1515,
+              "outputTokens": 242,
+              "requestId": "req_d121d08a06d043ff8a2d4231303b2adf",
+              "elapsedMs": 2173
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        }
+      ],
+      "summary": {
+        "turns": 50,
+        "completedTurns": 50,
+        "failedOrTimedOutTurns": 0,
+        "safetyFailures": 0,
+        "intentPasses": 45,
+        "actionPasses": 39,
+        "amountPasses": 43,
+        "latencyMs": {
+          "sampleCount": 50,
+          "p50Ms": 5441,
+          "p95Ms": 10002,
+          "maxMs": 12431
+        },
+        "costPerTurnUsd": {
+          "sampleCount": 50,
+          "p50Ms": 0.002546,
+          "p95Ms": 0.0040774999999999995,
+          "maxMs": 0.00547725
+        },
+        "roleLatencyMs": {
+          "financial_moment": {
+            "sampleCount": 104,
+            "p50Ms": 2260,
+            "p95Ms": 3302,
+            "maxMs": 5524
+          },
+          "savings_reasoning": {
+            "sampleCount": 44,
+            "p50Ms": 2899,
+            "p95Ms": 3989,
+            "maxMs": 4461
+          },
+          "companion_voice": {
+            "sampleCount": 21,
+            "p50Ms": 3123,
+            "p95Ms": 4825,
+            "maxMs": 5887
+          }
+        },
+        "usage": {
+          "effectiveRateDate": "2026-10-29",
+          "calls": 169,
+          "inputTokens": 232262,
+          "outputTokens": 38830,
+          "estimatedCostUsd": 0.13572550000000003,
+          "estimatedCostUsdByRole": {
+            "financial_moment": 0.07713675000000002,
+            "savings_reasoning": 0.03718649999999999,
+            "companion_voice": 0.02140224999999999
+          },
+          "callsByRole": {
+            "financial_moment": 104,
+            "savings_reasoning": 44,
+            "companion_voice": 21
+          },
+          "tokensByRole": {
+            "financial_moment": {
+              "input": 137827,
+              "output": 21340
+            },
+            "savings_reasoning": {
+              "input": 60874,
+              "output": 10984
+            },
+            "companion_voice": {
+              "input": 33561,
+              "output": 6506
+            }
+          },
+          "requestIds": [
+            "req_9f696c66e7b145c7ae639b39090fbbaf",
+            "req_4cafd81c9a22485db1e08e0634c58c96",
+            "req_f787a8f9ffb74a8ba812b550e8543fd1",
+            "req_2cc4043ae94b433b83dec267c9ca9ce1",
+            "req_a662c26653004129871a4404873dec10",
+            "req_e93a2c611c8445f1a490bdd6f3b7c85b",
+            "req_e0b1184c53c743caa99323a5f7dc3115",
+            "req_4ddf10fb9ed94464997d73a53f5d7e79",
+            "req_1e079aae4c0a4869bcd22c2ed851fbea",
+            "req_2333e4e8d9b94547831b25046c719344",
+            "req_827c42e00e2e4eedab1402ef69925e8a",
+            "req_224a752be929456c8f10969c93b6d6e2",
+            "req_5457b5749c9548049dedeb3b43a914ac",
+            "req_3db1186198b0455aa0ddc887dab48be7",
+            "req_c6aae591515b4333a3093fb024b0d845",
+            "req_048a6d626d364030bd319a00207f7e70",
+            "req_e4e618531eba48ec8fa407a742467307",
+            "req_392f5477533e4084b24aaa44cf2a93dc",
+            "req_a5be6414127045bba2d57dba007d7861",
+            "req_01989d072f144ed5a423dee5e8e7dd7a",
+            "req_4c82d854568c430f95291e4df9a2234b",
+            "req_5a16878f7f554a41a45dcaffc74d3157",
+            "req_111bd1b263ea4b5cbc46dd0f3496f4c5",
+            "req_8febcb0953e9438eaaa99ceecfd70993",
+            "req_e1cd54cf153f414a91eec0895172edd9",
+            "req_ded934c0d1ee4e8cbb1504e63c6287f1",
+            "req_3512fd8c434e49ce822e32aa246576ae",
+            "req_ca8e7468795a473db50cd66cefb1872b",
+            "req_75118b9fb47441f5a7d80be119d25615",
+            "req_3d03311a4a844f209b7d185aca0dd95c",
+            "req_0199562719f349feaa663e5f48548f1f",
+            "req_81d41040cd6b411499fb079277fdca35",
+            "req_8b5b6e4c57bc4d3184bb80ff404f9c9c",
+            "req_ae7c7cb85b4541b4b9432732426bb11b",
+            "req_67890ce20a164eb78bb997e094a689d4",
+            "req_b52cd3b0d54047f2a1aa40339a4c3927",
+            "req_d3dfcac74acc49ac864214ed7c18b7d1",
+            "req_ab5bbdfe651b4b18a04192fb08b40227",
+            "req_cff33ffb23384fe5aeaf2fdddff8af6a",
+            "req_8ca5a7d101174245b318987e19ec9ad1",
+            "req_211fbab4d99b40c58e8aecd23d16f38c",
+            "req_f6241f359ed3435eaba165f0d1109c64",
+            "req_d4fec4038bb94cdc822209c33c0a0d9e",
+            "req_251f396970974ffe9a0cbf74c6f45597",
+            "req_f722038843804a7c988560cb7d2d0a26",
+            "req_c39378304fe8475c8f95b88fa343d937",
+            "req_9811fcf78f79486384091e85806942de",
+            "req_ae6c5e6037db439480f89433bdb4470f",
+            "req_d9ca7c8b2e9f47aeb797427c63977758",
+            "req_269b82459e0e45b2a9f834aa18e68ad2",
+            "req_8e4394ea62c441bebc27bb4245e34fa6",
+            "req_b22e2ce9ddf24c03af77b02f4719640e",
+            "req_1eba410233254f7a80fe808db87029d3",
+            "req_bdc882b17779453592486df24a68b625",
+            "req_35e5d6ddd55945889f52e5599290fcc4",
+            "req_e60eb713a42c4d598e61bb6b4654d6a6",
+            "req_f34d9fde492344b9bdca39baa53eeb99",
+            "req_ded4c2c3ddce4373ba4b52649a57d2af",
+            "req_6061abc258a14fdba015e62f168bc6ac",
+            "req_1dc5af1f50554ed38d75ccda7b421ee7",
+            "req_2315fbd698094a138531a61b38867a18",
+            "req_6372fc7e0be341df9334677955367501",
+            "req_3e534d991d424640be2b0a0a14eef622",
+            "req_fdc0d3b6466e4abc98265a41c0d89f94",
+            "req_37ba5c78ff224f67b58cf07da1a3e811",
+            "req_4bfa30ec9b90436eb4d2b394e86605f5",
+            "req_097c62c611224d059cff41ec0e4e7145",
+            "req_6f46037bfff74f6990c68b73c1e6dd2a",
+            "req_d8a1f1f8fb9540398642ab1c64ec94ad",
+            "req_17c2d5cf56184e7c916b574db4b8d135",
+            "req_092c7058a5994d158123af9b07a9915b",
+            "req_efc2990c791a44708a8849feecccf6de",
+            "req_4c88fba80a794dbd9eee32a7df6b839d",
+            "req_6dc0c085c4244a6e9b758fa63d825c65",
+            "req_7970862245924e029187b50f73dc60c2",
+            "req_19a33243eec447ad874928d8b1c98c8c",
+            "req_cf69fef4f1814bd3ba2fa84f6a8abf67",
+            "req_24d093683359476ba68ebe993ea825d0",
+            "req_abcacafb115d43d18d9a6a3f98a32cc2",
+            "req_9b5cb8156e174443bb89f411cf6ec55c",
+            "req_a34545bbe6c64786b474795546bd9ef4",
+            "req_5fbbdf7282574b0e9cd06490988d37f5",
+            "req_e33598b71bde487ab0a075a268d344d3",
+            "req_cc46f4df09eb481faed1bd9f69bc86a3",
+            "req_f2290d881023498dae524c2f154bcff7",
+            "req_cc8a748a9eb44330bee60ed8a5697e4c",
+            "req_6bf522ca33934900ab02fc1440875a69",
+            "req_57951f908a9345628cd97ea2e168108e",
+            "req_b9b2a37b0847495392cd6d5590f07434",
+            "req_3dc668ca0a8646ff927b394068136ba4",
+            "req_5b9e116018484511b67652da328833de",
+            "req_2f1ab88bd7894186b02bd1d79a357d10",
+            "req_8129ca3fe5ce4f409a947d9817f9c5ee",
+            "req_272916f4c151456f920081c24bcee428",
+            "req_40a97bb3a1df457cb48c5264d249a1c7",
+            "req_bb9c525597e04c7b9a575ce35539892f",
+            "req_e00a31f90730460cb98f2cbf321b1cbf",
+            "req_446130faf3d241499f46c7be57d59ae5",
+            "req_fbd2eb7db33d433e93d1f17ff701379c",
+            "req_2ab30596075341a7a39279fc10422c7e",
+            "req_d42da775209a45cbb81de15e6032cfc3",
+            "req_e08e6eb3fbac46ba8fa80670d35d7648",
+            "req_d1261884eb4547df800fb4bcef2b4a3e",
+            "req_d5eac26675f64c90a6281f2dd2f87c69",
+            "req_fbb8a2a8bd064b77b32ea412c6fd85e2",
+            "req_bc871fe24f4942708d9f7e84cf00f13a",
+            "req_c84a3c6605364b6190eb02e894a7e35e",
+            "req_2a792e9de3de470aa832b38b06d90144",
+            "req_1d0ba21f210047a499355aeeace2849f",
+            "req_5af874eb17c344bb8835ce0b1027f7b5",
+            "req_3303130a909f424a97cd5a6393672bd0",
+            "req_ba5e4ff3b15f48cf8a94c4c1ef2b2b7d",
+            "req_05226b3718154db1a65f0dc3b9f70a6c",
+            "req_17a3ac850afb46759df1fed0fb6cf704",
+            "req_e9f50634daa24be39595fe13294d0ad1",
+            "req_990fb5a5fa124b0ea553e46117146af2",
+            "req_36002df0a8aa4e95b8a7a3a907729b32",
+            "req_f607a90ace294865adb6a51aa7af2bcc",
+            "req_e6cb7fd3fac2456d9bcbccaa5c976315",
+            "req_13c9b129f4284ae29cd0eb1f234871ef",
+            "req_2aefcb1d7891430998cde2e479adb768",
+            "req_0ec7ab3ad8b546c79912343147cc9c14",
+            "req_b242f0ed2ee442e4817ff1b055c269eb",
+            "req_75c5d6a72a2b4e3e995203366b16da88",
+            "req_142061f532ea41a48c000379c9a6dc11",
+            "req_597428d944e14d10a3b5afb64207b49b",
+            "req_77cdd304e52c41ec8a94352008a037dd",
+            "req_9c5ce8a316884ea0b8c6ed90105e7e13",
+            "req_daedf9aba5d646a88efb0780350b373b",
+            "req_d3fb00810da44ec88a5a5d7687121f26",
+            "req_2d3ef37171a741a4afab9c8f750104ea",
+            "req_1e711c736f064d96b82edb807eb9fa91",
+            "req_86450b4e23c24ea386a4feda2352aa37",
+            "req_1cf586f408454238bc87e6aecafe2ac4",
+            "req_74d5ba8fc42441acaa35f77512396014",
+            "req_a865b37d25b740ea8144323a45b72f35",
+            "req_9dac5d51d7f44d56840fe3f3f147157f",
+            "req_28bfac15ed7844dca63de581502a5835",
+            "req_d01b444e014344539f0d1188fb830654",
+            "req_a074350583b8406eb55ca688cc99758e",
+            "req_9fdd96d655ff411f84b0e71e4b287a47",
+            "req_a2109f769dad401f943de67cba87128a",
+            "req_e9a4a9d3052e455f90431069a14c4fe5",
+            "req_25dabf71294d4a60addecbbb5b3597d0",
+            "req_e77be59643eb488c913146dd56130f4b",
+            "req_b4fc372399ca49b88bfebac9c19b7f6c",
+            "req_4d3873efe59c4d65bda58b3d53b1da8a",
+            "req_855d82cca8754aa990a57d43364a2722",
+            "req_1e84f0a9bf3447f19d7c98417ce3b00d",
+            "req_7320b3bd48b6437aafa3c5f892337544",
+            "req_cce6a13c53f24790a016d211cab8052c",
+            "req_24fdaecb968143f487da0a267ca1a997",
+            "req_6d18587b5c91493b8820974dda889079",
+            "req_6a296844784d437c858a21f1f63def6d",
+            "req_bcc01a9746394a7eabd4e608e3e578cb",
+            "req_c70b4a011b7a4528955d6fc918fe74f9",
+            "req_589325941c754aecaf671db73b40f36f",
+            "req_886fe031d0ad461cb87656950c79bdb5",
+            "req_ed96ebb9c6714f14b7e97553d5f7d93f",
+            "req_07ef2c899280442891c4cef27a9e6939",
+            "req_7451133cbb374f6a80b705ebef65508b",
+            "req_4d2263c9c7fd45a5825b1d8fbe9e54e0",
+            "req_006c850ff1d24cf09234cbb24433fcaf",
+            "req_a41d2c32a91a4623b1543cb8d0fb6f4a",
+            "req_bbc8a34f118a4b9e8e672ee6eac4f3a0",
+            "req_9fe57da2a152418895751754664c880b",
+            "req_c3b2ead6e3124b61bd9157af6fce1405",
+            "req_339410defbc94c429530b2b5ceff586f",
+            "req_d121d08a06d043ff8a2d4231303b2adf"
+          ]
+        },
+        "retryCount": 0
+      }
+    }
+  ],
+  "limitations": [
+    "Intent probes are separate provider calls so contextual approval turns can be scored without confusing the prior proposal classification with current-message intent.",
+    "Stateful setup preludes are included in provider usage/cost totals but excluded from target-turn latency percentiles.",
+    "No automatic retries are performed; provider-error requests may not report token usage or request IDs.",
+    "Blinded human response review is not part of this runner."
+  ]
+}

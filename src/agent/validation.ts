@@ -22,6 +22,9 @@ export function validateClassifiedMessage(candidate: unknown): ClassifiedMessage
       !referenceHint.factId.trim() || referenceHint.factId.length > 120 ||
       (referenceHint.period !== "monthly" && referenceHint.period !== "annual"))) return null;
   const amountIssue = candidate.amountIssue;
+  const uncertainIntent = candidate.uncertainIntent;
+  if (uncertainIntent !== undefined &&
+      (typeof uncertainIntent !== "string" || !financialEventTypes.has(uncertainIntent as FinancialEventType) || uncertainIntent === "unclear")) return null;
   const amountCents = candidate.amountCents;
   if (amountIssue !== undefined && (typeof amountIssue !== "string" || !amountIssues.has(amountIssue))) return null;
   if (amountCents !== undefined &&
@@ -37,6 +40,7 @@ export function validateClassifiedMessage(candidate: unknown): ClassifiedMessage
     ...(typeof candidate.revisionReason === "string" ? { revisionReason: candidate.revisionReason } : {}),
     ...(referenceHint ? { referenceHint: { factId: referenceHint.factId as string, period: referenceHint.period as "monthly" | "annual" } } : {}),
     ...(typeof amountIssue === "string" ? { amountIssue: amountIssue as NonNullable<ClassifiedMessage["amountIssue"]> } : {}),
+    ...(typeof uncertainIntent === "string" ? { uncertainIntent: uncertainIntent as Exclude<FinancialEventType, "unclear"> } : {}),
     summary: candidate.summary,
     needsClarification: candidate.needsClarification
   };

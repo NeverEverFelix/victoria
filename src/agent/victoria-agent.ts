@@ -76,11 +76,12 @@ import {
   isPendingCorrectionReplacementRequest,
   isPendingGoalRetargetRequest,
   isSafePendingWorkflowTopicSwitch,
+  canSkipFinancialClassification,
   isOrdinaryQuestion,
   shouldRouteToConversationResponder,
   isReadOnlyEventHistoryQuestion
 } from "./conversation-routing.js";
-import { resolvePendingWorkflowMessage } from "./pending-workflow-policy.js";
+import { isPendingFinancialWorkflowExpired, resolvePendingWorkflowMessage } from "./pending-workflow-policy.js";
 import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } from "./transaction-history-provider.js";
 import { employerCoveredRecurringSpend, freedRecurringSpend, isBudgetingAdviceQuestion, isExplicitRealMoneyMovementRequest, isRealMoneyMovementRequest } from "./money-movement-intent.js";
 import { isExplicitInterestCorrectionEvidence, isExplicitUserEvidence, validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
@@ -110,6 +111,8 @@ export interface VictoriaAgentDependencies {
   onConversationalMemoryExtractionFailure?: (errorName: string) => void;
   /** Receives an enumerated fallback reason only; no user message or draft content is included. */
   onConversationReplyFallback?: (reason: ConversationReplyFallbackReason) => void;
+  /** Receives only the failed provider stage; the turn continues with conservative deterministic interpretation. */
+  onFinancialMomentFallback?: (source: "classifier" | "specialist") => void;
   /** Safe runtime trace: excludes message text, memory values, and hidden reasoning. */
   onConversationTurnTrace?: (trace: ConversationTurnTrace) => void;
   /** Receives validation categories only; never includes draft text or user content. */
@@ -126,13 +129,15 @@ export interface VictoriaAgentDependencies {
 }
 
 export interface ConversationTurnTrace {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly durationMs: number;
   readonly classification: ClassifiedMessage["type"];
   readonly action: AgentDecision["action"];
   readonly ledgerWrite: boolean;
   readonly proposalTransitionCount: number;
   readonly sourceTurnReferenceCount: number;
+  readonly recentMessageCount: number;
+  readonly historyRepresentation: "typed" | "legacy";
   readonly requestReference?: string;
 }
 
@@ -182,6 +187,7 @@ export class VictoriaAgent {
   async respond(request: AgentRequest): Promise<AgentResponse> {
     const startedAt = Date.now();
     const conversationId = request.conversationId ?? "default";
+    this.expireInMemoryPendingWorkflows(request);
     await this.restorePendingSavingsAction(request);
     await this.restorePendingGoalAllocationAction(request);
     await this.restorePendingEntryCorrection(request);
@@ -242,13 +248,15 @@ export class VictoriaAgent {
         legacyConversationContext(completedMessages));
     }
     const trace: ConversationTurnTrace = Object.freeze({
-      schemaVersion: 1,
+      schemaVersion: 2,
       durationMs: Math.max(0, Date.now() - startedAt),
       classification: response.decision.classification.type,
       action: response.decision.action,
       ledgerWrite: response.decision.action === "create_ledger_entry",
       proposalTransitionCount: response.decision.proposalTransitions?.length ?? 0,
       sourceTurnReferenceCount: request.sourceTurnReferences?.length ?? 0,
+      recentMessageCount: priorContext.length,
+      historyRepresentation: priorMessages ? "typed" : "legacy",
       ...(request.sourceTurnReferences?.at(-1)?.turnId ? {
         requestReference: createHash("sha256").update(request.sourceTurnReferences.at(-1)!.turnId).digest("hex").slice(0, 12)
       } : {})
@@ -287,10 +295,35 @@ export class VictoriaAgent {
     const summarizer = this.dependencies.episodicMemorySummarizer;
     if (!summarizer || (!finishing && context.length < DEFAULT_CONVERSATION_CONTEXT_LIMIT)) return false;
     const recentTurns = context.slice(-16);
-    const userMessages = recentTurns
+    const candidateUserMessages = recentTurns
       .filter((message) => !/^Victoria:/i.test(message))
       .filter(isEpisodicSummaryEligible)
       .slice(-8);
+    const existingEpisodes = (await this.dependencies.memory.listConversationalMemories(userId))
+      .filter((memory) => memory.sourceMetadata?.memoryKind === "episodic_summary");
+    const coveredTurnIds = new Set(existingEpisodes.flatMap((memory) => {
+      const coverage = memory.sourceMetadata?.summaryCoverage;
+      const covered = coverage && typeof coverage === "object" && "coveredTurnIds" in coverage &&
+        Array.isArray(coverage.coveredTurnIds)
+        ? coverage.coveredTurnIds.filter((id): id is string => typeof id === "string")
+        : [];
+      const legacy = Array.isArray(memory.sourceMetadata?.sourceTurnReferences)
+        ? memory.sourceMetadata.sourceTurnReferences.flatMap((reference) =>
+          reference && typeof reference === "object" && "turnId" in reference &&
+          typeof reference.turnId === "string" ? [reference.turnId] : [])
+        : [];
+      return [...covered, ...legacy];
+    }));
+    const turnIdsByMessage = new Map<string, string[]>();
+    for (const reference of sourceTurnReferences) {
+      const ids = turnIdsByMessage.get(reference.userMessage) ?? [];
+      ids.push(reference.turnId);
+      turnIdsByMessage.set(reference.userMessage, ids);
+    }
+    const userMessages = candidateUserMessages.filter((message) => {
+      const turnId = turnIdsByMessage.get(message)?.shift();
+      return !turnId || !coveredTurnIds.has(turnId);
+    });
     if (userMessages.length < 2) return false;
     const selectedUsers = new Set(userMessages);
     let precedingAssistantMessage: string | undefined;
@@ -309,7 +342,7 @@ export class VictoriaAgent {
     const digest = createHash("sha256").update(userId).update("\0")
       .update(JSON.stringify(turnPairs)).digest("hex").slice(0, 24);
     const key = `episode:${digest}`;
-    if ((await this.dependencies.memory.listConversationalMemories(userId)).some((memory) => memory.key === key)) return true;
+    if (existingEpisodes.some((memory) => memory.key === key)) return true;
     try {
       // Only domain-tool results enter the workflow outcome projection. Assistant prose
       // may help interpret a user reply, but is never proof that an entry was recorded.
@@ -765,18 +798,6 @@ export class VictoriaAgent {
         } };
       }
 
-      if (approvalResponse === "ambiguous") {
-        const message = "Please give me a clear yes or no before I record this savings entry.";
-
-        return {
-          message,
-          decision: {
-            action: "ask_follow_up",
-            classification: pendingAction.decision.classification,
-            userFacingMessage: message
-          }
-        };
-      }
       if (isSafePendingWorkflowTopicSwitch(request.message) && this.dependencies.conversationResponder) {
         await this.learnFromReadOnlyTopicTurn(request);
         const readOnlyContext = buildVictoriaConversationContext({
@@ -790,6 +811,18 @@ export class VictoriaAgent {
         return this.respondConversationalTurn(request, conversationContext,
           "I can help think that through. What part would be most useful to start with? The savings suggestion remains pending and has not been recorded.",
           "savings_entry", readOnlyContext.conversationSavingsEvents, readOnlyContext);
+      }
+      if (approvalResponse === "ambiguous") {
+        const message = "Please give me a clear yes or no before I record this savings entry.";
+
+        return {
+          message,
+          decision: {
+            action: "ask_follow_up",
+            classification: pendingAction.decision.classification,
+            userFacingMessage: message
+          }
+        };
       }
     }
 
@@ -1055,7 +1088,11 @@ export class VictoriaAgent {
       savingsEvents: conversationSavingsEvents,
       ...(conversationWorkflowState ? { workflowState: conversationWorkflowState } : {})
     });
-    const intentPlan = buildConversationIntentPlan({ message: request.message, recentTurns: conversationContext });
+    const intentPlan = buildConversationIntentPlan({
+      message: request.message,
+      recentTurns: conversationContext,
+      hasPendingWorkflow: Boolean(pendingAction || pendingGoalAction || pendingCorrection || pendingClarification)
+    });
     const independentQuestion = intentPlan.readOnlyQuestions.length > 0 &&
       intentPlan.readOnlyQuestions[0] !== request.message.trim()
       ? intentPlan.readOnlyQuestions[0]
@@ -1120,7 +1157,18 @@ export class VictoriaAgent {
         decision: { ...pendingAction.decision, action: "ask_follow_up", classification, userFacingMessage: message }
       };
     }
-    const { classification: classifiedMessage, teamAdvice, resolvedReference } = isPendingRevisionAmountAnswer
+    const canSkipFinancialMoment = Boolean(this.dependencies.conversationResponder) &&
+      canSkipFinancialClassification(request.message) && !pendingAction && !pendingGoalAction &&
+      !pendingCorrection && !pendingClarification;
+    const { classification: classifiedMessage, teamAdvice, resolvedReference } = canSkipFinancialMoment
+      ? {
+          classification: {
+            type: "general_finance" as const, confidence: 1, summary: request.message, needsClarification: false
+          },
+          teamAdvice: undefined,
+          resolvedReference: undefined
+        }
+      : isPendingRevisionAmountAnswer
       ? {
           classification: {
             type: "proposal_revision" as const,
@@ -1180,13 +1228,6 @@ export class VictoriaAgent {
         }
         if (memories.length > 0) {
           memoryAcknowledgement = "I'll keep that in mind for future conversations.";
-          if (classification.type === "general_finance" && !isOrdinaryQuestion(request.message) && !this.dependencies.conversationResponder) {
-            const message = `Got it. ${memoryAcknowledgement}`;
-            return {
-              message,
-              decision: { action: "reflect", classification, userFacingMessage: message }
-            };
-          }
         }
       } catch {
         try {
@@ -1430,7 +1471,7 @@ export class VictoriaAgent {
     }
 
     if (classification.type === "entry_correction") {
-      const recentEntry = this.recentSavingsEntriesByConversation.get(conversationKey);
+      const recentEntry = await this.getRecentSavingsEntry(request.userId, request.conversationId ?? "", conversationKey);
       if (!recentEntry || recentEntry.userId !== request.userId) {
         const message = "Which recorded savings entry would you like to correct? I can only match an entry from this conversation.";
         return { message, decision: { action: "ask_follow_up", classification, userFacingMessage: message } };
@@ -1476,7 +1517,7 @@ export class VictoriaAgent {
     }
 
     if (classification.type === "goal_allocation" && classification.goalName) {
-      const recentEntry = this.recentSavingsEntriesByConversation.get(conversationKey);
+      const recentEntry = await this.getRecentSavingsEntry(request.userId, request.conversationId ?? "", conversationKey);
       if (recentEntry?.userId === request.userId) {
         return this.proposeGoalAllocation(request, classification, recentEntry);
       }
@@ -1769,6 +1810,32 @@ export class VictoriaAgent {
     return { message, decision: { action: "reflect", classification, userFacingMessage: message } };
   }
 
+  /** Resolve the latest record from durable, user-and-conversation scoped history when available. */
+  private async getRecentSavingsEntry(
+    userId: string,
+    conversationId: string,
+    conversationKey: string
+  ): Promise<SavingsEntry | undefined> {
+    const cached = this.recentSavingsEntriesByConversation.get(conversationKey);
+    const eventStore = this.dependencies.savingsEvents;
+    if (!eventStore || !conversationId) return cached?.userId === userId ? cached : undefined;
+
+    const events = await eventStore.list(userId, conversationId);
+    if (events.length === 0) return undefined;
+    const eventIds = new Set(events.map(({ id }) => id));
+    const toolsWithEntryList = this.dependencies.tools as typeof this.dependencies.tools & {
+      listSavingsEntries?: (userId: string) => Promise<readonly SavingsEntry[]>;
+    };
+    if (!toolsWithEntryList.listSavingsEntries) return cached?.userId === userId ? cached : undefined;
+    const entries = await toolsWithEntryList.listSavingsEntries(userId);
+    const latest = entries
+      .filter((entry) => entry.userId === userId && entry.status === "completed" &&
+        entry.movementMode === "mock_ledger" && eventIds.has(entry.eventId))
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.id.localeCompare(left.id))[0];
+    if (latest) this.recentSavingsEntriesByConversation.set(conversationKey, latest);
+    return latest;
+  }
+
   private async classifyWithTeam(
     message: string,
     memory: Awaited<ReturnType<MemoryProvider["getMemoryForUser"]>>,
@@ -1789,10 +1856,16 @@ export class VictoriaAgent {
     });
     const specialistFinancialContext = contextSnapshot.financialContext ?? financialContext;
     if (!specialists) {
-      const candidate = await this.dependencies.llm.classifyMessage({
-        userMessage: message, memory, conversationContext,
-        ...(specialistFinancialContext ? { financialContext: specialistFinancialContext } : {})
-      });
+      let candidate: ClassifiedMessage;
+      try {
+        candidate = await this.dependencies.llm.classifyMessage({
+          userMessage: message, memory, conversationContext,
+          ...(specialistFinancialContext ? { financialContext: specialistFinancialContext } : {})
+        });
+      } catch {
+        this.reportFinancialMomentFallback("classifier");
+        candidate = fallbackFinding(message).classification;
+      }
       const validated = validateClassifiedMessage(candidate) ?? fallbackFinding(message).classification;
       const resolvedReference = resolveFinancialReferenceHint(financialContext, validated.referenceHint);
       const cleanClassification = { ...groundExplicitAvoidedSpendAmount(validated, message) };
@@ -1815,6 +1888,7 @@ export class VictoriaAgent {
       finding = validated ?? fallbackFinding(message);
       financialMomentValid = validated !== null;
     } catch {
+      this.reportFinancialMomentFallback("specialist");
       finding = fallbackFinding(message);
     }
     finding = { ...finding, classification: groundExplicitAvoidedSpendAmount(finding.classification, message) };
@@ -1963,6 +2037,11 @@ export class VictoriaAgent {
     };
   }
 
+  private reportFinancialMomentFallback(source: "classifier" | "specialist"): void {
+    try { this.dependencies.onFinancialMomentFallback?.(source); }
+    catch { /* Safe fallback telemetry cannot block a conservative answer. */ }
+  }
+
   private async decide(
     request: AgentRequest,
     classification: ClassifiedMessage,
@@ -1974,10 +2053,10 @@ export class VictoriaAgent {
       try {
         const amountCents = await this.dependencies.tools.getWeeklySavingsTotal(request.userId);
         message = amountCents === 0
-          ? "No savings have been recorded in your mocked Victoria savings ledger this week. No real money has moved yet."
-          : `You have ${formatUsd(amountCents)} recorded in your mocked Victoria savings ledger this week. No real money has moved yet.`;
+          ? "No savings have been recorded in your mocked Victoria savings ledger this week. No real money has moved yet. This is only a mocked ledger record."
+          : `You have ${formatUsd(amountCents)} recorded in your mocked Victoria savings ledger this week. No real money has moved yet. This is only a mocked ledger record.`;
       } catch {
-        message = "I couldn't load your weekly total just now. No real money has moved yet.";
+        message = "I couldn't load your weekly total just now. No real money has moved yet. This is only a mocked ledger record.";
       }
 
       return {
@@ -2266,7 +2345,7 @@ export class VictoriaAgent {
 
     const nextActionId = this.nextId("savings_action", this.nextActionNumber++);
     const amountCents = pendingDecision.suggestion?.amountCents ?? proposal.suggestion.amountCents;
-    const message = `I can record ${formatUsd(amountCents)} in your mocked Victoria savings ledger toward ${goalName}. Please confirm: should I record it? No real money has moved yet.`;
+    const message = `I can record ${formatUsd(amountCents)} in your mocked Victoria savings ledger toward ${goalName}. Please confirm: should I record it? No real money has moved yet. This is only a mocked ledger record.`;
     const updatedProposal: SavingsProposal = {
       ...proposal,
       id: this.nextId("proposal", this.nextProposalNumber++),
@@ -2416,7 +2495,7 @@ export class VictoriaAgent {
       status: "pending",
       createdAt: new Date().toISOString()
     };
-    const message = `I can link the currently recorded ${formatUsd(effectiveAmountCents)} entry to ${goalAllocation.goalName} in your mocked savings ledger. Please confirm this goal allocation. No real money has moved yet.`;
+    const message = `I can link the currently recorded ${formatUsd(effectiveAmountCents)} entry to ${goalAllocation.goalName} in your mocked savings ledger. Please confirm this goal allocation. No real money has moved yet. This is only a mocked ledger record.`;
     const decision: AgentDecision = {
       action: "update_goal",
       classification,
@@ -2496,7 +2575,7 @@ export class VictoriaAgent {
         requiresApproval: true,
         movementMode: suggestion.movementMode
       },
-      userFacingMessage: `${evidence} in your Victoria savings ledger? No real money has moved yet.`
+      userFacingMessage: `${evidence} in your Victoria savings ledger? No real money has moved yet. This is only a mocked ledger record.`
     };
   }
 
@@ -2619,7 +2698,7 @@ export class VictoriaAgent {
     try {
       entry = await this.dependencies.tools.createSavingsEntry(createSavingsEntryInput);
     } catch {
-      const message = "I couldn't confirm whether the entry was recorded, so I haven't marked this action complete. You can say yes to safely retry the same entry. No real money has moved yet.";
+      const message = "I couldn't confirm whether the entry was recorded, so I haven't marked this action complete. You can say yes to safely retry the same entry. No real money has moved yet. This is only a mocked ledger record.";
       return {
         message,
         decision: {
@@ -2645,7 +2724,7 @@ export class VictoriaAgent {
     } catch {
       weeklyProgress = " I couldn't load your weekly total just now.";
     }
-    const message = `Done. I recorded ${formatUsd(entry.amountCents)}${goalText} in your Victoria savings ledger.${weeklyProgress} No real money has moved yet.`;
+    const message = `Done. I recorded ${formatUsd(entry.amountCents)}${goalText} in your Victoria savings ledger.${weeklyProgress} No real money has moved yet. This is only a mocked ledger record.`;
     await this.rememberCoveredRecurringAllocationBehavior(request, trustedEvent);
     const recorded = transitionSavingsProposal(trustedProposal, {
       id: this.nextId("proposal_transition", this.nextProposalTransitionNumber++),
@@ -2819,7 +2898,7 @@ export class VictoriaAgent {
         approvedActionId: actionId
       });
     } catch {
-      const message = "I couldn't confirm whether the goal allocation was recorded. You can say yes to safely retry the same approved allocation. No real money has moved yet.";
+      const message = "I couldn't confirm whether the goal allocation was recorded. You can say yes to safely retry the same approved allocation. No real money has moved yet. This is only a mocked ledger record.";
       return {
         message,
         decision: {
@@ -2837,7 +2916,7 @@ export class VictoriaAgent {
       this.recentSavingsEntriesByConversation.delete(pendingAction.conversationKey);
     }
 
-    const message = `Done. I linked the recorded ${formatUsd(recordedAllocation.amountCents)} entry to ${recordedAllocation.goalName} in your mocked Victoria savings ledger. No real money has moved yet.`;
+    const message = `Done. I linked the recorded ${formatUsd(recordedAllocation.amountCents)} entry to ${recordedAllocation.goalName} in your mocked Victoria savings ledger. No real money has moved yet. This is only a mocked ledger record.`;
     return {
       message,
       decision: {
@@ -2922,6 +3001,31 @@ export class VictoriaAgent {
       ...(pending.awaitingRevisionTarget ? { awaitingRevisionTarget: true } : {})
     });
     this.pendingActionIdsByConversation.set(conversationKey, pending.actionId);
+  }
+
+  /** Expire process-local proposals before a response can interpret an approval. */
+  private expireInMemoryPendingWorkflows(request: AgentRequest): void {
+    const conversationKey = this.conversationKey(request);
+    const savingsId = this.pendingActionIdsByConversation.get(conversationKey);
+    const savings = savingsId ? this.pendingSavingsActions.get(savingsId) : undefined;
+    if (savings && isPendingFinancialWorkflowExpired(savings.decision.proposal?.createdAt ?? "")) {
+      this.pendingSavingsActions.delete(savingsId!);
+      this.pendingActionIdsByConversation.delete(conversationKey);
+    }
+
+    const allocationId = this.pendingGoalAllocationIdsByConversation.get(conversationKey);
+    const allocation = allocationId ? this.pendingGoalAllocationActions.get(allocationId) : undefined;
+    if (allocation && isPendingFinancialWorkflowExpired(allocation.decision.goalAllocation?.createdAt ?? "")) {
+      this.pendingGoalAllocationActions.delete(allocationId!);
+      this.pendingGoalAllocationIdsByConversation.delete(conversationKey);
+    }
+
+    const correctionId = this.pendingEntryCorrectionIdsByConversation.get(conversationKey);
+    const correction = correctionId ? this.pendingEntryCorrections.get(correctionId) : undefined;
+    if (correction && isPendingFinancialWorkflowExpired(correction.decision.entryCorrection?.createdAt ?? "")) {
+      this.pendingEntryCorrections.delete(correctionId!);
+      this.pendingEntryCorrectionIdsByConversation.delete(conversationKey);
+    }
   }
 
   private async restorePendingGoalAllocationAction(request: AgentRequest): Promise<void> {
@@ -3615,8 +3719,8 @@ function enforceMoneyMovementBoundary(message: string, classification: Classifie
 function mapEpisodeSourceTurns(
   userMessages: readonly string[],
   sourceTurns: readonly { readonly turnId: string; readonly userMessage: string }[]
-): readonly { readonly turnId: string }[] {
-  const references: { turnId: string }[] = [];
+): readonly { readonly turnId: string; readonly userMessage: string }[] {
+  const references: { turnId: string; userMessage: string }[] = [];
   const turnIdsByMessage = new Map<string, string[]>();
   for (const sourceTurn of sourceTurns) {
     const ids = turnIdsByMessage.get(sourceTurn.userMessage) ?? [];
@@ -3625,7 +3729,7 @@ function mapEpisodeSourceTurns(
   }
   for (const message of userMessages) {
     const turnId = turnIdsByMessage.get(message)?.shift();
-    if (turnId?.trim()) references.push({ turnId });
+    if (turnId?.trim()) references.push({ turnId, userMessage: message });
   }
   return Object.freeze(references);
 }

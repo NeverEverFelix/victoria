@@ -15,7 +15,7 @@ Use the live comparison gate only after both provider-backed runtime arms can pr
 - Provider outages and timeout/fallback behavior require separate injected-failure runs. Do not count a synthetic user turn as evidence of provider outage handling.
 - Never include real account numbers, credentials, or unnecessary personal financial details.
 
-The opt-in provider team supports Financial Moment classification, Savings Reasoning, and Companion Voice. `npm run eval:provider:comparison` now implements an opt-in complete-turn runner for both the Financial Moment baseline and full provider team, with mock memory/tools, explicit state preludes, a dated rate card, per-turn response/usage results, and per-role timing summaries. Its Responses API plumbing has mocked-fetch coverage. It has not been run against a live provider and has no human review results; implementation and mock tests are not evidence that specialists improve quality.
+The opt-in provider team supports Financial Moment classification, Savings Reasoning, and Companion Voice. `npm run eval:provider:comparison` implements an opt-in complete-turn runner for both the Financial Moment baseline and full provider team, with mock memory/tools, explicit state preludes, a dated rate card, per-turn response/usage results, and per-role timing summaries. Its Responses API plumbing has mocked-fetch coverage. One live 50-turn comparison was run and is recorded in `tests/evaluation/reports/provider-comparison-2026-10-29.json`; it predates the latest fixes and is diagnostic only. No post-fix run or human review results are available yet.
 
 ## Blinded Human Review
 
@@ -29,7 +29,7 @@ The original seven-case set remains a connection and schema smoke corpus; it is 
 
 ## Systems Compared
 
-Run the current single-agent baseline and the proposed specialist runtime against the same inputs, memory, tools, and environmental assumptions. Record the model and prompt versions. Use identical deterministic policy and tool boundaries in both arms; only the reasoning/routing arrangement should differ. Randomize response order for blind review. The runner now executes both arms end to end, but the live comparison gate still needs a credentialed run, failure-accounting review, and blinded response review before it can be considered complete.
+Run the current single-agent baseline and the proposed specialist runtime against the same inputs, memory, tools, and environmental assumptions. Record the model and prompt versions. Use identical deterministic policy and tool boundaries in both arms; only the reasoning/routing arrangement should differ. Randomize response order for blind review. The runner has executed both arms end to end once. Repeat the comparison after fixes, review failure accounting, and complete blinded response review before considering this gate complete.
 
 ## Acceptance Criteria
 

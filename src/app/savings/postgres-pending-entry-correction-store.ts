@@ -10,9 +10,22 @@ export class PostgresPendingEntryCorrectionStore implements PendingEntryCorrecti
 
   async getPending(userId: string, conversationId: string): Promise<PersistedPendingEntryCorrection | null> {
     const result = await this.db.query<{ action_id: string; decision: unknown }>(
-      `SELECT p.action_id, p.decision
+      `WITH expired AS (
+         INSERT INTO victoria_local_entry_correction_transitions
+           (transition_id, proposal_id, user_id, conversation_id, action_id, status, created_at)
+         SELECT p.action_id || ':expired', p.proposal_id, p.user_id, p.conversation_id, p.action_id, 'expired', now()
+         FROM victoria_local_entry_correction_proposals p
+         WHERE p.user_id = $1 AND p.conversation_id = $2
+           AND p.created_at <= now() - interval '24 hours'
+           AND NOT EXISTS (SELECT 1 FROM victoria_local_entry_correction_transitions t
+                           WHERE t.user_id = p.user_id AND t.action_id = p.action_id)
+         ON CONFLICT (user_id, action_id) DO NOTHING
+         RETURNING action_id
+       )
+       SELECT p.action_id, p.decision
        FROM victoria_local_entry_correction_proposals p
        WHERE p.user_id = $1 AND p.conversation_id = $2
+         AND p.created_at > now() - interval '24 hours'
          AND NOT EXISTS (SELECT 1 FROM victoria_local_entry_correction_transitions t
                          WHERE t.user_id = p.user_id AND t.action_id = p.action_id)
        ORDER BY p.created_at DESC LIMIT 1`, [userId, conversationId]);
