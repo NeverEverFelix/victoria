@@ -1634,9 +1634,27 @@ export class VictoriaAgent {
 
   private async generateConversationReply(input: ConversationResponderInput): Promise<string> {
     if (!this.dependencies.conversationResponder) return input.baselineReply;
-    const responderInput = {
-      ...input,
-      contextSnapshot: input.contextSnapshot ?? buildConversationContextSnapshot(input)
+    const contextSnapshot = input.contextSnapshot ?? buildConversationContextSnapshot(input);
+    const dialogue = contextSnapshot.dialogueTurns;
+    const currentTurnIsLast = dialogue.at(-1)?.role === "user" &&
+      dialogue.at(-1)?.content === contextSnapshot.currentMessage;
+    const recentTurns = (currentTurnIsLast ? dialogue.slice(0, -1) : dialogue).map((turn) =>
+      turn.role === "assistant" ? `Victoria: ${turn.content}` : turn.content
+    );
+    const responderInput: ConversationResponderInput = {
+      message: contextSnapshot.currentMessage,
+      recentTurns,
+      memories: contextSnapshot.selectedMemories,
+      episodicSummaries: contextSnapshot.episodicSummaries,
+      baselineReply: input.baselineReply,
+      ...(contextSnapshot.responsePreference ? { responsePreference: contextSnapshot.responsePreference } : {}),
+      ...(contextSnapshot.pendingAction ? { pendingAction: contextSnapshot.pendingAction } : {}),
+      ...(contextSnapshot.references?.pendingWorkflow
+        ? { pendingWorkflowReference: contextSnapshot.references.pendingWorkflow } : {}),
+      ...(contextSnapshot.financialContext ? { financialContext: contextSnapshot.financialContext } : {}),
+      ...(contextSnapshot.conversationSavingsEvents
+        ? { conversationSavingsEvents: contextSnapshot.conversationSavingsEvents } : {}),
+      contextSnapshot
     };
     const fallbackReply = deterministicConversationFallback(responderInput);
     const isConstrainedWorkFollowUp =
@@ -1672,7 +1690,7 @@ export class VictoriaAgent {
     const retryInput: ConversationResponderInput = {
       ...responderInput,
       baselineReply: retryBaseline,
-      contextSnapshot: responderInput.contextSnapshot
+      contextSnapshot
     };
     try {
       const retry = await this.dependencies.conversationResponder.respond(retryInput);

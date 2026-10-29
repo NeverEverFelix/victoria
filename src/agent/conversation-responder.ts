@@ -41,6 +41,8 @@ export interface ConversationContextSnapshot {
   readonly selectedMemories: readonly ConversationResponderMemory[];
   /** Relevant prior conversation summaries, not current facts or financial authority. */
   readonly episodicSummaries: readonly { readonly id: string; readonly summary: string; readonly createdAt: string }[];
+  /** Validated remembered preference, kept separate from the resolved per-turn depth. */
+  readonly responsePreference?: "brief" | "detailed";
   readonly responseDepth: "brief" | "normal" | "detailed";
   /** Explicit read-only reference resolution; never a request or approval to mutate state. */
   readonly references?: {
@@ -79,6 +81,7 @@ export function buildConversationContextSnapshot(input: Pick<ConversationRespond
     selectedMemories: Object.freeze(input.memories.slice(0, 6).map((memory) => Object.freeze({ ...memory }))),
     episodicSummaries: Object.freeze((input.episodicSummaries ?? []).slice(0, 3)
       .map((episode) => Object.freeze({ ...episode }))),
+    ...(input.responsePreference ? { responsePreference: input.responsePreference } : {}),
     responseDepth: input.responseDepth ?? requestedResponseDepth(input.message, input.responsePreference),
     ...snapshotReferences(input.financialContext),
     ...(input.pendingWorkflowReference ? { references: Object.freeze({
@@ -136,7 +139,8 @@ export interface ConversationResponder {
 export function validateConversationReply(reply: unknown, input: ConversationResponderInput): string | null {
   if (typeof reply !== "string") return null;
   const text = reply.trim();
-  const responseDepth = input.responseDepth ?? requestedResponseDepth(input.message, input.responsePreference);
+  const responseDepth = input.contextSnapshot?.responseDepth ??
+    input.responseDepth ?? requestedResponseDepth(input.message, input.responsePreference);
   if (!text || text.length > (responseDepth === "detailed" ? 4_000 : responseDepth === "normal" ? 2_500 : 450)) return null;
   if (/\b(?:shame on you|you failed|irresponsible|lazy|bad with money)\b/i.test(text)) return null;
   if (/\b(?:i|we|victoria)\s+(?:have\s+)?(?:recorded|transferred|moved|deposited|sent)\b/i.test(text) ||

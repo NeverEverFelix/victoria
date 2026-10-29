@@ -167,6 +167,34 @@ describe("VictoriaAgent", () => {
     ]);
   });
 
+  it("keeps responder convenience fields aligned with the specialist snapshot when memory changes mid-turn", async () => {
+    const memory = new MockMemoryProvider();
+    const base = createMockAgentTeamSpecialists();
+    const responder = vi.fn(async (input: ConversationResponderInput) => input.baselineReply);
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools(),
+      conversationResponder: { respond: responder },
+      specialists: { ...base, financialMoment: { analyze: async ({ message }) => {
+        await memory.rememberConversationalMemory("mid_turn_context_user", {
+          category: "preference", key: "preference:travel_pace", value: "Prefers relaxed travel plans.",
+          evidence: "I prefer relaxed trips.", confidence: 0.96, sourceType: "user_statement"
+        });
+        return { classification: {
+          type: "general_finance", confidence: 0.9, summary: message, needsClarification: false
+        } };
+      } } }
+    });
+
+    await agent.respond({ userId: "mid_turn_context_user", conversationId: "mid_turn_context_chat",
+      message: "What should I consider for a relaxed Japan trip?" });
+
+    const input = responder.mock.calls[0]?.[0];
+    expect(input?.memories).toEqual(input?.contextSnapshot?.selectedMemories);
+    expect(input?.episodicSummaries).toEqual(input?.contextSnapshot?.episodicSummaries);
+    expect(input?.financialContext).toEqual(input?.contextSnapshot?.financialContext);
+    expect(input?.contextSnapshot?.selectedMemories).toEqual([]);
+  });
+
   it("keeps a relevant episodic summary separate from current sourced memory facts in the context snapshot", async () => {
     const memory = new MockMemoryProvider();
     await memory.rememberConversationalMemory("episode_snapshot_user", {

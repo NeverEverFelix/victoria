@@ -126,6 +126,25 @@ describe("conversation response boundary", () => {
     expect(Object.isFrozen(snapshot.references?.pendingWorkflow)).toBe(true);
   });
 
+  it("uses the immutable snapshot depth for reply validation when outer hints disagree", () => {
+    const briefSnapshot = buildConversationContextSnapshot({
+      message: "How are you?", recentTurns: [], memories: [], responseDepth: "brief"
+    });
+    const detailedSnapshot = buildConversationContextSnapshot({
+      message: "Explain this in detail.", recentTurns: [], memories: [], responseDepth: "detailed"
+    });
+    const longerReply = "A".repeat(500);
+
+    expect(validateConversationReply(longerReply, {
+      message: "Explain this in detail.", recentTurns: [], memories: [], baselineReply: "Try again.",
+      responseDepth: "brief", contextSnapshot: detailedSnapshot
+    })).toBe(longerReply);
+    expect(validateConversationReply(longerReply, {
+      message: "How are you?", recentTurns: [], memories: [], baselineReply: "Try again.",
+      responseDepth: "detailed", contextSnapshot: briefSnapshot
+    })).toBeNull();
+  });
+
   it("supplies only scoped historical event context to a read-only conversation response", async () => {
     let requestBody: Record<string, unknown> | undefined;
     const responder = new OpenAiConversationResponder({
