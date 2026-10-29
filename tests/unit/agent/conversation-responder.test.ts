@@ -53,6 +53,32 @@ describe("conversation response boundary", () => {
     });
   });
 
+  it("sends a mixed-turn response focus beside the full canonical snapshot", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const responder = new OpenAiConversationResponder({
+      apiKey: "test-key", model: "test-model", fetcher: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ output: [{ type: "message", content: [{
+          type: "output_text", text: JSON.stringify({ text: "Try a short nature podcast." })
+        }] }] }), { status: 200 });
+      }
+    });
+
+    await responder.respond({
+      message: "I skipped a $20 book; what are good podcasts for walks?",
+      responseFocus: "What are good podcasts for walks?",
+      recentTurns: [], memories: [], baselineReply: "I can answer that separately."
+    });
+
+    expect(requestBody?.instructions).toContain("When responseFocus is present, answer that focused question");
+    const providerInput = JSON.parse(String(requestBody?.input)) as {
+      responseFocus: string;
+      contextSnapshot: { currentMessage: string };
+    };
+    expect(providerInput.responseFocus).toBe("What are good podcasts for walks?");
+    expect(providerInput.contextSnapshot.currentMessage).toBe("I skipped a $20 book; what are good podcasts for walks?");
+  });
+
   it("deep-copies and freezes nested financial and event context", () => {
     const financialContext = {
       relevantUserTurns: [{ sourceTurnIndex: 0, text: "I skipped a $35 purchase." }],
