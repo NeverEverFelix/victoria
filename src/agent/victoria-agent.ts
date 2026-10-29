@@ -1593,6 +1593,9 @@ export class VictoriaAgent {
           // Historical event data is exposed only when the caller explicitly resolved an event-history request.
           savingsEvents: []
         });
+    const pendingWorkflowReference = pendingAction === "entry_correction" || pendingAction === "goal_allocation"
+      ? this.pendingWorkflowReference(request, pendingAction)
+      : undefined;
     const message = await this.generateConversationReply({
       message: request.message,
       recentTurns,
@@ -1601,6 +1604,7 @@ export class VictoriaAgent {
       baselineReply,
       ...conversationResponsePreferenceInput(memory.conversationalMemories ?? []),
       ...(pendingAction ? { pendingAction } : {}),
+      ...(pendingWorkflowReference ? { pendingWorkflowReference } : {}),
       ...(conversationSavingsEvents ? { conversationSavingsEvents } : {}),
       financialContext: responderFinancialContext,
       ...(contextSnapshot ? { contextSnapshot } : {})
@@ -1610,6 +1614,22 @@ export class VictoriaAgent {
       classification: { type: "general_finance", confidence: 1, summary: request.message, needsClarification: false },
       userFacingMessage: message
     } };
+  }
+
+  private pendingWorkflowReference(
+    request: AgentRequest,
+    kind: "entry_correction" | "goal_allocation"
+  ): ConversationResponderInput["pendingWorkflowReference"] {
+    const conversationKey = this.conversationKey(request);
+    const actionId = kind === "entry_correction"
+      ? this.pendingEntryCorrectionIdsByConversation.get(conversationKey)
+      : this.pendingGoalAllocationIdsByConversation.get(conversationKey);
+    if (!actionId) return undefined;
+    const pending = kind === "entry_correction"
+      ? this.pendingEntryCorrections.get(actionId)
+      : this.pendingGoalAllocationActions.get(actionId);
+    if (pending?.userId !== request.userId || pending.conversationKey !== conversationKey) return undefined;
+    return { kind, actionId };
   }
 
   private async generateConversationReply(input: ConversationResponderInput): Promise<string> {

@@ -1839,6 +1839,9 @@ describe("VictoriaAgent", () => {
 
     expect(topic.message).toContain("grain bowl");
     expect(responder.mock.calls[0]?.[0].contextSnapshot?.pendingAction).toBe("entry_correction");
+    expect(responder.mock.calls[0]?.[0].contextSnapshot?.references?.pendingWorkflow).toEqual({
+      kind: "entry_correction", actionId: correction.decision.toolCall?.actionId
+    });
     expect(responder.mock.calls[0]?.[0].contextSnapshot?.selectedMemories).toEqual(
       expect.arrayContaining([expect.objectContaining({ key: "interest:cooking" })])
     );
@@ -1956,6 +1959,9 @@ describe("VictoriaAgent", () => {
 
     expect(topic.message).toContain("grain bowl");
     expect(responder.mock.calls[0]?.[0].contextSnapshot?.pendingAction).toBe("goal_allocation");
+    expect(responder.mock.calls[0]?.[0].contextSnapshot?.references?.pendingWorkflow).toEqual({
+      kind: "goal_allocation", actionId: goalProposal.decision.toolCall?.actionId
+    });
     expect(responder.mock.calls[0]?.[0].contextSnapshot?.selectedMemories).toEqual(
       expect.arrayContaining([expect.objectContaining({ key: "interest:cooking" })])
     );

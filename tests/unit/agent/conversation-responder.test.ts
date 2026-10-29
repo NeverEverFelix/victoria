@@ -106,6 +106,19 @@ describe("conversation response boundary", () => {
     expect(Object.isFrozen(snapshot.references?.historicalEvent)).toBe(true);
   });
 
+  it("preserves the identity of a pending non-savings workflow in the snapshot", () => {
+    const snapshot = buildConversationContextSnapshot({
+      message: "Can we talk about something else?", recentTurns: [], memories: [],
+      pendingAction: "entry_correction",
+      pendingWorkflowReference: { kind: "entry_correction", actionId: "correction-action-7" }
+    });
+
+    expect(snapshot.references?.pendingWorkflow).toEqual({
+      kind: "entry_correction", actionId: "correction-action-7"
+    });
+    expect(Object.isFrozen(snapshot.references?.pendingWorkflow)).toBe(true);
+  });
+
   it("supplies only scoped historical event context to a read-only conversation response", async () => {
     let requestBody: Record<string, unknown> | undefined;
     const responder = new OpenAiConversationResponder({
