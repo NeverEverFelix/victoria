@@ -1,7 +1,8 @@
 import type { AgentMemory, FinancialDecision, SavingsGoal, UserHabit } from "../types.js";
 import type { TransactionFinancialProfile } from "../../domain/financial-profile.js";
-import type { ConversationalMemory, ConversationalMemoryPage, MemoryProvider } from "./types.js";
+import type { ConversationMessage, ConversationalMemory, ConversationalMemoryPage, MemoryProvider } from "./types.js";
 import { extractConversationalMemory } from "./extract-preference.js";
+import { conversationMessagesFromLegacy, legacyConversationContext } from "./conversation-transcript.js";
 
 export interface FinancialProfileMemoryWriter {
   rememberFinancialProfile(profile: TransactionFinancialProfile): Promise<readonly ConversationalMemory[]>;
@@ -211,6 +212,17 @@ export class MemoryOrchestrator implements MemoryProvider {
   }
   setConversationContext(userId: string, conversationId: string, messages: readonly string[]): Promise<void> {
     return this.storage.setConversationContext(userId, conversationId, messages);
+  }
+  async getConversationMessages(userId: string, conversationId: string): Promise<readonly ConversationMessage[]> {
+    if (this.storage.getConversationMessages) return this.storage.getConversationMessages(userId, conversationId);
+    return conversationMessagesFromLegacy(conversationId, await this.storage.getConversationContext(userId, conversationId));
+  }
+  async setConversationMessages(userId: string, conversationId: string, messages: readonly ConversationMessage[]): Promise<void> {
+    if (this.storage.setConversationMessages) {
+      await this.storage.setConversationMessages(userId, conversationId, messages);
+      return;
+    }
+    await this.storage.setConversationContext(userId, conversationId, legacyConversationContext(messages));
   }
 
   private async listCurrentStoredMemories(userId: string): Promise<ConversationalMemory[]> {

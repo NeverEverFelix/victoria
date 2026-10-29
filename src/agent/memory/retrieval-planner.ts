@@ -10,6 +10,13 @@ export interface MemoryRetrievalPlanInput {
   readonly categoryLimits?: Partial<Record<ConversationalMemory["category"], number>>;
 }
 
+export type MemoryRetrievalReason = "lexical_overlap" | "semantic_similarity" | "recent_evidence" | "user_correction" | "context_match";
+
+export interface MemoryRetrievalSelection {
+  readonly memory: ConversationalMemory;
+  readonly reasons: readonly MemoryRetrievalReason[];
+}
+
 /** Shared provenance and shape gate for memories that may influence a response. */
 export function isRetrievableMemory(memory: ConversationalMemory): boolean {
   const id = memory.id.trim();
@@ -27,6 +34,11 @@ export function isRetrievableMemory(memory: ConversationalMemory): boolean {
 
 /** Shared ranking for user-scoped candidates; consumers still enforce their own eligibility and lifecycle contracts. */
 export function planMemoryRetrieval(input: MemoryRetrievalPlanInput): readonly ConversationalMemory[] {
+  return planMemoryRetrievalWithReasons(input).map(({ memory }) => memory);
+}
+
+/** Provides bounded, content-free diagnostics for why an eligible memory was selected. */
+export function planMemoryRetrievalWithReasons(input: MemoryRetrievalPlanInput): readonly MemoryRetrievalSelection[] {
   const queryTokens = new Set(tokens(`${input.query} ${input.additionalContext ?? ""}`));
   const ranked = input.memories.flatMap((memory) => {
     const key = memory.key.trim().toLocaleLowerCase("en-US");
@@ -43,7 +55,7 @@ export function planMemoryRetrieval(input: MemoryRetrievalPlanInput): readonly C
     const alwaysRelevant = input.alwaysRelevant?.(memory) ?? false;
     const rank = overlap * 2 + semantic * 3 + recency * 0.2 +
       (memory.sourceType === "user_correction" ? 0.5 : 0) + (alwaysRelevant ? 100 : 0);
-    return [{ memory, identity, createdAt, rank, alwaysRelevant }];
+    return [{ memory, identity, createdAt, rank, alwaysRelevant, overlap, semantic, ageDays }];
   });
 
   // Explicit same-fact supersession wins even when timestamps tie or drift.
@@ -83,8 +95,16 @@ export function planMemoryRetrieval(input: MemoryRetrievalPlanInput): readonly C
     ...withinCategoryBudget.filter((item) => item.alwaysRelevant).slice(0, alwaysRelevantLimit),
     ...withinCategoryBudget.filter((item) => !item.alwaysRelevant)
   ];
-  return budgeted.sort((a, b) => b.rank - a.rank || b.createdAt - a.createdAt || a.memory.id.localeCompare(b.memory.id))
-    .slice(0, limit).map(({ memory }) => memory);
+  return Object.freeze(budgeted.sort((a, b) => b.rank - a.rank || b.createdAt - a.createdAt || a.memory.id.localeCompare(b.memory.id))
+    .slice(0, limit).map(({ memory, overlap, semantic, ageDays, alwaysRelevant }) => {
+      const reasons: MemoryRetrievalReason[] = [];
+      if (overlap > 0) reasons.push("lexical_overlap");
+      if (semantic >= 0.5) reasons.push("semantic_similarity");
+      if (ageDays <= 30) reasons.push("recent_evidence");
+      if (memory.sourceType === "user_correction") reasons.push("user_correction");
+      if (alwaysRelevant) reasons.push("context_match");
+      return Object.freeze({ memory, reasons: Object.freeze(reasons) });
+    }));
 }
 
 function tokens(value: string): string[] {

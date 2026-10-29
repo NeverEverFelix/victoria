@@ -7,6 +7,9 @@ export interface MemoryProvider {
   listGoals(userId: string): Promise<SavingsGoal[]>;
   getConversationContext(userId: string, conversationId: string): Promise<readonly string[]>;
   setConversationContext(userId: string, conversationId: string, messages: readonly string[]): Promise<void>;
+  /** Structured role-preserving transcript API; legacy string methods remain for existing consumers. */
+  getConversationMessages?(userId: string, conversationId: string): Promise<readonly ConversationMessage[]>;
+  setConversationMessages?(userId: string, conversationId: string, messages: readonly ConversationMessage[]): Promise<void>;
   listConversationalMemories(userId: string, page?: ConversationalMemoryPage): Promise<readonly ConversationalMemory[]>;
   /** Optional efficient current-fact view; include suppression markers only for lifecycle writes. */
   listCurrentConversationalMemories?(
@@ -20,6 +23,17 @@ export interface MemoryProvider {
   ): Promise<ReadonlySet<string>>;
   searchConversationalMemories(userId: string, query: string, limit?: number): Promise<readonly ConversationalMemory[]>;
   rememberConversationalMemory(userId: string, memory: Omit<ConversationalMemory, "id" | "createdAt">): Promise<ConversationalMemory>;
+}
+
+export interface ConversationMessage {
+  readonly schemaVersion: 1;
+  readonly id: string;
+  readonly conversationId: string;
+  readonly role: "user" | "assistant" | "tool";
+  readonly content: string;
+  readonly createdAt?: string;
+  readonly toolCallId?: string;
+  readonly status?: "received" | "completed" | "failed";
 }
 
 /** A durable, user-scoped preference or other fact learned from conversation. */

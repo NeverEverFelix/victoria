@@ -61,6 +61,11 @@ describe("conversation routing helpers", () => {
     expect(isReadOnlyEventHistoryQuestion("Which financial moment did I mention first?")).toBe(true);
   });
 
+  it("routes explicit arithmetic questions to the read-only responder", () => {
+    expect(shouldRouteToConversationResponder("If I save $20 every week, how much is that in 12 months?")).toBe(true);
+    expect(shouldRouteToConversationResponder("If I save $20 a week, how much is that in 12 months? Please record it.")).toBe(false);
+  });
+
   it("allows safe pending-workflow topic switches but blocks revisions and action requests", () => {
     expect(isSafePendingWorkflowTopicSwitch("Let's talk about my budget instead")).toBe(true);
     expect(isSafePendingWorkflowTopicSwitch("Can we talk about changing jobs instead?")).toBe(true);

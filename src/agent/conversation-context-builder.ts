@@ -8,7 +8,7 @@ import {
   resolveActiveSavingsProposalReference
 } from "./conversation-state-manager.js";
 import { resolveHistoricalEventReference, type HistoricalEventReferenceResolution } from "./historical-event-reference-resolver.js";
-import { isRetrievableMemory, planMemoryRetrieval } from "./memory/retrieval-planner.js";
+import { isRetrievableMemory, planMemoryRetrievalWithReasons, type MemoryRetrievalReason } from "./memory/retrieval-planner.js";
 
 export interface ContextFinancialFact {
   readonly id: string;
@@ -67,6 +67,8 @@ export interface SelectedMemoryContextFact {
   readonly value: string;
   readonly evidence: string;
   readonly provenance: "user_statement" | "user_correction";
+  /** Content-free reason codes supplied for internal relevance review. */
+  readonly selectionReasons?: readonly MemoryRetrievalReason[];
 }
 
 export interface ConversationSavingsEventContext {
@@ -254,10 +256,11 @@ function selectMemoryFacts(
   const eligible = memories.filter((memory) => {
     return isRetrievableMemory(memory);
   });
-  return planMemoryRetrieval({ memories: eligible, query: message, additionalContext: activeContext, limit: 6 })
-    .map((memory) => ({
+  return planMemoryRetrievalWithReasons({ memories: eligible, query: message, additionalContext: activeContext, limit: 6 })
+    .map(({ memory, reasons }) => ({
       id: memory.id.trim(), category: memory.category, key: memory.key.trim(), value: memory.value.trim(),
-      evidence: memory.evidence.trim(), provenance: memory.sourceType as "user_statement" | "user_correction"
+      evidence: memory.evidence.trim(), provenance: memory.sourceType as "user_statement" | "user_correction",
+      selectionReasons: reasons
     } satisfies SelectedMemoryContextFact));
 }
 

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { LlmAdapter } from "./llm/types.js";
 import type { ConversationalMemory, MemoryProvider } from "./memory/types.js";
 import { MemoryOrchestrator } from "./memory/memory-orchestrator.js";
@@ -68,14 +68,15 @@ import type { ResolvedFinancialReference, VictoriaConversationContext } from "./
 import { isRetrievableMemory, planMemoryRetrieval } from "./memory/retrieval-planner.js";
 import { isMemoryLearningEligibleTurn } from "./memory/memory-learning-policy.js";
 import type { ContextReferenceResolver } from "./context-reference-resolver.js";
-import { buildConversationContextSnapshot, validateConversationReply, type ConversationContextSnapshot, type ConversationResponder, type ConversationResponderInput, type ConversationResponderMemory } from "./conversation-responder.js";
-import { deterministicConversationFallback } from "./conversation-fallback.js";
+import { buildConversationContextSnapshot, type ConversationContextSnapshot, type ConversationReplyFallbackReason, type ConversationResponder, type ConversationResponderInput, type ConversationResponderMemory } from "./conversation-responder.js";
+import { ConversationReplyService } from "./conversation-reply-service.js";
+import { calculateReadOnlySavingsQuestion } from "./read-only-calculator.js";
+import { buildConversationIntentPlan, mayDispatchConversationIntent } from "./conversation-intent-plan.js";
 import {
   isPendingCorrectionReplacementRequest,
   isPendingGoalRetargetRequest,
   isSafePendingWorkflowTopicSwitch,
   isOrdinaryQuestion,
-  independentOrdinaryQuestion,
   shouldRouteToConversationResponder,
   isReadOnlyEventHistoryQuestion
 } from "./conversation-routing.js";
@@ -91,6 +92,8 @@ import type { PendingGoalAllocationActionStore } from "./pending-goal-allocation
 import type { PendingEntryCorrectionStore } from "./pending-entry-correction-store.js";
 import { InMemoryConversationSavingsEventStore } from "./savings-event-store.js";
 import type { ConversationSavingsEventStore } from "./savings-event-store.js";
+import type { ConversationMessage } from "./memory/types.js";
+import { conversationMessagesFromLegacy, legacyConversationContext } from "./memory/conversation-transcript.js";
 
 export interface VictoriaAgentDependencies {
   llm: LlmAdapter;
@@ -106,7 +109,9 @@ export interface VictoriaAgentDependencies {
   /** Receives a provider failure name only; the current turn continues without provider-derived memories. */
   onConversationalMemoryExtractionFailure?: (errorName: string) => void;
   /** Receives an enumerated fallback reason only; no user message or draft content is included. */
-  onConversationReplyFallback?: (reason: "provider_error" | "invalid_after_retry") => void;
+  onConversationReplyFallback?: (reason: ConversationReplyFallbackReason) => void;
+  /** Safe runtime trace: excludes message text, memory values, and hidden reasoning. */
+  onConversationTurnTrace?: (trace: ConversationTurnTrace) => void;
   /** Receives validation categories only; never includes draft text or user content. */
   onCompanionVoiceValidationFailure?: (issues: readonly VoiceDraftIssue[]) => void;
   /** Optional wording layer for ordinary reflections; deterministic policy keeps action authority. */
@@ -120,9 +125,21 @@ export interface VictoriaAgentDependencies {
   idFactory?: () => string;
 }
 
+export interface ConversationTurnTrace {
+  readonly schemaVersion: 1;
+  readonly durationMs: number;
+  readonly classification: ClassifiedMessage["type"];
+  readonly action: AgentDecision["action"];
+  readonly ledgerWrite: boolean;
+  readonly proposalTransitionCount: number;
+  readonly sourceTurnReferenceCount: number;
+  readonly requestReference?: string;
+}
+
 export class VictoriaAgent {
   private readonly dependencies: VictoriaAgentDependencies;
   private readonly savingsEvents: ConversationSavingsEventStore;
+  private readonly conversationReplies: ConversationReplyService;
   private readonly pendingSavingsActions = new Map<
     string,
     { userId: string; conversationKey: string; decision: AgentDecision; awaitingValidRevision?: boolean; awaitingRevisionTarget?: boolean; approval?: SavingsApproval }
@@ -150,6 +167,10 @@ export class VictoriaAgent {
 
   constructor(dependencies: VictoriaAgentDependencies) {
     this.savingsEvents = dependencies.savingsEvents ?? new InMemoryConversationSavingsEventStore();
+    this.conversationReplies = new ConversationReplyService(
+      dependencies.conversationResponder,
+      dependencies.onConversationReplyFallback
+    );
     this.dependencies = {
       ...dependencies,
       memory: dependencies.memory instanceof MemoryOrchestrator
@@ -159,6 +180,7 @@ export class VictoriaAgent {
   }
 
   async respond(request: AgentRequest): Promise<AgentResponse> {
+    const startedAt = Date.now();
     const conversationId = request.conversationId ?? "default";
     await this.restorePendingSavingsAction(request);
     await this.restorePendingGoalAllocationAction(request);
@@ -170,10 +192,30 @@ export class VictoriaAgent {
       : undefined;
     const priorCorrectionId = this.pendingEntryCorrectionIdsByConversation.get(conversationKey);
     const priorCorrection = priorCorrectionId ? this.pendingEntryCorrections.get(priorCorrectionId) : undefined;
-    const priorContext = await this.dependencies.memory.getConversationContext(request.userId, conversationId);
+    const priorMessages = this.dependencies.memory.getConversationMessages
+      ? await this.dependencies.memory.getConversationMessages(request.userId, conversationId)
+      : undefined;
+    const priorContext = priorMessages
+      ? legacyConversationContext(priorMessages)
+      : await this.dependencies.memory.getConversationContext(request.userId, conversationId);
     await this.summarizeOverflowingConversation(request.userId, conversationId, priorContext, request.sourceTurnReferences ?? []);
-    const withUserMessage = [...priorContext, request.message].slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT);
-    await this.dependencies.memory.setConversationContext(request.userId, conversationId, withUserMessage);
+    const userMessage: ConversationMessage = Object.freeze({
+      schemaVersion: 1,
+      id: [...(request.sourceTurnReferences ?? [])].reverse().find((turn) => turn.userMessage === request.message)?.turnId ??
+        `conversation-user-message_${randomUUID()}`,
+      conversationId, role: "user", content: request.message,
+      createdAt: new Date().toISOString(), status: "completed"
+    });
+    const previousMessages = priorMessages ?? conversationMessagesFromLegacy(conversationId, priorContext);
+    const alreadyStored = previousMessages.some((message) => message.id === userMessage.id);
+    const withUserMessages = [...previousMessages, ...(alreadyStored ? [] : [userMessage])]
+      .slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT);
+    const withUserMessage = legacyConversationContext(withUserMessages);
+    if (this.dependencies.memory.setConversationMessages) {
+      await this.dependencies.memory.setConversationMessages(request.userId, conversationId, withUserMessages);
+    } else {
+      await this.dependencies.memory.setConversationContext(request.userId, conversationId, withUserMessage);
+    }
     const response = immutableSnapshot(await this.respondTurn(request, priorContext));
     if (response.decision.savingsEvent) {
       await this.savingsEvents.record({
@@ -184,8 +226,35 @@ export class VictoriaAgent {
     await this.persistPendingSavingsAction(request, response.decision);
     await this.persistPendingGoalAllocationAction(request, response.decision, priorPendingGoalActionId, priorPendingGoalDecision);
     await this.persistPendingEntryCorrection(request, response.decision, priorCorrectionId, priorCorrection?.decision);
-    await this.dependencies.memory.setConversationContext(request.userId, conversationId,
-      [...withUserMessage, `Victoria: ${response.message}`].slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT));
+    const completedMessages: readonly ConversationMessage[] = Object.freeze([
+      ...withUserMessages,
+      Object.freeze({
+        schemaVersion: 1 as const,
+        id: `conversation-assistant-message_${randomUUID()}`,
+        conversationId, role: "assistant" as const, content: response.message,
+        createdAt: new Date().toISOString(), status: "completed" as const
+      })
+    ].slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT));
+    if (this.dependencies.memory.setConversationMessages) {
+      await this.dependencies.memory.setConversationMessages(request.userId, conversationId, completedMessages);
+    } else {
+      await this.dependencies.memory.setConversationContext(request.userId, conversationId,
+        legacyConversationContext(completedMessages));
+    }
+    const trace: ConversationTurnTrace = Object.freeze({
+      schemaVersion: 1,
+      durationMs: Math.max(0, Date.now() - startedAt),
+      classification: response.decision.classification.type,
+      action: response.decision.action,
+      ledgerWrite: response.decision.action === "create_ledger_entry",
+      proposalTransitionCount: response.decision.proposalTransitions?.length ?? 0,
+      sourceTurnReferenceCount: request.sourceTurnReferences?.length ?? 0,
+      ...(request.sourceTurnReferences?.at(-1)?.turnId ? {
+        requestReference: createHash("sha256").update(request.sourceTurnReferences.at(-1)!.turnId).digest("hex").slice(0, 12)
+      } : {})
+    });
+    try { this.dependencies.onConversationTurnTrace?.(trace); }
+    catch { /* Observability cannot block a completed turn. */ }
     return response;
   }
 
@@ -986,7 +1055,11 @@ export class VictoriaAgent {
       savingsEvents: conversationSavingsEvents,
       ...(conversationWorkflowState ? { workflowState: conversationWorkflowState } : {})
     });
-    const independentQuestion = independentOrdinaryQuestion(request.message);
+    const intentPlan = buildConversationIntentPlan({ message: request.message, recentTurns: conversationContext });
+    const independentQuestion = intentPlan.readOnlyQuestions.length > 0 &&
+      intentPlan.readOnlyQuestions[0] !== request.message.trim()
+      ? intentPlan.readOnlyQuestions[0]
+      : undefined;
     const canUseEventHistory = !independentQuestion && isReadOnlyEventHistoryQuestion(request.message);
     const responderFinancialContext = canUseEventHistory
       ? financialContext
@@ -1124,7 +1197,9 @@ export class VictoriaAgent {
         // Optional extraction cannot block the current turn or financial safety checks.
       }
     }
-    if (this.dependencies.conversationResponder && shouldRouteToConversationResponder(request.message)) {
+    if (this.dependencies.conversationResponder && mayDispatchConversationIntent(intentPlan) &&
+        (shouldRouteToConversationResponder(request.message) ||
+          (intentPlan.intents.includes("dialogue") && intentPlan.readOnlyQuestions[0] === request.message.trim()))) {
       return this.respondConversationalTurn(request, conversationContext,
         "I can help think that through. What would be most useful to focus on first?", undefined,
         canUseEventHistory ? responderFinancialContext.conversationSavingsEvents : undefined,
@@ -1600,6 +1675,7 @@ export class VictoriaAgent {
     const pendingWorkflowReference = pendingAction === "entry_correction" || pendingAction === "goal_allocation"
       ? this.pendingWorkflowReference(request, pendingAction)
       : undefined;
+    const verifiedCalculation = calculateReadOnlySavingsQuestion(request.message);
     const message = await this.generateConversationReply({
       message: request.message,
       recentTurns,
@@ -1610,6 +1686,7 @@ export class VictoriaAgent {
       ...(pendingAction ? { pendingAction } : {}),
       ...(pendingWorkflowReference ? { pendingWorkflowReference } : {}),
       ...(conversationSavingsEvents ? { conversationSavingsEvents } : {}),
+      ...(verifiedCalculation ? { verifiedCalculations: [verifiedCalculation] } : {}),
       financialContext: responderFinancialContext,
       ...(contextSnapshot ? { contextSnapshot } : {})
     });
@@ -1637,84 +1714,7 @@ export class VictoriaAgent {
   }
 
   private async generateConversationReply(input: ConversationResponderInput): Promise<string> {
-    if (!this.dependencies.conversationResponder) return input.baselineReply;
-    const contextSnapshot = input.contextSnapshot ?? buildConversationContextSnapshot(input);
-    const dialogue = contextSnapshot.dialogueTurns;
-    const currentTurnIsLast = dialogue.at(-1)?.role === "user" &&
-      dialogue.at(-1)?.content === contextSnapshot.currentMessage;
-    const recentTurns = (currentTurnIsLast ? dialogue.slice(0, -1) : dialogue).map((turn) =>
-      turn.role === "assistant" ? `Victoria: ${turn.content}` : turn.content
-    );
-    const responderInput: ConversationResponderInput = {
-      message: input.responseFocus ?? contextSnapshot.currentMessage,
-      ...(input.responseFocus ? { responseFocus: input.responseFocus } : {}),
-      recentTurns,
-      memories: contextSnapshot.selectedMemories,
-      episodicSummaries: contextSnapshot.episodicSummaries,
-      baselineReply: input.baselineReply,
-      ...(contextSnapshot.responsePreference ? { responsePreference: contextSnapshot.responsePreference } : {}),
-      ...(contextSnapshot.pendingAction ? { pendingAction: contextSnapshot.pendingAction } : {}),
-      ...(contextSnapshot.references?.pendingWorkflow
-        ? { pendingWorkflowReference: contextSnapshot.references.pendingWorkflow } : {}),
-      ...(contextSnapshot.financialContext ? { financialContext: contextSnapshot.financialContext } : {}),
-      ...(contextSnapshot.conversationSavingsEvents
-        ? { conversationSavingsEvents: contextSnapshot.conversationSavingsEvents } : {}),
-      contextSnapshot
-    };
-    const fallbackReply = deterministicConversationFallback(responderInput);
-    const isConstrainedWorkFollowUp =
-      /\b(?:manager|schedule[sd]?|work|job|role)\b/i.test(responderInput.recentTurns.join(" ")) &&
-      /\b(?:sunday|weekend|evening|cooking|friends?)\b/i.test(responderInput.recentTurns.join(" ")) &&
-      /\b(?:one thing|one sentence|keep it to one|flexible)\b/i.test(responderInput.message) &&
-      fallbackReply.trim() !== responderInput.baselineReply.trim();
-    if (isConstrainedWorkFollowUp) return fallbackReply;
-    let candidate: string;
-    try {
-      candidate = await this.dependencies.conversationResponder.respond(responderInput);
-    } catch {
-      this.reportConversationReplyFallback("provider_error");
-      return fallbackReply;
-    }
-    const validated = validateConversationReply(candidate, responderInput);
-    if (validated) {
-      const unchangedBaseline = validated.trim().replace(/\s+/g, " ") ===
-        responderInput.baselineReply.trim().replace(/\s+/g, " ");
-      const hasMoreSpecificFallback = fallbackReply.trim().replace(/\s+/g, " ") !==
-        responderInput.baselineReply.trim().replace(/\s+/g, " ");
-      // A provider may return the safe generic baseline verbatim. When a
-      // topic-specific deterministic fallback exists, use it instead of
-      // presenting an answer that ignores the user's concrete situation.
-      if (unchangedBaseline && hasMoreSpecificFallback) return fallbackReply;
-      return validated;
-    }
-
-    // A malformed or ungrounded read-only draft should not immediately erase
-    // the user's question. Give the responder one chance to correct its draft;
-    // this path has no tools and cannot approve or mutate a financial action.
-    const retryBaseline = `Your previous draft was not safe to show. Answer the user's current request directly, using only supported facts and no unsupported dollar amounts. Keep the pending ${responderInput.pendingAction ?? "financial action"} unchanged. If you cannot answer safely, use this fallback: ${responderInput.baselineReply}`;
-    const retryInput: ConversationResponderInput = {
-      ...responderInput,
-      baselineReply: retryBaseline,
-      contextSnapshot
-    };
-    try {
-      const retry = await this.dependencies.conversationResponder.respond(retryInput);
-      const validatedRetry = validateConversationReply(retry, retryInput);
-      if (validatedRetry) return validatedRetry;
-    } catch {
-      this.reportConversationReplyFallback("provider_error");
-      return fallbackReply;
-    }
-    this.reportConversationReplyFallback("invalid_after_retry");
-    return fallbackReply;
-  }
-
-  private reportConversationReplyFallback(reason: "provider_error" | "invalid_after_retry"): void {
-    try {
-      this.dependencies.onConversationReplyFallback?.(reason);
-    } catch {
-      // Observability is best-effort and cannot block the safe fallback.
-    }
+    return this.conversationReplies.respond(input);
   }
 
   private async learnFromReadOnlyTopicTurn(request: AgentRequest): Promise<void> {
@@ -3517,7 +3517,9 @@ function conversationResponderMemories(
   query?: string
 ): readonly ConversationResponderMemory[] {
   if (financialContext) {
-    const selected = financialContext.selectedMemoryFacts.map(({ id, key, value, provenance }) => ({ id, key, value, provenance }));
+    const selected = financialContext.selectedMemoryFacts.map(({ id, key, value, provenance, selectionReasons }) => ({
+      id, key, value, provenance, ...(selectionReasons ? { selectionReasons } : {})
+    }));
     const selectedIds = new Set(selected.map((memory) => memory.id));
     // Context retrieval is focused on financial facts. Preserve other relevant
     // memories returned for the current message so a newly learned preference

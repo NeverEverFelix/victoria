@@ -9,7 +9,8 @@ import {
 } from "../agent/index.js";
 import { createOpenAiAgentTeamSpecialists } from "../agent/team/openai-specialists.js";
 import { OpenAiContextReferenceResolver } from "../agent/context-reference-resolver.js";
-import type { ConversationResponder } from "../agent/conversation-responder.js";
+import type { ConversationReplyFallbackReason, ConversationResponder } from "../agent/conversation-responder.js";
+import type { ConversationTurnTrace } from "../agent/victoria-agent.js";
 import type { ProviderUsageReporter } from "../agent/telemetry/provider-usage-reporter.js";
 import { buildFeatureFlags, type VictoriaEnv } from "../config/index.js";
 import type { UserHabit } from "../agent/types.js";
@@ -35,6 +36,8 @@ export interface CreateVictoriaAgentOptions {
   tools?: VictoriaTools;
   providerUsageReporter?: ProviderUsageReporter;
   onCompanionVoiceValidationFailure?: (issues: readonly VoiceDraftIssue[]) => void;
+  onConversationReplyFallback?: (reason: ConversationReplyFallbackReason) => void;
+  onConversationTurnTrace?: (trace: ConversationTurnTrace) => void;
   pendingAmountClarifications?: PendingAmountClarificationStore;
   pendingSavingsActions?: PendingSavingsActionStore;
   pendingGoalAllocationActions?: PendingGoalAllocationActionStore;
@@ -87,6 +90,8 @@ export function createVictoriaAgent(options: CreateVictoriaAgentOptions): Victor
     ...(options.onCompanionVoiceValidationFailure
       ? { onCompanionVoiceValidationFailure: options.onCompanionVoiceValidationFailure }
       : {}),
+    ...(options.onConversationReplyFallback ? { onConversationReplyFallback: options.onConversationReplyFallback } : {}),
+    ...(options.onConversationTurnTrace ? { onConversationTurnTrace: options.onConversationTurnTrace } : {}),
     ...(options.pendingAmountClarifications ? { pendingAmountClarifications: options.pendingAmountClarifications } : {}),
     ...(options.pendingSavingsActions ? { pendingSavingsActions: options.pendingSavingsActions } : {}),
     ...(options.pendingGoalAllocationActions ? { pendingGoalAllocationActions: options.pendingGoalAllocationActions } : {}),

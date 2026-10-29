@@ -41,7 +41,7 @@ describe("buildVictoriaConversationContext", () => {
 
     expect(context.selectedMemoryFacts).toEqual([{
       id: "memory-1", category: "habit", key: "gym_routine", value: "I go to the gym weekly.",
-      evidence: "I go to the gym weekly.", provenance: "user_statement"
+      evidence: "I go to the gym weekly.", provenance: "user_statement", selectionReasons: ["recent_evidence"]
     }]);
     expect(context.financialFacts).toEqual([]);
   });

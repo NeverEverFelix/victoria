@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planMemoryRetrieval } from "../../../../src/agent/memory/retrieval-planner.js";
+import { planMemoryRetrieval, planMemoryRetrievalWithReasons } from "../../../../src/agent/memory/retrieval-planner.js";
 import type { ConversationalMemory } from "../../../../src/agent/memory/types.js";
 
 function memory(id: string, key: string, value: string, overrides: Partial<ConversationalMemory> = {}): ConversationalMemory {
@@ -113,5 +113,17 @@ describe("planMemoryRetrieval", () => {
     expect(result.filter(({ category }) => category === "goal")).toHaveLength(2);
     expect(result.map(({ id }) => id)).toContain("habit");
     expect(result.map(({ id }) => id)).toContain("preference");
+  });
+
+  it("explains selected facts with bounded reason codes and no copied memory content", () => {
+    const selected = planMemoryRetrievalWithReasons({
+      memories: [memory("corrected", "goal:trip", "Saving for a trip.", { sourceType: "user_correction" })],
+      query: "trip goal", limit: 2
+    });
+    expect(selected).toEqual([{
+      memory: expect.objectContaining({ id: "corrected" }),
+      reasons: expect.arrayContaining(["lexical_overlap", "recent_evidence", "user_correction"])
+    }]);
+    expect(JSON.stringify(selected.map(({ reasons }) => reasons))).not.toContain("Saving for a trip");
   });
 });

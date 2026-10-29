@@ -1,8 +1,9 @@
 import { DatabaseSync } from "node:sqlite";
 import type { AgentMemory, FinancialDecision, SavingsGoal, UserHabit } from "../types.js";
-import type { ConversationalMemory, ConversationalMemoryPage, MemoryProvider } from "./types.js";
+import type { ConversationMessage, ConversationalMemory, ConversationalMemoryPage, MemoryProvider } from "./types.js";
 import { DEFAULT_CONVERSATION_CONTEXT_LIMIT } from "./types.js";
 import { PostgresMemoryRepository } from "./postgres-memory-repository.js";
+import { conversationMessagesFromLegacy, isConversationMessage, legacyConversationContext } from "./conversation-transcript.js";
 
 /** SQLite owns short-term context and caches durable PostgreSQL conversational memory. */
 export class SqliteCachedMemoryProvider implements MemoryProvider {
@@ -95,7 +96,10 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
     if (row) {
       if (row.expires_at > Date.now()) {
         this.scheduleContextFlush(userId, conversationId);
-        return JSON.parse(row.messages) as string[];
+        const parsed: unknown = JSON.parse(row.messages);
+        return Array.isArray(parsed) && parsed.every(isConversationMessage)
+          ? legacyConversationContext(parsed as ConversationMessage[])
+          : Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
       }
       this.db.prepare("DELETE FROM conversation_context_cache WHERE user_id = ? AND conversation_id = ?").run(userId, conversationId);
       this.db.prepare("DELETE FROM conversation_context_outbox WHERE user_id = ? AND conversation_id = ?").run(userId, conversationId);
@@ -118,6 +122,50 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.cacheShortTermContext(userId, conversationId, bounded, expiresAt);
+      this.db.prepare("INSERT OR REPLACE INTO conversation_context_outbox VALUES (?, ?, ?, ?)")
+        .run(userId, conversationId, JSON.stringify(bounded), expiresAt);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    this.scheduleContextFlush(userId, conversationId);
+  }
+
+  async getConversationMessages(userId: string, conversationId: string): Promise<readonly ConversationMessage[]> {
+    this.purgeExpiredContext();
+    const row = this.db.prepare(`SELECT messages, expires_at FROM conversation_context_cache
+      WHERE user_id = ? AND conversation_id = ?`).get(userId, conversationId) as { messages: string; expires_at: number } | undefined;
+    if (row && row.expires_at > Date.now()) {
+      this.scheduleContextFlush(userId, conversationId);
+      const parsed: unknown = JSON.parse(row.messages);
+      return Array.isArray(parsed) && parsed.every(isConversationMessage)
+        ? Object.freeze(parsed as ConversationMessage[])
+        : conversationMessagesFromLegacy(conversationId, Array.isArray(parsed)
+          ? parsed.filter((item): item is string => typeof item === "string") : []);
+    }
+    if (row) {
+      this.db.prepare("DELETE FROM conversation_context_cache WHERE user_id = ? AND conversation_id = ?").run(userId, conversationId);
+      this.db.prepare("DELETE FROM conversation_context_outbox WHERE user_id = ? AND conversation_id = ?").run(userId, conversationId);
+    }
+    try {
+      const messages = await this.durable.getConversationMessages(userId, conversationId);
+      const expiresAt = Date.now() + this.shortTermContextTtlMs;
+      this.cacheRawConversationMessages(userId, conversationId, messages, expiresAt);
+      return messages;
+    } catch {
+      const legacy = await this.durable.getConversationContext(userId, conversationId).catch(() => []);
+      return conversationMessagesFromLegacy(conversationId, legacy);
+    }
+  }
+
+  async setConversationMessages(userId: string, conversationId: string, messages: readonly ConversationMessage[]): Promise<void> {
+    this.purgeExpiredContext();
+    const bounded = messages.slice(-this.contextMessageLimit);
+    const expiresAt = Date.now() + this.shortTermContextTtlMs;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.cacheRawConversationMessages(userId, conversationId, bounded, expiresAt);
       this.db.prepare("INSERT OR REPLACE INTO conversation_context_outbox VALUES (?, ?, ?, ?)")
         .run(userId, conversationId, JSON.stringify(bounded), expiresAt);
       this.db.exec("COMMIT");
@@ -163,6 +211,13 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
       .run(userId, conversationId, JSON.stringify(messages.slice(-this.contextMessageLimit)), expiresAt);
   }
 
+  private cacheRawConversationMessages(
+    userId: string, conversationId: string, messages: readonly ConversationMessage[], expiresAt: number
+  ): void {
+    this.db.prepare("INSERT OR REPLACE INTO conversation_context_cache VALUES (?, ?, ?, ?)")
+      .run(userId, conversationId, JSON.stringify(messages.slice(-this.contextMessageLimit)), expiresAt);
+  }
+
   private async flushContextOutbox(userId: string, conversationId: string): Promise<void> {
     const row = this.db.prepare(`SELECT messages, expires_at FROM conversation_context_outbox
       WHERE user_id = ? AND conversation_id = ?`).get(userId, conversationId) as { messages: string; expires_at: number } | undefined;
@@ -172,7 +227,13 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
       return;
     }
     try {
-      await this.durable.setConversationContext(userId, conversationId, JSON.parse(row.messages) as string[]);
+      const messages: unknown = JSON.parse(row.messages);
+      if (Array.isArray(messages) && messages.every(isConversationMessage)) {
+        await this.durable.setConversationMessages(userId, conversationId, messages as ConversationMessage[]);
+      } else {
+        await this.durable.setConversationContext(userId, conversationId,
+          Array.isArray(messages) ? messages.filter((item): item is string => typeof item === "string") : []);
+      }
       this.db.prepare("DELETE FROM conversation_context_outbox WHERE user_id = ? AND conversation_id = ? AND expires_at = ?")
         .run(userId, conversationId, row.expires_at);
     } catch {

@@ -658,3 +658,15 @@ Expected behavior:
 - A separate question can be answered while a mocked savings entry, goal allocation, or entry correction is pending. That question does not approve, change, or cancel the pending action.
 - A clearly read-only question about avoided-spend events in the current conversation can be answered while a savings entry is pending, using only the authoritative events scoped to that user and conversation. Mixed approval, decline, revision, or action questions do not use this exception.
 - Generated conversation text cannot claim a ledger write or real transfer, offer a new ledger action, or invent dollar amounts. A rejected or unavailable response falls back to a safe reply.
+
+## Story 26: Answer Read-Only Savings Arithmetic
+
+As a user, I want Victoria to calculate a clear recurring contribution over a stated year so I can understand its scale without implying that money was transferred or saved.
+
+Expected behavior:
+
+- A clear weekly amount over one year uses 52 contributions; a clear monthly amount uses 12.
+- The calculator returns the exact cents result, formula, inputs, and stated assumption as read-only context.
+- Generated dollar amounts are accepted only when they match that deterministic result or another authorized source.
+- A calculation cannot create or approve a savings proposal, claim an account balance, or claim that money was saved.
+- Requests to record, transfer, withdraw, or calculate an account balance stay outside this calculator.

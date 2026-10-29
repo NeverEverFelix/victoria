@@ -156,6 +156,10 @@ Victoria assembles a typed, conversation-scoped turn context from recently state
 
 When a user combines a projection for multiple recurring costs with a request to record one this month, Victoria states the conditional combined projection and asks which single monthly cost they mean. If a proposal is already pending, it remains unchanged while Victoria clarifies; the combined total is never treated as a recordable amount, and no entry is created from the mixed request.
 
+### Read-Only Savings Arithmetic
+
+For a clear question about an explicitly stated recurring amount, Victoria may calculate a one-year total deterministically in integer cents: weekly contributions use 52 weeks and monthly contributions use 12 months. The reply must state the assumption, use only the exact calculator result, and describe it as arithmetic rather than an account balance or completed saving. This calculation is read-only; it never creates or approves a proposal or ledger entry. Unsupported periods, overflow, balance questions, and turns that request a financial action do not use this calculator.
+
 ### Regretful Spend
 
 ```text

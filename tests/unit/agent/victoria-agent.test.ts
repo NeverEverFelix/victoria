@@ -17,6 +17,23 @@ import type { PendingSavingsActionStore, PersistedPendingSavingsAction } from ".
 import type { ConversationResponderInput } from "../../../src/agent/conversation-responder.js";
 
 describe("VictoriaAgent", () => {
+  it("emits a privacy-safe structured turn trace", async () => {
+    const traceObserver = vi.fn();
+    const privateMessage = "I almost bought a $19.95 book but decided to wait.";
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools: new MockVictoriaTools(),
+      onConversationTurnTrace: traceObserver
+    });
+
+    await agent.respond({ userId: "trace-user", conversationId: "trace-chat", message: privateMessage });
+
+    expect(traceObserver).toHaveBeenCalledOnce();
+    const trace = traceObserver.mock.calls[0]?.[0];
+    expect(trace).toMatchObject({ schemaVersion: 1, classification: "avoided_spend", action: "suggest_savings", ledgerWrite: false });
+    expect(JSON.stringify(trace)).not.toContain(privateMessage);
+    expect(JSON.stringify(trace)).not.toContain("19.95");
+  });
+
   it("keeps the full mixed turn in the canonical snapshot while focusing the responder on the ordinary question", async () => {
     const tools = new MockVictoriaTools();
     const llm = new MockLlmAdapter();
@@ -468,7 +485,7 @@ describe("VictoriaAgent", () => {
     expect(response.decision.action).toBe("reflect");
     expect(response.decision.proposal).toBeUndefined();
     expect(responder).toHaveBeenCalledOnce();
-    expect(fallbackObserver).toHaveBeenCalledExactlyOnceWith("provider_error");
+    expect(fallbackObserver).toHaveBeenCalledExactlyOnceWith("provider_unavailable");
     expect(await tools.listSavingsEntries("budget_fallback_user")).toEqual([]);
   });
 
@@ -493,7 +510,7 @@ describe("VictoriaAgent", () => {
     expect(response.message).toContain("What feels most uncertain");
     expect(response.decision.action).toBe("reflect");
     expect(response.decision.proposal).toBeUndefined();
-    expect(fallbackObserver).toHaveBeenCalledExactlyOnceWith("provider_error");
+    expect(fallbackObserver).toHaveBeenCalledExactlyOnceWith("provider_unavailable");
     expect(await tools.listSavingsEntries(userId)).toEqual([]);
   });
 
@@ -1133,6 +1150,30 @@ describe("VictoriaAgent", () => {
     const approved = await agent.respond({ ...request, message: "Yes" });
     expect(approved.decision.action).toBe("create_ledger_entry");
     expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);
+  });
+
+  it("routes a read-only financial question from the contextual plan without creating a savings entry", async () => {
+    const tools = new MockVictoriaTools();
+    const llm = new MockLlmAdapter();
+    vi.spyOn(llm, "classifyMessage").mockResolvedValue({
+      type: "general_finance", confidence: 0.9,
+      summary: "Is that enough for vacation?", needsClarification: false
+    });
+    const conversationResponder = { respond: vi.fn(async () =>
+      "It could be a useful start toward vacation, depending on your timeline and other priorities.") };
+    const agent = new VictoriaAgent({
+      llm, memory: new MockMemoryProvider(), tools, conversationResponder
+    });
+
+    const response = await agent.respond({
+      userId: "read_only_financial_question_user",
+      conversationId: "read_only_financial_question_chat",
+      message: "I saved $35 by switching gyms. Is that enough for vacation?"
+    });
+
+    expect(conversationResponder.respond).toHaveBeenCalledOnce();
+    expect(response.message).toContain("useful start");
+    expect(await tools.listSavingsEntries("read_only_financial_question_user")).toEqual([]);
   });
 
   it("withholds event history from a mixed action/history question when no proposal is pending", async () => {

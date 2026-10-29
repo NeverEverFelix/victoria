@@ -93,6 +93,12 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
       onCompanionVoiceValidationFailure: (issues) => {
         console.warn("Victoria companion voice draft remained invalid after revision; using guarded fallback.", { issues });
       },
+      onConversationReplyFallback: (reason) => {
+        console.warn("Victoria conversation reply used deterministic recovery.", { schemaVersion: 1, reason });
+      },
+      onConversationTurnTrace: (trace) => {
+        console.info("Victoria turn trace", trace);
+      },
       ...(episodicSummariesEnabled ? {
         episodicMemorySummarizer: new OpenAiEpisodicMemorySummarizer({
           apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})

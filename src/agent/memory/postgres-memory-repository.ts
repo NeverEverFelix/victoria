@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { FinancialDecision, SavingsGoal, UserHabit, AgentMemory } from "../types.js";
 import type { PostgresQueryable } from "../../app/shared/postgres-types.js";
-import { DEFAULT_CONVERSATION_CONTEXT_LIMIT, type ConversationalMemory, type ConversationalMemoryPage, type MemoryProvider } from "./types.js";
+import { DEFAULT_CONVERSATION_CONTEXT_LIMIT, type ConversationMessage, type ConversationalMemory, type ConversationalMemoryPage, type MemoryProvider } from "./types.js";
+import { conversationMessagesFromLegacy, isConversationMessage, legacyConversationContext } from "./conversation-transcript.js";
 import { toPgVectorLiteral, validateSemanticEmbedding, type SemanticEmbeddingProvider } from "./semantic-embedding.js";
 import type { TransactionFinancialProfile } from "../../domain/financial-profile.js";
 import { formatUsd } from "../../domain/money.js";
@@ -42,11 +43,14 @@ export class PostgresMemoryRepository implements MemoryProvider {
   }
 
   async getConversationContext(userId: string, conversationId: string): Promise<readonly string[]> {
-    const result = await this.db.query<{ messages: string[] }>(
+    const result = await this.db.query<{ messages: unknown }>(
       "SELECT messages FROM victoria_conversation_context WHERE user_id = $1 AND conversation_id = $2 AND expires_at > now()",
       [userId, conversationId]
     );
-    return result.rows[0]?.messages ?? [];
+    const messages = result.rows[0]?.messages;
+    if (!Array.isArray(messages)) return [];
+    if (messages.every(isConversationMessage)) return legacyConversationContext(messages as ConversationMessage[]);
+    return messages.filter((message): message is string => typeof message === "string");
   }
 
   async setConversationContext(userId: string, conversationId: string, messages: readonly string[]): Promise<void> {
@@ -56,6 +60,34 @@ export class PostgresMemoryRepository implements MemoryProvider {
        ON CONFLICT (user_id, conversation_id) DO UPDATE SET messages = EXCLUDED.messages,
          updated_at = EXCLUDED.updated_at, expires_at = EXCLUDED.expires_at`,
       [userId, conversationId, JSON.stringify(messages.slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT)), new Date(Date.now() + this.shortTermContextTtlMs).toISOString()]
+    );
+  }
+
+  async getConversationMessages(userId: string, conversationId: string): Promise<readonly ConversationMessage[]> {
+    const result = await this.db.query<{ messages: unknown }>(
+      "SELECT messages FROM victoria_conversation_context WHERE user_id = $1 AND conversation_id = $2 AND expires_at > now()",
+      [userId, conversationId]
+    );
+    const messages = result.rows[0]?.messages;
+    if (!Array.isArray(messages)) return [];
+    if (messages.every(isConversationMessage)) {
+      return Object.freeze((messages as ConversationMessage[]).filter((message) => message.conversationId === conversationId));
+    }
+    return conversationMessagesFromLegacy(conversationId, messages.filter((message): message is string => typeof message === "string"));
+  }
+
+  async setConversationMessages(userId: string, conversationId: string, messages: readonly ConversationMessage[]): Promise<void> {
+    const bounded = messages.slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT);
+    if (!userId.trim() || !conversationId.trim() || bounded.some((message) =>
+      !isConversationMessage(message) || message.conversationId !== conversationId)) {
+      throw new Error("Conversation messages must be valid and scoped to the requested conversation.");
+    }
+    await this.db.query(
+      `INSERT INTO victoria_conversation_context (user_id, conversation_id, messages, updated_at, expires_at)
+       VALUES ($1, $2, $3::jsonb, now(), $4)
+       ON CONFLICT (user_id, conversation_id) DO UPDATE SET messages = EXCLUDED.messages,
+         updated_at = EXCLUDED.updated_at, expires_at = EXCLUDED.expires_at`,
+      [userId, conversationId, JSON.stringify(bounded), new Date(Date.now() + this.shortTermContextTtlMs).toISOString()]
     );
   }
 

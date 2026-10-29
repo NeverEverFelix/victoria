@@ -1,10 +1,13 @@
 import type { AgentMemory, FinancialDecision, SavingsGoal, UserHabit } from "../types.js";
 import { DEFAULT_CONVERSATION_CONTEXT_LIMIT, type ConversationalMemory, type ConversationalMemoryPage, type MemoryProvider } from "./types.js";
 import { immutableSnapshot } from "../../domain/immutable.js";
+import { conversationMessagesFromLegacy, legacyConversationContext } from "./conversation-transcript.js";
+import type { ConversationMessage } from "./types.js";
 
 export class MockMemoryProvider implements MemoryProvider {
   private readonly decisionsByUser = new Map<string, FinancialDecision[]>();
   private readonly contextByConversation = new Map<string, readonly string[]>();
+  private readonly messagesByConversation = new Map<string, readonly ConversationMessage[]>();
   private readonly memoriesByUser = new Map<string, ConversationalMemory[]>();
 
   constructor(
@@ -49,11 +52,29 @@ export class MockMemoryProvider implements MemoryProvider {
   }
 
   async getConversationContext(userId: string, conversationId: string): Promise<readonly string[]> {
-    return this.contextByConversation.get(`${userId}:${conversationId}`) ?? [];
+    const key = `${userId}:${conversationId}`;
+    const structured = this.messagesByConversation.get(key);
+    return structured ? legacyConversationContext(structured) : this.contextByConversation.get(key) ?? [];
   }
 
   async setConversationContext(userId: string, conversationId: string, messages: readonly string[]): Promise<void> {
-    this.contextByConversation.set(`${userId}:${conversationId}`, immutableSnapshot(messages.slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT)));
+    const key = `${userId}:${conversationId}`;
+    const bounded = messages.slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT);
+    this.contextByConversation.set(key, immutableSnapshot(bounded));
+    this.messagesByConversation.delete(key);
+  }
+
+  async getConversationMessages(userId: string, conversationId: string): Promise<readonly ConversationMessage[]> {
+    const key = `${userId}:${conversationId}`;
+    const structured = this.messagesByConversation.get(key);
+    return structured ?? conversationMessagesFromLegacy(conversationId, this.contextByConversation.get(key) ?? []);
+  }
+
+  async setConversationMessages(userId: string, conversationId: string, messages: readonly ConversationMessage[]): Promise<void> {
+    const key = `${userId}:${conversationId}`;
+    const bounded = immutableSnapshot(messages.slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT));
+    this.messagesByConversation.set(key, bounded);
+    this.contextByConversation.set(key, legacyConversationContext(bounded));
   }
 
   async listConversationalMemories(userId: string): Promise<readonly ConversationalMemory[]> {
