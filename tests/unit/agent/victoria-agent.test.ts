@@ -29,7 +29,7 @@ describe("VictoriaAgent", () => {
       llm, memory: new MockMemoryProvider(), tools,
       conversationResponder: { async respond(input) {
         responderInput = input;
-        return "A short nature series could suit a walk.";
+        throw new Error("provider unavailable");
       } }
     });
     const request = { userId: "mixed_context_focus_user", conversationId: "mixed_context_focus_chat" };
@@ -40,7 +40,7 @@ describe("VictoriaAgent", () => {
     expect(response.decision.action).toBe("suggest_savings");
     expect(responderInput?.message).toBe("What are good podcasts for walks?");
     expect(responderInput?.contextSnapshot?.currentMessage).toBe("I skipped a $20 book; what are good podcasts for walks?");
-    expect(response.message).toContain("A short nature series");
+    expect(response.message).toContain("conversational interview podcast");
     expect(response.message.match(/Would you like me to record/gi)).toHaveLength(1);
     expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
   });

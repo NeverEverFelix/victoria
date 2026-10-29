@@ -90,6 +90,16 @@ describe("deterministicConversationFallback", () => {
     expect(reply).not.toMatch(/\$\d|ledger|record/i);
   });
 
+  it("answers a recognized mixed-turn focus even while a separate savings action is pending", () => {
+    const reply = deterministicConversationFallback(input(
+      "I skipped a $20 book; what are good podcasts for walks?",
+      { responseFocus: "What are good podcasts for walks?", pendingAction: "savings_entry" }
+    ));
+
+    expect(reply).toContain("conversational interview podcast");
+    expect(reply).not.toMatch(/record|ledger|\$\d/i);
+  });
+
   it("uses the supplied baseline when a financial workflow is active", () => {
     const baseline = "The $35 suggestion is still pending. What would you like to discuss?";
     expect(deterministicConversationFallback(input("I'm anxious about my promotion", {

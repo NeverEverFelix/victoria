@@ -11,6 +11,9 @@ function lowCostMealAnswer(message: string): string | undefined {
 
 /** Safe deterministic recovery for read-only conversation when generation is unavailable. */
 export function deterministicConversationFallback(input: ConversationResponderInput): string {
+  if (input.responseFocus && /\bpodcasts?\b/i.test(input.responseFocus) && /\bwalks?\b/i.test(input.responseFocus)) {
+    return "For a relaxed walk, try a conversational interview podcast or a short nature series; a 20–30 minute episode can fit the route.";
+  }
   if (input.pendingAction || (input.financialContext?.workflowState !== undefined) ||
       (input.financialContext?.financialFacts.length ?? 0) > 0 ||
       (input.conversationSavingsEvents?.length ?? 0) > 0 ||

@@ -1647,6 +1647,7 @@ export class VictoriaAgent {
     );
     const responderInput: ConversationResponderInput = {
       message: input.responseFocus ?? contextSnapshot.currentMessage,
+      ...(input.responseFocus ? { responseFocus: input.responseFocus } : {}),
       recentTurns,
       memories: contextSnapshot.selectedMemories,
       episodicSummaries: contextSnapshot.episodicSummaries,
