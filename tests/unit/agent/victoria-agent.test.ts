@@ -51,6 +51,36 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);
   });
 
+  it("answers an ordinary question before the avoided-spend statement", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const responder = vi.fn(async () => "A quick lentil soup is an easy dinner option.");
+    const companionVoice = vi.fn(async ({ contextSnapshot }: { contextSnapshot?: { currentMessage: string } }) => {
+      expect(contextSnapshot?.currentMessage).toBe("What could I cook for dinner? I avoided ordering takeout for $24.");
+      return "A quick lentil soup is an easy dinner option. Would you like me to record $24.00 in your Victoria savings ledger?";
+    });
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      conversationResponder: { respond: responder },
+      specialists: { ...base, financialMoment: { analyze: async ({ message }) => ({ classification: {
+        type: "avoided_spend", confidence: 0.95, amountCents: 2_400,
+        summary: message, needsClarification: false
+      } }) }, companionVoice: { respond: companionVoice } }
+    });
+    const request = { userId: "leading_question_mixed_user", conversationId: "leading_question_mixed_chat" };
+
+    const mixed = await agent.respond({ ...request,
+      message: "What could I cook for dinner? I avoided ordering takeout for $24." });
+
+    expect(mixed.message).toContain("quick lentil soup");
+    expect(mixed.message).toMatch(/record.*\$24\.00|\$24\.00.*record/i);
+    expect(mixed.decision.action).toBe("suggest_savings");
+    expect(mixed.decision.proposal?.status).toBe("pending");
+    expect(responder).not.toHaveBeenCalled();
+    expect(companionVoice).toHaveBeenCalledOnce();
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+  });
+
   it("does not ask for an explicit avoided-spend amount a second time on a mixed turn", async () => {
     const tools = new MockVictoriaTools();
     const base = createMockAgentTeamSpecialists();

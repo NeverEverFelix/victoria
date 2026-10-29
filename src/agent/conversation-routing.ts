@@ -39,7 +39,7 @@ export function shouldRouteToConversationResponder(message: string): boolean {
 export function independentOrdinaryQuestion(message: string): string | undefined {
   const clauses = message.split(/(?<=[.!?])\s+|,\s+(?=(?:and\s+)?(?:what|which|where|when|who|how|can|could|would|do|does|is|are|will)\b)|\s+(?:and then|also)\s+/i);
   if (clauses.length < 2) return undefined;
-  for (const clause of clauses.slice(1)) {
+  for (const clause of clauses) {
     const candidate = clause.trim();
     if ((isOrdinaryQuestion(candidate) && !hasFinancialActionSignal(candidate) || isLowCostMealQuestion(candidate)) &&
         !isExplicitFinancialActionQuestion(candidate) &&
