@@ -42,6 +42,8 @@ describe("conversation routing helpers", () => {
     expect(shouldRouteToConversationResponder("I'm anxious about saving $200 for retirement")).toBe(false);
     expect(shouldRouteToConversationResponder("I'm worried I don't save enough for retirement")).toBe(true);
     expect(shouldRouteToConversationResponder("I'm worried I don't save the $200 for retirement")).toBe(false);
+    expect(shouldRouteToConversationResponder("I feel guilty about my spending lately")).toBe(true);
+    expect(shouldRouteToConversationResponder("I feel guilty about spending $50 on dinner")).toBe(false);
     expect(shouldRouteToConversationResponder("I cooked instead of ordering takeout")).toBe(false);
     expect(shouldRouteToConversationResponder("Put that toward my emergency fund.")).toBe(false);
   });

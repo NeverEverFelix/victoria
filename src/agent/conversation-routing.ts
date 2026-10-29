@@ -64,7 +64,7 @@ export function isReadOnlyFinancialReflection(message: string): boolean {
     !/\b(?:record|log|sav(?:e|ing|ed)|add|transfer|deposit|withdraw|pay|purchase|buy|spend|spent|allocate|set aside|move)\b/i.test(normalizedSavingReflection) &&
     (/\b(?:budget|budgets|bills?|money|finances?|financial situation|spending)\b/i.test(message) ||
       /\bsaving for\b/i.test(message) || savingAdequacyReflection) &&
-    /\b(?:anxious|worried|stressed|overwhelm\w*|uncertain|nervous|afraid|frustrat\w*|confus\w*|hard|difficult)\b/i.test(message);
+    /\b(?:anxious|worried|stressed|overwhelm\w*|uncertain|nervous|afraid|frustrat\w*|confus\w*|guilt(?:y)?|ashamed|shame|hard|difficult)\b/i.test(message);
 }
 
 /** A read-only topic may pass a pending financial workflow without resolving or revising it. */

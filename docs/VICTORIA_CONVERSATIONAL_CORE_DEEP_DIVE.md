@@ -143,6 +143,8 @@ What part has been weighing on you: expectations, spending changes, or something
 
 **Implementation update (October 29, 2026):** The same guarded reflection route now handles “I'm worried I don't save enough for retirement.” It recognizes this narrow adequacy concern as reflection, while explicit amounts still take the financial path. Helper and agent regressions confirm no proposal or ledger entry is created. This expands coverage, not the first-class router; F1 remains partial.
 
+**Implementation update (October 29, 2026):** A non-quantified reflection such as “I feel guilty about my spending lately” now routes to conversation instead of opening the regretful-spend workflow. Explicit amount/action wording remains on the financial path. Agent coverage forces the finance classifier to label the message as `regretful_spend` and verifies there is no proposal or ledger entry. This is another narrow read-only cue; F1 remains partial.
+
 **Acceptance test:** Unpunctuated reflections, statements with money-related nouns, topic changes and indirect questions get substantive, context-specific conversational answers without any ledger proposal.
 
 ### F2 — General responder lacks the complete typed context [HIGH; confirmed source]

@@ -294,6 +294,28 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsEntries("saving_enough_anxiety_user")).toEqual([]);
   });
 
+  it("routes guilt about spending as reflection without opening a regret workflow", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const responder = vi.fn(async () => "You don't have to judge yourself for that. What feels most important now?");
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      conversationResponder: { respond: responder },
+      specialists: { ...base, financialMoment: { analyze: async ({ message }) => ({ classification: {
+        type: "regretful_spend", confidence: 0.9, summary: message, needsClarification: false
+      } }) } }
+    });
+
+    const response = await agent.respond({ userId: "spending_guilt_user", conversationId: "spending_guilt_chat",
+      message: "I feel guilty about my spending lately" });
+
+    expect(response.message).toContain("What feels most important now");
+    expect(response.decision.action).toBe("reflect");
+    expect(responder).toHaveBeenCalledOnce();
+    expect(response.decision.proposal).toBeUndefined();
+    expect(await tools.listSavingsEntries("spending_guilt_user")).toEqual([]);
+  });
+
   it("routes a free-standing nonfinancial statement to the conversational responder", async () => {
     const tools = new MockVictoriaTools();
     const base = createMockAgentTeamSpecialists();
