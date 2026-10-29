@@ -16,6 +16,8 @@ describe("conversation response boundary", () => {
       { role: "assistant", content: "Would a walk after dinner fit?" },
       { role: "user", content: "What should I try next?" }
     ]);
+    expect(snapshot.scope).toEqual({ user: "authenticated_user", conversation: "current_conversation" });
+    expect(Object.isFrozen(snapshot.scope)).toBe(true);
     expect(Object.isFrozen(snapshot.dialogueTurns)).toBe(true);
     expect(snapshot.dialogueTurns.every((turn) => Object.isFrozen(turn))).toBe(true);
   });
@@ -38,9 +40,14 @@ describe("conversation response boundary", () => {
 
     expect(reply).toContain("more flexible boundary");
     expect(requestBody?.instructions).toContain("If the user corrects or pushes back on earlier advice");
+    expect(requestBody?.instructions).toContain("concrete account and conversation identifiers are intentionally omitted");
     const providerInput = JSON.parse(String(requestBody?.input)) as { contextSnapshot: {
+      scope: { user: string; conversation: string };
       dialogueTurns: Array<{ role: string; content: string }>;
     } };
+    expect(providerInput.contextSnapshot.scope).toEqual({
+      user: "authenticated_user", conversation: "current_conversation"
+    });
     expect(providerInput.contextSnapshot.dialogueTurns).toContainEqual({
       role: "assistant", content: "Make Sunday time non-negotiable."
     });
