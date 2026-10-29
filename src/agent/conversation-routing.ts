@@ -37,13 +37,15 @@ export function shouldRouteToConversationResponder(message: string): boolean {
 
 /** Find a clearly separate ordinary question in a mixed turn, without treating the financial clause as approval. */
 export function independentOrdinaryQuestion(message: string): string | undefined {
-  const clauses = message.split(/(?<=[.!?])\s+|,\s+(?=(?:and\s+)?(?:what|which|where|when|who|how|can|could|would|do|does|is|are|will)\b)|\s+(?:and then|also)\s+/i);
+  const clauses = message.split(/(?<=[.!?])\s+|;\s*|,\s+(?=(?:and\s+)?(?:what|which|where|when|who|how|can|could|would|do|does|is|are|will)\b)|\s+(?:and then|also)\s+/i);
   if (clauses.length < 2) return undefined;
   for (const clause of clauses) {
-    const candidate = clause.trim();
+    const candidate = clause.trim().replace(/^and\s+/i, "");
     if ((isOrdinaryQuestion(candidate) && !hasFinancialActionSignal(candidate) || isLowCostMealQuestion(candidate)) &&
         !isExplicitFinancialActionQuestion(candidate) &&
-        !/\b(?:record|log|save|add|transfer|deposit|withdraw|revise|correct|allocate|link)\b/i.test(candidate)) return candidate;
+        !/\b(?:record|log|save|add|transfer|deposit|withdraw|revise|correct|allocate|link)\b/i.test(candidate)) {
+      return candidate[0]!.toUpperCase() + candidate.slice(1);
+    }
   }
   return undefined;
 }

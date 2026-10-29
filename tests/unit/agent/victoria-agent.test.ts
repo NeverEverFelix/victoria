@@ -22,7 +22,7 @@ describe("VictoriaAgent", () => {
     const llm = new MockLlmAdapter();
     vi.spyOn(llm, "classifyMessage").mockResolvedValue({
       type: "avoided_spend", confidence: 0.95, amountCents: 2_000,
-      summary: "I skipped a $20 book. What are good podcasts for walks?", needsClarification: false
+      summary: "I skipped a $20 book; what are good podcasts for walks?", needsClarification: false
     });
     let responderInput: ConversationResponderInput | undefined;
     const agent = new VictoriaAgent({
@@ -35,11 +35,11 @@ describe("VictoriaAgent", () => {
     const request = { userId: "mixed_context_focus_user", conversationId: "mixed_context_focus_chat" };
 
     const response = await agent.respond({ ...request,
-      message: "I skipped a $20 book. What are good podcasts for walks?" });
+      message: "I skipped a $20 book; what are good podcasts for walks?" });
 
     expect(response.decision.action).toBe("suggest_savings");
     expect(responderInput?.message).toBe("What are good podcasts for walks?");
-    expect(responderInput?.contextSnapshot?.currentMessage).toBe("I skipped a $20 book. What are good podcasts for walks?");
+    expect(responderInput?.contextSnapshot?.currentMessage).toBe("I skipped a $20 book; what are good podcasts for walks?");
     expect(response.message).toContain("A short nature series");
     expect(response.message.match(/Would you like me to record/gi)).toHaveLength(1);
     expect(await tools.listSavingsEntries(request.userId)).toEqual([]);

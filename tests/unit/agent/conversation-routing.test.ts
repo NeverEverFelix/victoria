@@ -22,10 +22,12 @@ describe("conversation routing helpers", () => {
       .toBeUndefined();
     expect(independentOrdinaryQuestion("I skipped a $20 book. What are good podcasts for walks?"))
       .toBe("What are good podcasts for walks?");
+    expect(independentOrdinaryQuestion("I skipped a $20 book; what are good podcasts for walks?"))
+      .toBe("What are good podcasts for walks?");
     expect(independentOrdinaryQuestion("I skipped a $20 book. Should I record it?"))
       .toBeUndefined();
     expect(independentOrdinaryQuestion("I skipped a $20 book, and what are good podcasts for walks?"))
-      .toBe("and what are good podcasts for walks?");
+      .toBe("What are good podcasts for walks?");
     expect(independentOrdinaryQuestion("I skipped a $20 book, and should I record it?"))
       .toBeUndefined();
     expect(independentOrdinaryQuestion(
