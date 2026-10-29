@@ -7,9 +7,33 @@ export interface MemoryProvider {
   listGoals(userId: string): Promise<SavingsGoal[]>;
   getConversationContext(userId: string, conversationId: string): Promise<readonly string[]>;
   setConversationContext(userId: string, conversationId: string, messages: readonly string[]): Promise<void>;
-  listConversationalMemories(userId: string): Promise<readonly ConversationalMemory[]>;
+  /** Structured role-preserving transcript API; legacy string methods remain for existing consumers. */
+  getConversationMessages?(userId: string, conversationId: string): Promise<readonly ConversationMessage[]>;
+  setConversationMessages?(userId: string, conversationId: string, messages: readonly ConversationMessage[]): Promise<void>;
+  listConversationalMemories(userId: string, page?: ConversationalMemoryPage): Promise<readonly ConversationalMemory[]>;
+  /** Optional efficient current-fact view; include suppression markers only for lifecycle writes. */
+  listCurrentConversationalMemories?(
+    userId: string,
+    includeForgottenMarkers?: boolean,
+    page?: ConversationalMemoryPage
+  ): Promise<readonly ConversationalMemory[]>;
+  filterCurrentConversationalMemoryIds?(
+    userId: string,
+    candidateIds: readonly string[]
+  ): Promise<ReadonlySet<string>>;
   searchConversationalMemories(userId: string, query: string, limit?: number): Promise<readonly ConversationalMemory[]>;
   rememberConversationalMemory(userId: string, memory: Omit<ConversationalMemory, "id" | "createdAt">): Promise<ConversationalMemory>;
+}
+
+export interface ConversationMessage {
+  readonly schemaVersion: 1;
+  readonly id: string;
+  readonly conversationId: string;
+  readonly role: "user" | "assistant" | "tool";
+  readonly content: string;
+  readonly createdAt?: string;
+  readonly toolCallId?: string;
+  readonly status?: "received" | "completed" | "failed";
 }
 
 /** A durable, user-scoped preference or other fact learned from conversation. */
@@ -27,6 +51,13 @@ export interface ConversationalMemory {
   readonly observedThrough?: string;
   readonly sourceRecordCount?: number;
   readonly sourceMetadata?: Readonly<Record<string, unknown>>;
+  /** Internal cosine similarity for the current retrieval query; not persisted or exposed by memory controls. */
+  readonly semanticSimilarity?: number;
+}
+
+export interface ConversationalMemoryPage {
+  readonly limit: number;
+  readonly before?: { readonly createdAt: string; readonly id: string };
 }
 
 export const DEFAULT_CONVERSATION_CONTEXT_LIMIT = 20;

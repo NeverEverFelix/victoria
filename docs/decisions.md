@@ -6,6 +6,51 @@ Use it to keep future development honest. If a coding agent runs into an unresol
 
 ## Decided
 
+### Pending Financial Proposals Expire After 24 Hours
+
+Decision: For the MVP, an unconfirmed savings proposal, entry correction, or goal allocation is actionable for 24 hours from creation. A later response cannot approve the stale proposal; Victoria must create a new proposal and request fresh approval. Expiration appends an `expired` terminal transition and does not delete or rewrite proposal history.
+
+Implications:
+
+- The 24-hour duration applies only to actionability. It does not shorten retention of immutable financial proposal, approval, or ledger history.
+- Durable stores append an immutable `expired` transition when an old proposal is encountered, then refuse to restore it; in-process agents discard expired pending state before interpreting the next user message.
+- Per-conversation PostgreSQL coordination remains the serialization boundary. Workflow versions are not duplicated while this lock is held for every persistent turn.
+
+### Conversation, Typed Services, And Deterministic Policy Have Separate Responsibilities
+
+Decision: Confirmed by the user on 2026-10-29. A conversational model handles interpretation, explanation, continuity, and phrasing. Typed services handle factual retrieval, calculations, permissions, and financial state changes. Deterministic policy validates every requested monetary operation.
+
+Implications:
+
+- Model interpretations and generated text are advisory and cannot authorize an operation or provide unverified financial facts.
+- Factual answers must be grounded in typed service results and clearly identify estimates or missing data.
+- Typed financial operations require deterministic policy validation and explicit user approval where required; the MVP remains mock-ledger only.
+- Natural-language responses may explain validated workflow outcomes, but they cannot change stored financial state.
+
+
+### Conversation Understanding Flows Through Explicit Context And Workflow State
+
+Decision: Confirmed on 2026-10-25. Victoria's agent direction is a single orchestrator coordinating advisory specialists through bounded typed context, explicit reference resolution, and structured conversation workflow state. This extends the orchestrated multi-agent direction in [ADR 0001](architecture/decisions/0001-orchestrated-multi-agent-architecture.md); it does not grant specialists authority over proposals, approvals, tools, or ledger writes.
+
+Implications:
+
+- Context assembly, intent/reference resolution, and workflow-state transitions are explicit orchestration responsibilities, not assumptions left to a single classifier or the transcript alone.
+- Resolved amounts and periods must be bound to grounded facts with provenance; arithmetic and validation remain deterministic.
+- A changed pending action must become a new/revised proposal and require confirmation of that exact action. A correction or period choice is not approval of a stale proposal.
+- The current implementation has a narrow read-only turn context and reference resolver. A general typed state manager and full specialist context handoff remain future work.
+- The architecture review's sample TypeScript contracts and durable storage design are proposals, not accepted implementation requirements. Implement in small, behavior-focused slices after reviewing existing repositories and safety contracts.
+
+### Annualized Savings Remain Planning Projections
+
+Decision: Confirmed on 2026-10-25. An annualized amount derived from a monthly avoided expense is a conditional planning projection, not realized savings and not an amount the current MVP can record in its savings ledger. A monthly or annual planning choice is scoped to the current expense and does not approve a ledger action.
+
+Implications:
+
+- The current MVP may offer only the explicitly stated current-period amount for a mocked ledger entry, after asking for explicit confirmation of that exact amount.
+- Repeating or clarifying an annual target does not convert the projection into an already-saved amount or authorize recording it.
+- A future annual goal/projection record requires an explicit product and domain decision, distinct storage/reporting semantics, and its own approval behavior.
+- This reaffirms the existing employer-covered and ended-recurring-expense behavior in [Story 22 and related stories](user-stories.md) and [MVP scope](mvp.md).
+
 ### MVP Uses A Mocked Savings Ledger
 
 Decision:
@@ -109,7 +154,7 @@ Implications:
 
 ### SQLite Owns Short-Term Context; PostgreSQL Backs It Up
 
-Decision: Confirmed on 2026-10-13. Store short-lived current-conversation clarification context in SQLite first, with a local outbox retrying its PostgreSQL backup. Store durable remembered conversational decisions in PostgreSQL and cache reads in SQLite.
+Decision: Confirmed on 2026-10-13 for the default mock-backed runtime. Store short-lived current-conversation clarification context in SQLite first, with a local outbox retrying its PostgreSQL backup. Store durable remembered conversational decisions in PostgreSQL and cache reads in SQLite.
 
 Implications:
 
@@ -122,6 +167,18 @@ Implications:
 - Victoria automatically records only direct, clear USD savings-amount preferences in this slice; tentative or ambiguous wording is not saved. Remembering a preference never approves a ledger action.
 - The extractor also supports direct general preferences, recurring habit statements, and explicit goal statements. Migration `0004_semantic_user_memory.sql` adds Supabase RLS, versioned pgvector embeddings, and a user-scoped semantic search function for these facts and transaction-derived profile facts. Embedding generation is injected and is not configured in the default mock composition; a remembered goal does not authorize a goal allocation.
 - This does not yet persist learned habits or goals or select a SQLite file path for a deployed runtime.
+
+The opt-in local `VICTORIA_MEMORY_MODE=persistent` development runtime is a deliberate exception: PostgreSQL is authoritative for both short-term continuation state and durable memories so they survive process restarts. SQLite remains authoritative in the default mock-backed runtime. The local persistent exception does not change the eventual deployed-runtime decision; production context ownership and outage behavior require a separate design decision.
+
+### Local Persistent Chat Restores Missing-Amount Clarifications
+
+Decision: The local `VICTORIA_MEMORY_MODE=persistent` runtime stores an unanswered avoided-spend amount clarification in PostgreSQL for the same 30-minute window as its PostgreSQL-backed short-term conversation context.
+
+Implications:
+
+- Clarification state is scoped by both authenticated local user and conversation ID; another user cannot answer or inherit it.
+- The restored state contains the original avoided-spend classification and event. A supplied amount can produce a fresh savings suggestion, which still requires a separate explicit confirmation.
+- This does not persist pending proposals, approvals, savings entries, corrections, goal allocations, or cross-process turn locks. Persistent financial chat remains gated on durable proposal/approval and ledger idempotency.
 
 ### Recorded Amount Corrections Use Linked Adjustment Records
 
@@ -159,6 +216,8 @@ Implications:
 - UI implementation becomes the final product phase after the non-UI work queue is complete and `npm run check` passes.
 - End-to-end browser journeys and production deployment follow the UI phase.
 
+Exception confirmed by the user on 2026-10-22: implement a bounded client sign-in and consent-to-Link experience for the approved Transactions-only Plaid sandbox flow. This does not start the Victoria chat UI or authorize Plaid production behavior. Signed-in deployed verification remains outstanding.
+
 ### Transactions-Only Financial Profile
 
 Decision: Confirmed by the user on 2026-10-13. The first financial profile is built from transaction history only, using user-authorized Plaid Transactions access. Do not include balances, identity data, account metadata, or other Plaid products in this profile.
@@ -183,7 +242,7 @@ The profile input, aggregation, persistence mapping, semantic memory schema, sec
 - Preserve a minimal consent revocation audit event. If remote revocation fails, retain only the encrypted token in a retry queue and keep local access disabled. Retry transient failures with backoff; move permanent provider rejections to manual review without discarding the encrypted token. Resume revocation only after the operator has addressed the provider rejection.
 - Encrypt Item tokens with versioned AES-256-GCM keys. New writes use the active key; configured prior versions are decrypt-only. Rotate and verify every persisted active or queued token before retiring an old key. Missing keys fail closed.
 
-The maintenance operations are implemented, but scheduling, authenticated route mounting, and live database/provider verification remain deployment tasks. Production Plaid access remains disabled until those gates are completed.
+The maintenance operations are implemented, and authenticated consent, Link, token-exchange, refresh, and disconnect routes are mounted for an explicitly enabled staging sandbox runtime. A separate client page now provides sign-in, the consent notice, Link, aggregate profile summaries, and disconnect controls. Scheduling, staging endpoint verification, and live database/provider verification remain deployment tasks. Production Plaid access remains disabled.
 
 ### Typical Merchant Spend Statistic For A Future Provider
 
@@ -291,6 +350,44 @@ Current default:
 
 Use direct language: "I recorded this in your Victoria savings ledger. No real money has moved yet."
 
+### Server-Side Memory Management Controls
+
+Decision: Confirmed on 2026-10-17. Provide authenticated server endpoints to inspect, correct, and forget individual current memories. Keep the controls server-side for now; do not add a memory-management UI or bulk-delete endpoint in this slice.
+
+Why:
+
+Users should be able to inspect and correct personalization while the product is still headless. A forget action must stop future recall, but immutable history and derived records should not be silently presented as erased.
+
+Implications:
+
+- `GET/PATCH /api/memories` lists current memories and appends a linked correction.
+- `POST /api/memories/{memoryId}/forget` appends a linked suppression marker and excludes the memory from future retrieval.
+- Forgetting is retrieval suppression, not physical deletion. Responses must say historical records remain.
+- Supabase Auth verifies bearer tokens. The user ID always comes from the verified token, never from request input.
+- Vercel memory routes use PostgreSQL directly because local SQLite state is not durable shared storage for serverless functions.
+- Bulk deletion, physical deletion/retention policy, and user-facing UI remain future work.
+
+### Vercel And Supabase Memory Runtime
+
+Decision: Confirmed on 2026-10-17. Prepare the production memory API for Vercel with Supabase Postgres and Supabase Auth. Keep the implementation server-side. Send the user's bearer token to Supabase Auth's user endpoint with the project's publishable/anon API key; Supabase Auth validates the bearer token and provides the verified user ID. The publishable/anon key is not itself a token verifier. Never use a secret/service-role key for these endpoints.
+
+Implications:
+
+- Database access uses a pooled Postgres connection with one connection per warm function instance.
+- Supabase migrations and live row-level-security/vector verification are deployment gates; they are not performed by the local migration runner.
+- The current production memory API does not make the local mock chat route production-capable. Persistent financial chat remains gated on durable proposal/approval state.
+
+### Separate Supabase Production And Staging Projects
+
+Decision: Confirmed on 2026-10-17. Keep the existing Victoria Supabase project for production and use a separate hosted Supabase project for staging. Local PostgreSQL remains appropriate for local development and automated tests, not for a remote Vercel preview.
+
+Implications:
+
+- Both projects receive the same versioned schema migrations through Supabase CLI.
+- Vercel preview must use the staging Supabase URL and database connection string; production variables must stay scoped to production deployments.
+- Staging was created without an explicit compute size. Verify the organization plan and actual project compute/billing in Supabase before relying on it for continuous availability; free-tier projects may pause after inactivity.
+- Live endpoint tests must use a synthetic staging account and must not write test data to the production project.
+
 ## Decision Process
 
 When adding or changing a decision:
@@ -308,3 +405,75 @@ Related docs:
 - `docs/agent-work-queue.md`
 - `tests/test-plan.md`
 - `docs/environments.md`
+
+
+### Persistent Hosted Chat Shares Supabase Auth Identity With Memory Controls
+
+Decision: Confirmed on 2026-10-21. Staging and production chat use the existing Supabase Auth bearer verification boundary already used by hosted memory controls. The verified Supabase subject scopes PostgreSQL conversation context, durable memory, pending approvals, and mocked savings state. The same subject scopes inspect/correct/forget memory endpoints. Hosted chat uses PostgreSQL directly rather than local SQLite state.
+
+Implications:
+
+- No user ID from the request body or conversation ID is treated as an identity.
+- `MONEY_MOVEMENT_MODE=real_transfer` remains rejected; hosted savings tools persist mocked ledger records only.
+- Apply and verify hosted migrations required for durable approvals/actions before enabling chat. Trusted client sign-in and full staging endpoint verification remain deployment prerequisites.
+
+### Predictable Memory Learning Boundary
+
+Decision: Confirmed on 2026-10-21; provider defaults and broader extraction coverage updated on 2026-10-22 at the user's direction. Victoria automatically remembers only direct, affirmed, user-authored, stable, ordinary statements. Provider extraction runs with a real model and API key unless explicitly disabled, and must pass the same evidence and privacy checks; it can consider ordinary and pattern reflections, avoided-spend and regretful-spend turns, and unclear turns only when no uncertain financial intent was detected. It does not run during pending approval/correction or real-money-movement requests. The extractor may retain up to eight facts per turn: this accommodates a single message with several independent, clearly stated facts while keeping a hard ceiling on automated retention. Episode summarization follows the same provider-configured default, with `OPENAI_EPISODIC_SUMMARIES_ENABLED=false` as the opt-out. It still runs only at conversation finish or context rollover and stores a concise, evidence-linked summary rather than the raw transcript. Extraction failures preserve the ordinary response and emit a message-free diagnostic signal.
+
+Memory handling classes:
+
+- **Remember automatically:** clear first-person preferences, recurring habits, stated savings goals, and a user's clear answer to a specific typical-spend question. Record the exact evidence, source, and confidence; append a linked fact when it changes.
+- **Ask or wait for clarity:** tentative, hypothetical, unclear, or merely inferred statements. Ask a normal conversational follow-up when the fact matters to the current turn; do not persist until the user states a clear, stable fact. Do not ask for broad permission to retain conversation history.
+- **Never store as conversational memory:** credentials and financial account/card/routing identifiers; sensitive health, political, religious, sexuality, race/ethnicity, or immigration details; quoted or third-party facts; and short-lived circumstances. Authorized transaction-profile aggregates remain a separate, provenance-labeled source governed by their existing consent, retention, and freshness rules.
+
+This policy does not change short-term conversation context, financial action approval, or memory-management controls. It does not treat the provider's sensitivity label as authoritative: deterministic evidence screening is still required.
+
+### Remember Ordinary Interests And Activity-Specific Spend
+
+Decision: Confirmed on 2026-10-22. Victoria may remember a directly stated ordinary hobby or interest and a directly stated recurring amount spent on an activity. It uses these memories only when the current topic matches, identifies whether an amount came from the user or linked transactions, and invites correction if the fact may have changed.
+
+For ordinary planning, routine-building, personal-goal, and spending reflections, interest personalization also requires an activity mention near a concrete matching use cue (for example, planning, schedule/time, goal/aim, or budget/cost). A passing mention in an unrelated request does not qualify. Victoria identifies recalled context as remembered and asks whether it is still current. This use remains context only: it does not infer spend or authorize a savings action.
+
+Implications:
+
+- Interest facts use the existing `other` category with `interest:<activity>` keys; they remain user-scoped, evidence-backed, append-only memories.
+- Recurring hobby spend requires an explicit USD amount and cadence. It uses `financial_pattern` with `interest_spend:<activity>` and is labeled as user-reported. A missing cadence, one-time cost, or inferred amount is not stored as recurring spend.
+- A clear first-person correction that an interest is no longer current appends an inactive fact linked to the earlier interest.
+- A transactions-only category or merchant can support an activity spend response on an exact normalized activity match or an explicit user-confirmed mapping. The mapping is stored as an append-only, user-scoped financial-pattern fact. Victoria identifies the mapping and profile source window/count, asks whether the link remains correct, and keeps that transaction summary distinct from a user-reported recurring amount. No broad category mapping is inferred.
+- The optional provider extractor may learn ordinary interests, but provider-generated monetary spend facts are rejected. Amount-bearing activity spend is accepted only through the deterministic explicit-period parser.
+- Memory remains context only and cannot classify or approve a savings action.
+
+### Keep Financial Choices Scoped, Remember Confirmed Patterns
+
+Decision: Confirmed on 2026-10-23. A user's monthly-versus-annual choice while considering one covered recurring expense is contextual to that expense. It is not a general preference. After the user explicitly confirms recording the covered expense in the mocked ledger, Victoria may append a concise semantic observation of the behavior and chosen planning horizon.
+
+Implications:
+
+- The observed memory is written only after successful ledger confirmation and never authorizes an action.
+- The memory records the covered-expense-to-savings behavior and horizon as one evidence-linked `financial_pattern`, not a preference sentence copied from the user's reply.
+- A later similar conversation may recall the previous choice as a soft reference while asking what the user wants this time.
+- Victoria may describe a recurring tendency only when at least two observations show one horizon was chosen more often; conflicting choices remain visible in compact counts and do not become a fixed preference.
+- See [Story 22](user-stories.md) and the [user-learning schema](specification/user-learning-schema.md) for the behavior and memory shape.
+
+
+### Memory Retention, Forget Purge, And Recovery
+
+Decision: Confirmed on 2026-10-21. Explicit conversational facts expire after 24 months without a newer linked revision. Forget suppresses immediately and physically purges the linked memory lineage and embeddings after 30 days. Transaction profile data retains its 90-day window. Short-term context expires after 30 minutes; expired local outbox/cache payloads are swept every minute, on access, and at startup, while hosted Postgres rows are swept by daily maintenance. Financial decisions, approvals, and ledger history retain their separate immutable policy.
+
+Implications:
+
+- Backup copies may survive primary deletion until provider retention elapses. Supabase project backup/PITR retention must be at most 30 days; the maximum expected residual window after forget is 60 days.
+- Daily retention maintenance emits a structured log and writes deletion counts/status to `victoria_retention_runs`. Alert on failed jobs or no success for 48 hours.
+- A restored database must have migrations and retention reapplied before traffic resumes. The restore must first be inspected in a separate recovery project.
+- This supersedes the 2026-10-17 decision that forget only suppresses retrieval and keeps the source/embedding indefinitely.
+
+### Product Chat Has No User-Selected AI Or Memory Mode
+
+Decision: Confirmed by the user on 2026-10-25. Victoria's chat uses a configured provider model for financial understanding and ordinary conversation without requiring feature switches. A configured local database is used automatically for durable chat state and the mocked ledger. The terminal chat command has one product path.
+
+Implications:
+
+- Internal mock adapters remain available to automated tests, but product testing does not require a user to choose or understand a mock/provider mode.
+- Previous opt-in provider and local-memory decisions above are superseded for the product chat route.
+- Deterministic financial calculations, explicit approval, mocked ledger records, and the prohibition on real-money movement are unchanged.

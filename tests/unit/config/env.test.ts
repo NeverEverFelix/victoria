@@ -21,6 +21,7 @@ describe("parseVictoriaEnv", () => {
     expect(env.isProduction).toBe(false);
     expect(env.isTest).toBe(false);
     expect(env.usesRealMoneyMovement).toBe(false);
+    expect(env.runtimeProfile).toBe("local_mock_ledger");
   });
 
   it("marks test mode when APP_ENV is test", () => {
@@ -35,6 +36,33 @@ describe("parseVictoriaEnv", () => {
 
     expect(env.isTest).toBe(true);
     expect(env.openAiModel).toBe("mock");
+    expect(env.runtimeProfile).toBe("mock_tests");
+  });
+
+  it.each([
+    { APP_ENV: "local", NODE_ENV: "development", OPENAI_MODEL: "mock", profile: "local_mock_ledger" },
+    { APP_ENV: "local", NODE_ENV: "development", OPENAI_AGENT_TEAM_ENABLED: "true", profile: "local_provider" },
+    { APP_ENV: "staging", NODE_ENV: "production", profile: "staging" },
+    { APP_ENV: "production", NODE_ENV: "production", profile: "production_mock_ledger" }
+  ])("names the runtime composition profile explicitly ($APP_ENV)", (fixture) => {
+    const env = parseVictoriaEnv(validEnv({
+      APP_ENV: fixture.APP_ENV,
+      NODE_ENV: fixture.NODE_ENV,
+      ...(fixture.OPENAI_AGENT_TEAM_ENABLED ? { OPENAI_AGENT_TEAM_ENABLED: fixture.OPENAI_AGENT_TEAM_ENABLED } : {}),
+      ...(fixture.APP_ENV === "staging" ? {
+        DATABASE_URL: "postgresql://victoria:password@staging-db.example.com:5432/victoria_staging",
+        OPENAI_API_KEY: "staging-openai-key"
+      } : {}),
+      ...(fixture.APP_ENV === "production" ? {
+        DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
+        OPENAI_API_KEY: "production-openai-key",
+        PLAID_CLIENT_ID: "production-plaid-client-id",
+        PLAID_SECRET: "production-plaid-secret",
+        PLAID_ENV: "production",
+        AUTH_SECRET: "production-auth-secret-at-least-32-characters"
+      } : {})
+    }));
+    expect(env.runtimeProfile).toBe(fixture.profile);
   });
 
   it("blocks real money movement outside production", () => {
@@ -294,6 +322,23 @@ describe("parseVictoriaEnv", () => {
         })
       )
     ).toThrow("Production AUTH_SECRET must be at least 32 characters.");
+  });
+
+  it("allows production to use Supabase Auth without unrelated Plaid credentials or the local AUTH_SECRET", () => {
+    const env = parseVictoriaEnv(validEnv({
+      APP_ENV: "production",
+      NODE_ENV: "production",
+      DATABASE_URL: "postgresql://victoria:secure-prod-password@db.victoria.internal:5432/victoria_prod",
+      OPENAI_API_KEY: "sk-production-runtime-key",
+      PLAID_CLIENT_ID: "",
+      PLAID_SECRET: "",
+      PLAID_ENV: "sandbox",
+      AUTH_SECRET: ""
+    }));
+
+    expect(env.authSecret).toBe("");
+    expect(env.plaidClientId).toBe("");
+    expect(env.plaidSecret).toBe("");
   });
 
   it("rejects test provider credentials in production", () => {

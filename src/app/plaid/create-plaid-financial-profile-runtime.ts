@@ -18,6 +18,7 @@ import { PlaidLinkTokenClient } from "./plaid-link-token-client.js";
 import { createPlaidPublicTokenExchangeHandler } from "./public-token-exchange-handler.js";
 import { PlaidDataLifecycleService } from "./plaid-data-lifecycle.js";
 import { createPlaidDisconnectHandler } from "./disconnect-handler.js";
+import { createPlaidConsentHandler } from "./consent-handler.js";
 
 /** Explicitly opted-in Supabase/Postgres + Plaid runtime. Never called by default composition. */
 export function createPlaidFinancialProfileRuntime(options: {
@@ -84,6 +85,11 @@ export function createPlaidFinancialProfileRuntime(options: {
     profiles,
     sync,
     lifecycle,
+    consentHandler: createPlaidConsentHandler({
+      authenticate: options.authenticate,
+      consent,
+      getConnectedItemCount: async (userId) => (await data.listItems(userId)).length
+    }),
     disconnect: createPlaidDisconnectHandler({ authenticate: options.authenticate, lifecycle }),
     createLinkToken: createPlaidLinkTokenHandler({ authenticate: options.authenticate,
       getConsent: (userId) => consent.getConsent(userId), createLinkToken: (input) => link.create(input) }),

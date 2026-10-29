@@ -16,6 +16,9 @@ export interface TurnRepository {
   /** Returns null for missing turns and turns owned by another user/conversation. */
   get(userId: string, conversationId: string, turnId: string): Promise<TurnRecord | null>;
 
+  /** Returns accepted turns in stable chronological order, scoped to their owner and conversation. */
+  listConversation?(userId: string, conversationId: string): Promise<readonly TurnRecord[]>;
+
   /** Atomically applies a lifecycle transition only at the expected revision. */
   compareAndTransition(input: {
     userId: string;

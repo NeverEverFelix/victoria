@@ -159,6 +159,7 @@ export interface SavingsEntryCorrection {
 
 export interface SavingsGoalAllocationApproval {
   readonly id: string;
+  readonly userId: string;
   readonly actionId: string;
   readonly approvedAt: string;
   readonly source: "user_message";

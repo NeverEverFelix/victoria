@@ -12,6 +12,7 @@ These documents describe how Victoria is intended to work. The narrower product 
 ## Current Design
 
 - [`Victoria Agentic Architecture`](./diagrams/victoria-agentic-architecture.md) shows the proposed orchestrated multi-agent system and its deterministic financial boundary.
+- [`Conversation Context Architecture Review`](../VICTORIA_CONVERSATION_CONTEXT_ARCHITECTURE_REVIEW.md) analyzes conversational reference and workflow-state failures and proposes a Context Builder, Intent and Reference Resolver, and Conversation State Manager. The design is an agreed direction for staged work; its detailed contracts and implementation choices remain proposals.
 - [`Victoria General System Design`](./diagrams/victoria-general-system-design.md) shows the proposed horizontally scaled modular monolith, durable turn admission, personalized memory flow, and external providers.
 - [`ADR 0001`](./decisions/0001-orchestrated-multi-agent-architecture.md) records the proposed pattern, responsibilities, and tradeoffs.
 - [`ADR 0002`](./decisions/0002-horizontally-scaled-modular-monolith.md) records the proposed Vercel and Neon deployment shape, capacity contract, cost rationale, and exit triggers.

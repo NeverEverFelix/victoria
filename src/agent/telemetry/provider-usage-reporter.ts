@@ -30,8 +30,13 @@ export interface ProviderUsageSummary {
 export class ProviderUsageReporter {
   private readonly records: ProviderUsageRecord[] = [];
 
+  constructor(private readonly onRecord?: (record: ProviderUsageRecord) => void) {}
+
   report(record: ProviderUsageRecord): void {
-    this.records.push(immutableSnapshot(record));
+    const snapshot = immutableSnapshot(record);
+    this.records.push(snapshot);
+    try { this.onRecord?.(snapshot); }
+    catch { /* Telemetry observers cannot interrupt a provider-backed response. */ }
   }
 
   snapshot(): readonly ProviderUsageRecord[] {

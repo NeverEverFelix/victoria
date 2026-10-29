@@ -11,6 +11,7 @@ describe("financial event domain", () => {
     expect(parseExplicitDollarAmountCents("I skipped a $6.75 coffee.")).toBe(675);
     expect(parseExplicitDollarAmountCents("I passed on a $1,200 TV.")).toBe(120000);
     expect(parseExplicitDollarAmountCents("It cost $1,200.50.")).toBe(120050);
+    expect(parseExplicitDollarAmountCents("The jacket was $90, and I decided not to get it.")).toBe(9000);
   });
 
   it("does not parse malformed comma grouping as a smaller amount", () => {
@@ -47,6 +48,16 @@ describe("financial event domain", () => {
       status: "multiple_amounts"
     });
     expect(parseExplicitDollarAmountCents("I chose between a $20 and a $30 order.")).toBeUndefined();
+  });
+
+  it("treats an identical amount introduced as a reference to the same event as one amount", () => {
+    expect(parseExplicitDollarAmount("I regret spending $42 on takeout. I'm not sure I want to put the $42 in the ledger."))
+      .toEqual({ status: "valid", amountCents: 4_200 });
+  });
+
+  it("keeps distinct purchases with identical amounts ambiguous", () => {
+    expect(parseExplicitDollarAmount("I skipped a $20 book and a $20 lunch."))
+      .toEqual({ status: "multiple_amounts" });
   });
 
   it("parses a corrected amount when the second amount is explicitly negated", () => {

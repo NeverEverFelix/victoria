@@ -1,4 +1,7 @@
 export * from "./types.js";
+export * from "./pending-amount-clarification-store.js";
+export * from "./pending-savings-action-store.js";
+export * from "./savings-event-store.js";
 export * from "./policy.js";
 export * from "./validation.js";
 export * from "./confidence-policy.js";
@@ -21,3 +24,5 @@ export * from "./tools/contracts.js";
 export * from "./tools/mock-tools.js";
 export * from "./prompts/system-prompt.js";
 export * from "./transaction-history-provider.js";
+export * from "./conversation-context-builder.js";
+export * from "./planning-reference-resolver.js";

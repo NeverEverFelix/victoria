@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { PostgresMemoryRepository } from "../../../src/agent/memory/postgres-memory-repository.js";
 import { SqliteCachedMemoryProvider } from "../../../src/agent/memory/sqlite-cached-memory-provider.js";
 import type { PostgresQueryable, PostgresQueryResult } from "../../../src/app/turns/postgres-turn-repository.js";
+import type { ConversationMessage } from "../../../src/agent/memory/types.js";
 
 class MemoryDatabase implements PostgresQueryable {
-  readonly contexts = new Map<string, string[]>();
+  readonly contexts = new Map<string, unknown[]>();
   readonly contextInsertSql: string[] = [];
   readonly decisions: Array<{ id: string; userId: string; decision: { type: "avoided_spend"; summary: string }; createdAt: string }> = [];
   readonly memories: Array<{ id: string; userId: string; category: string; key: string; value: string; evidence: string; confidence: number; createdAt: string; supersedesId?: string }> = [];
@@ -14,7 +15,7 @@ class MemoryDatabase implements PostgresQueryable {
     if (!this.available) throw new Error("postgres unavailable");
     if (sql.includes("INSERT INTO victoria_conversation_context")) {
       this.contextInsertSql.push(sql);
-      this.contexts.set(`${values[0]}:${values[1]}`, JSON.parse(String(values[2])) as string[]);
+      this.contexts.set(`${values[0]}:${values[1]}`, JSON.parse(String(values[2])) as unknown[]);
       return { rows: [] };
     }
     if (sql.includes("SELECT messages FROM victoria_conversation_context")) {
@@ -71,6 +72,24 @@ describe("SQLite cached conversational memory", () => {
     provider.close();
   });
 
+  it("persists structured message IDs, roles, and timestamps through the SQLite outbox", async () => {
+    const database = new MemoryDatabase();
+    const provider = new SqliteCachedMemoryProvider(new PostgresMemoryRepository(database));
+    const transcript: ConversationMessage[] = [
+      { schemaVersion: 1, id: "turn-1", conversationId: "chat-1", role: "user", content: "Victoria: this is user text", createdAt: "2026-10-29T12:00:00.000Z", status: "completed" },
+      { schemaVersion: 1, id: "reply-1", conversationId: "chat-1", role: "assistant", content: "I hear you.", createdAt: "2026-10-29T12:00:01.000Z", status: "completed" }
+    ];
+    await provider.setConversationMessages("user-a", "chat-1", transcript);
+    await provider.flushPendingContextBackups();
+
+    expect(await provider.getConversationMessages("user-a", "chat-1")).toEqual(transcript);
+    expect(database.contexts.get("user-a:chat-1")).toEqual(transcript);
+    expect(await provider.getConversationContext("user-a", "chat-1")).toEqual([
+      "User: Victoria: this is user text", "Victoria: I hear you."
+    ]);
+    provider.close();
+  });
+
   it("stores durable user preferences with evidence and isolates them by user", async () => {
     const database = new MemoryDatabase();
     const provider = new SqliteCachedMemoryProvider(new PostgresMemoryRepository(database));
@@ -102,9 +121,9 @@ describe("SQLite cached conversational memory", () => {
     await provider.setConversationContext("user-a", "chat-1", ["clarification"]);
     expect(await provider.getConversationContext("user-a", "chat-1")).toEqual(["clarification"]);
     expect(database.contexts.has("user-a:chat-1")).toBe(false);
-    database.available = true;
-    expect(await provider.getConversationContext("user-a", "chat-1")).toEqual(["clarification"]);
     await provider.flushPendingContextBackups();
+    database.available = true;
+    await provider.retryPendingContextBackups();
     expect(database.contexts.get("user-a:chat-1")).toEqual(["clarification"]);
     provider.close();
   });
@@ -113,6 +132,17 @@ describe("SQLite cached conversational memory", () => {
     const provider = new SqliteCachedMemoryProvider(new PostgresMemoryRepository(new MemoryDatabase()), ":memory:", 0);
     await provider.setConversationContext("user-a", "chat-1", ["temporary clarification"]);
     expect(await provider.getConversationContext("user-a", "chat-1")).toEqual([]);
+    provider.close();
+  });
+
+  it("purges expired local cache and backup-outbox payloads", async () => {
+    const database = new MemoryDatabase();
+    database.available = false;
+    const provider = new SqliteCachedMemoryProvider(new PostgresMemoryRepository(database));
+    await provider.setConversationContext("user-a", "chat-expired", ["temporary detail"]);
+    await provider.flushPendingContextBackups();
+    expect(provider.purgeExpiredContext(Date.now() + 31 * 60_000)).toEqual({ cacheRows: 1, outboxRows: 1 });
+    expect(await provider.getConversationContext("user-a", "chat-expired")).toEqual([]);
     provider.close();
   });
 });

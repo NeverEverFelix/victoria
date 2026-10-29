@@ -13,6 +13,8 @@ export function parseExplicitDollarAmount(message: string): ExplicitDollarAmount
 
   const matches = [...message.matchAll(/(?:-\$|\$-?)([\d,]+(?:\.\d+)?)/g)];
   if (matches.length > 1) {
+    const repeatedReferenceAmount = parseRepeatedReferenceAmount(message, matches);
+    if (repeatedReferenceAmount) return repeatedReferenceAmount;
     return { status: "multiple_amounts" };
   }
   const match = matches[0];
@@ -21,7 +23,11 @@ export function parseExplicitDollarAmount(message: string): ExplicitDollarAmount
     return { status: "absent" };
   }
 
-  const [, amountText] = match;
+  const [, capturedAmountText] = match;
+  const amountText = capturedAmountText?.endsWith(",") &&
+    /^\s*(?:and|but|so)\b/i.test(message.slice((match.index ?? 0) + match[0].length))
+    ? capturedAmountText.slice(0, -1)
+    : capturedAmountText;
   if (match[0].includes("-")) {
     return { status: "invalid_value" };
   }
@@ -37,6 +43,26 @@ export function parseExplicitDollarAmount(message: string): ExplicitDollarAmount
   return !Number.isSafeInteger(amountCents) || amountCents <= 0
     ? { status: "invalid_value" }
     : { status: "valid", amountCents };
+}
+
+/** Treat “the $42” as a reference to an earlier identical amount, not a second candidate. */
+function parseRepeatedReferenceAmount(
+  message: string,
+  matches: RegExpMatchArray[]
+): Extract<ExplicitDollarAmount, { status: "valid" }> | null {
+  let repeatedCents: number | undefined;
+  for (const [index, match] of matches.entries()) {
+    const amountText = match[1];
+    const matchIndex = match.index;
+    if (!amountText || matchIndex === undefined || match[0].includes("-") ||
+        !/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(amountText) ||
+        (amountText.split(".")[1]?.length ?? 0) > 2) return null;
+    const cents = Math.round(Number(amountText.replaceAll(",", "")) * 100);
+    if (!Number.isSafeInteger(cents) || cents <= 0 || (repeatedCents !== undefined && cents !== repeatedCents)) return null;
+    if (index > 0 && !/\b(?:the|that|this|same)\s*$/i.test(message.slice(0, matchIndex))) return null;
+    repeatedCents = cents;
+  }
+  return repeatedCents === undefined ? null : { status: "valid", amountCents: repeatedCents };
 }
 
 export function parseExplicitDollarAmountCents(message: string): number | undefined {

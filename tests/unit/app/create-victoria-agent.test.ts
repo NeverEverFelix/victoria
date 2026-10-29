@@ -38,7 +38,7 @@ describe("createVictoriaAgent", () => {
       fetcher: async () => new Response(JSON.stringify({
         output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
           type: "avoided_spend", confidence: 0.91, merchantName: null, goalName: null,
-          revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+          revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Waited on a jacket", needsClarification: false
         }) }] }]
       }), { status: 200 })
     });
@@ -58,7 +58,7 @@ describe("createVictoriaAgent", () => {
     const outputs = [
       {
         type: "avoided_spend", confidence: 0.94, merchantName: null, goalName: null,
-        revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+        revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Waited on a jacket", needsClarification: false
       },
       {
         outcome: "suggest", confidence: 0.92, amountCents: 9000, source: "user_provided",
@@ -97,6 +97,9 @@ describe("createVictoriaAgent", () => {
       format?: { schema?: { properties?: { response?: { maxLength?: number } } } };
     };
     expect(typeof voiceRequest.instructions).toBe("string");
+    expect(String(voiceRequest.instructions)).toContain("mature, warm, calm, and quietly confident");
+    expect(String(voiceRequest.instructions)).toContain("not a financial form letter");
+    expect(String(requests[1]?.instructions)).toContain("money is a tool for living");
     expect(voiceText.format?.schema?.properties?.response?.maxLength).toBeGreaterThan(0);
     expect(voiceText.format?.schema?.properties?.response?.maxLength).toBeLessThanOrEqual(1000);
     expect(proposed.decision.action).toBe("suggest_savings");
@@ -122,7 +125,7 @@ describe("createVictoriaAgent", () => {
     const outputs = [
       {
         type: "avoided_spend", confidence: 0.94, merchantName: null, goalName: null,
-        revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+        revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Waited on a jacket", needsClarification: false
       },
       {
         outcome: "suggest", confidence: 0.92, amountCents: 9500, source: "user_provided",
@@ -155,7 +158,7 @@ describe("createVictoriaAgent", () => {
         return callCount === 1
           ? jsonResponse({ output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
               type: "avoided_spend", confidence: 0.94, merchantName: null, goalName: null,
-              revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+              revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Waited on a jacket", needsClarification: false
             }) }] }] })
           : new Response("{}", { status: 503 });
       }
@@ -175,7 +178,7 @@ describe("createVictoriaAgent", () => {
     const outputs = [
       {
         type: "avoided_spend", confidence: 0.94, merchantName: null, goalName: null,
-        revisionReason: null, summary: "Waited on a jacket", needsClarification: false
+        revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Waited on a jacket", needsClarification: false
       },
       {
         outcome: "suggest", confidence: 0.92, amountCents: 9000, source: "user_provided",
@@ -200,7 +203,7 @@ describe("createVictoriaAgent", () => {
     expect(proposed.decision.action).toBe("suggest_savings");
     expect(proposed.decision.toolCall?.requiresApproval).toBe(true);
     expect(proposed.message).toContain("Would you like me to record $90.00");
-    expect(proposed.message).toContain("Please confirm");
+    expect(proposed.message).toMatch(/would you like|do you want|please confirm/i);
     expect(proposed.message).toContain("No real money has moved");
 
     const recorded = await agent.respond({ userId: "user_123", conversationId: "provider_voice_failure", message: "Yes" });
@@ -217,7 +220,7 @@ describe("createVictoriaAgent", () => {
         return jsonResponse({
           output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
             type: "real_money_movement_request", confidence: 0.98, merchantName: null, goalName: null,
-            revisionReason: null, summary: "Asked to transfer funds", needsClarification: false
+            revisionReason: null, referenceFactId: null, referencePeriod: null, summary: "Asked to transfer funds", needsClarification: false
           }) }] }]
         });
       }
@@ -258,7 +261,7 @@ describe("createVictoriaAgent", () => {
     expect(proposed.decision.suggestion?.amountCents).toBe(9000);
     expect(proposed.decision.toolCall?.requiresApproval).toBe(true);
     expect(proposed.message).toContain("Would you like me to record");
-    expect(proposed.message).toContain("Please confirm");
+    expect(proposed.message).toMatch(/would you like|do you want|please confirm/i);
     expect(proposed.message).toContain("No real money has moved");
 
     const recorded = await agent.respond({

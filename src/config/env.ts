@@ -2,6 +2,7 @@ import type { MoneyMovementMode } from "../domain/savings/types.js";
 
 export type AppEnv = "local" | "test" | "staging" | "production";
 export type PlaidEnv = "sandbox" | "development" | "production";
+export type VictoriaRuntimeProfile = "mock_tests" | "local_mock_ledger" | "local_provider" | "staging" | "production_mock_ledger";
 export type { MoneyMovementMode } from "../domain/savings/types.js";
 
 export interface VictoriaEnv {
@@ -20,6 +21,19 @@ export interface VictoriaEnv {
   isProduction: boolean;
   isTest: boolean;
   usesRealMoneyMovement: boolean;
+  runtimeProfile: VictoriaRuntimeProfile;
+}
+
+export function resolveVictoriaRuntimeProfile(input: {
+  readonly appEnv: AppEnv;
+  readonly providerConfigured: boolean;
+}): VictoriaRuntimeProfile {
+  switch (input.appEnv) {
+    case "test": return "mock_tests";
+    case "local": return input.providerConfigured ? "local_provider" : "local_mock_ledger";
+    case "staging": return "staging";
+    case "production": return "production_mock_ledger";
+  }
 }
 
 export type EnvSource = Record<string, string | undefined>;
@@ -35,9 +49,13 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
   // Both provider paths default off; when both are on, the complete agent team takes precedence.
   const openAiFinancialMomentEnabled = parseOptionalBoolean(source.OPENAI_FINANCIAL_MOMENT_ENABLED, "OPENAI_FINANCIAL_MOMENT_ENABLED");
   const openAiAgentTeamEnabled = parseOptionalBoolean(source.OPENAI_AGENT_TEAM_ENABLED, "OPENAI_AGENT_TEAM_ENABLED");
-  const plaidClientId = requireEnv(source, "PLAID_CLIENT_ID");
-  const plaidSecret = requireEnv(source, "PLAID_SECRET");
-  const authSecret = requireEnv(source, "AUTH_SECRET");
+  // Plaid and the local HMAC session signer are optional capabilities. Their
+  // dedicated runtime factories validate credentials before use.
+  const plaidClientId = source.PLAID_CLIENT_ID?.trim() ?? "";
+  const plaidSecret = source.PLAID_SECRET?.trim() ?? "";
+  const authSecret = source.AUTH_SECRET?.trim() ?? "";
+
+  if (appEnv === "local" && !authSecret) throw new Error("AUTH_SECRET is required.");
 
   assertNodeEnvMatchesAppEnv(appEnv, nodeEnv);
   assertDatabaseUrlIsAllowed(appEnv, databaseUrl);
@@ -46,6 +64,10 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
   assertPlaidEnvIsAllowed(appEnv, plaidEnv);
   assertRealMovementUsesProductionPlaid(moneyMovementMode, plaidEnv);
   assertProviderCredentialsAreAllowed(appEnv, openAiApiKey, plaidClientId, plaidSecret);
+
+  const providerConfigured = openAiModel !== "mock" &&
+    !/(?:local-openai|replace|example|placeholder|changeme)/i.test(openAiApiKey);
+  const providerSelected = providerConfigured && (openAiFinancialMomentEnabled || openAiAgentTeamEnabled);
 
   return {
     appEnv,
@@ -62,7 +84,8 @@ export function parseVictoriaEnv(source: EnvSource): VictoriaEnv {
     authSecret,
     isProduction: appEnv === "production",
     isTest: appEnv === "test" || nodeEnv === "test",
-    usesRealMoneyMovement: moneyMovementMode === "real_transfer"
+    usesRealMoneyMovement: moneyMovementMode === "real_transfer",
+    runtimeProfile: resolveVictoriaRuntimeProfile({ appEnv, providerConfigured: providerSelected })
   };
 }
 
@@ -177,7 +200,7 @@ function assertDatabaseUrlIsAllowed(appEnv: AppEnv, databaseUrl: string): void {
 }
 
 function assertAuthSecretIsAllowed(appEnv: AppEnv, authSecret: string): void {
-  if (appEnv === "production" && authSecret.length < 32) {
+  if (appEnv === "production" && authSecret && authSecret.length < 32) {
     throw new Error("Production AUTH_SECRET must be at least 32 characters.");
   }
 }
@@ -193,7 +216,7 @@ function assertProviderCredentialsAreAllowed(
   }
 
   const providerValues = [openAiApiKey, plaidClientId, plaidSecret];
-  const hasPlaceholderValue = providerValues.some((value) => {
+  const hasPlaceholderValue = providerValues.filter(Boolean).some((value) => {
     const normalizedValue = value.toLowerCase();
 
     return (

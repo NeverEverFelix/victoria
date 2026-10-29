@@ -24,15 +24,19 @@ export interface ConversationalMemoryExtractor {
 export function validateMemoryCandidates(
   candidates: readonly unknown[],
   userMessage: string,
-  limit = 3
+  limit = 8
 ): readonly Omit<ConversationalMemory, "id" | "createdAt" | "supersedesId">[] {
   const result: Omit<ConversationalMemory, "id" | "createdAt" | "supersedesId">[] = [];
   const seenKeys = new Set<string>();
   for (const candidate of candidates) {
-    if (result.length >= Math.max(0, Math.min(limit, 3)) || !isCandidate(candidate)) continue;
+    if (result.length >= Math.max(0, Math.min(limit, 8)) || !isCandidate(candidate)) continue;
     const evidence = candidate.evidence.trim();
     const key = candidate.key.trim().toLowerCase();
     const value = candidate.value.trim();
+    // Amount-bearing recurring hobby spend is handled by the deterministic parser,
+    // which requires an explicit period. Provider output cannot invent that schema.
+    if (/\b(?:spend|spending|spent|cost|costs|paid|purchase|purchased)\b|\$\s*\d/i.test(`${evidence} ${value}`) ||
+        key.startsWith("interest_spend:")) continue;
     if (candidate.subject !== "user" || candidate.assertion !== "affirmed" ||
         candidate.stability !== "stable" || candidate.sensitivity !== "ordinary" ||
         candidate.confidence < 0.85 || !evidence || evidence.length > 240 ||
@@ -66,8 +70,7 @@ function isCandidate(value: unknown): value is ExtractedMemoryCandidate {
 }
 
 export function isExplicitUserEvidence(message: string, evidence: string): boolean {
-  const sensitive = /\b(?:diagnos(?:is|ed)|diabetes|cancer|medication|prescription|mental health|therapy|political|religious|religion|sexuality|race|ethnicity|immigration|visa status|social security|ssn|password|pin number|account number|card number)\b|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|(?=(?:\D*\d){10})\+?\d[\d .()-]{8,}\d/i;
-  if (sensitive.test(evidence)) return false;
+  if (isNeverStoreMemoryEvidence(evidence)) return false;
   const normalizedMessage = message.toLocaleLowerCase("en-US");
   const normalizedEvidence = evidence.trim()
     .replace(/^["“”'‘’](.*)["“”'‘’]$/u, "$1")
@@ -82,4 +85,22 @@ export function isExplicitUserEvidence(message: string, evidence: string): boole
   if (/\b(?:i\s+(?:don't|do not|never|no longer|am not|amn't)|i'm\s+not|not\s+for\s+me)\b/i.test(evidence)) return false;
   if (/\b(?:if\s+i\s+(?:were|had|could)|maybe\s+i|i\s+(?:might|could|am considering|am thinking about))\b/i.test(evidence)) return false;
   return true;
+}
+
+/** Allows only a direct first-person correction that retires an ordinary remembered interest. */
+export function isExplicitInterestCorrectionEvidence(message: string, evidence: string): boolean {
+  const normalizedMessage = message.toLocaleLowerCase("en-US");
+  const normalizedEvidence = evidence.trim().toLocaleLowerCase("en-US");
+  const start = normalizedMessage.indexOf(normalizedEvidence);
+  return start >= 0 && /^\s*i\s+(?:do not|don't|no longer)\s+(?:really\s+)?(?:love|like|enjoy)\s+[^.!?]+[.!?]*\s*$/i.test(evidence) &&
+    !isNeverStoreMemoryEvidence(evidence) &&
+    !/\b(?:maybe|might|possibly|not sure|unsure|could|considering|thinking about)\b/i.test(evidence) &&
+    !/^[\s"“‘(]*["'”’)]/.test(normalizedMessage.slice(start + normalizedEvidence.length, start + normalizedEvidence.length + 40)) &&
+    !/["'“‘(]\s*$/.test(normalizedMessage.slice(0, start));
+}
+
+/** Privacy floor shared by deterministic and provider-backed memory extraction. */
+export function isNeverStoreMemoryEvidence(evidence: string): boolean {
+  const sensitive = /\b(?:diagnos(?:is|ed)|diabetes|cancer|medication|prescription|medical|health condition|mental health|therapy|therapist|disability|political|politics|religious|religion|faith|church|mosque|synagogue|sexuality|sexual orientation|gender identity|race|ethnicity|immigration|visa status|citizenship status|social security|ssn|password|passcode|pin number|account number|routing number|card number|credit card number|debit card number|bank login|security code)\b|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|(?=(?:\D*\d){10})\+?\d[\d .()-]{8,}\d/i;
+  return sensitive.test(evidence);
 }
