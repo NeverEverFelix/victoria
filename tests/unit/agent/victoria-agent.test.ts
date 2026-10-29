@@ -250,6 +250,28 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsEntries("saving_anxiety_user")).toEqual([]);
   });
 
+  it("routes anxiety about saving for a goal as reflection without creating an action", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const responder = vi.fn(async () => "Planning for retirement can feel distant. What part feels most uncertain?");
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      conversationResponder: { respond: responder },
+      specialists: { ...base, financialMoment: { analyze: async ({ message }) => ({ classification: {
+        type: "avoided_spend", confidence: 0.9, summary: message, needsClarification: false
+      } }) } }
+    });
+
+    const response = await agent.respond({ userId: "retirement_anxiety_user", conversationId: "retirement_anxiety_chat",
+      message: "I'm anxious about saving for retirement" });
+
+    expect(response.message).toContain("Planning for retirement");
+    expect(response.decision.action).toBe("reflect");
+    expect(responder).toHaveBeenCalledOnce();
+    expect(response.decision.proposal).toBeUndefined();
+    expect(await tools.listSavingsEntries("retirement_anxiety_user")).toEqual([]);
+  });
+
   it("routes a free-standing nonfinancial statement to the conversational responder", async () => {
     const tools = new MockVictoriaTools();
     const base = createMockAgentTeamSpecialists();
