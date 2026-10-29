@@ -31,7 +31,7 @@ Emotionally framed reflections about saving for a goal now reach conversation ha
 ## Unresolved
 
 - The worktree contains 203 untracked files with conflict-copy suffixes such as ` 2.md` and ` 2.ts`; they were not part of this change and were left untouched. Inspect before cleanup or staging.
-- PR #19's AI review remains unable to run because the repository OpenAI key expired; no current review findings are available.
+- PR #19's AI review currently fails with GitHub `406 too_large` because `pull_request_target` executes the older reviewer from `main`; the pagination fix is only on the proposed branch. The expired repository key was separately observed on PR #20's review, after diff collection succeeded. Neither run produced current AI findings.
 
 ## Recommended Next Step
 

@@ -393,6 +393,8 @@ through priorities first. The $35 ledger proposal can stay unrecorded.
 
 **Implementation update (October 29, 2026):** PR #20 was squash-merged into PR #19's `feature/victoria-agent-core` base after the final head's GitHub `Check` passed. The trusted AI review collector now reaches OpenAI, but the configured repository key is expired and the job fails with `401 expired_secret_key` before producing findings. No current AI findings are available; historical review comments are from older heads. F11 remains open until the repository key is renewed, a complete current-head review runs, and any actionable findings are addressed.
 
+**PR #19 review-path correction (October 29, 2026):** On PR #19's current head, `pull_request_target` runs the reviewer from `main`, where the pagination fix is not yet present; the job fails with GitHub `406 too_large` while requesting the whole diff, before any model call. The pagination and large-file recovery fix is on PR #19's proposed branch, so it cannot repair its own trusted-base workflow. The expired-key failure above was observed on PR #20 when its base was PR #19's branch. F11 remains open pending a trusted-base rollout and a successful current-head review.
+
 ## 4. Original gym conversation: evidence-based behavioral trace
 
 **Observed user-supplied example (from prior conversation, NOT a replay executed for this report):**
