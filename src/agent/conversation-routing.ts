@@ -57,11 +57,13 @@ function isLowCostMealQuestion(message: string): boolean {
 export function isReadOnlyFinancialReflection(message: string): boolean {
   const normalizedSavingReflection = message
     .replace(/\bsaving money\b/gi, "money")
-    .replace(/\bsaving for\b/gi, "planning for");
+    .replace(/\bsaving for\b/gi, "planning for")
+    .replace(/\b(?:not saving|(?:don't|do not) save) enough\b/gi, "planning for");
+  const savingAdequacyReflection = /\b(?:not saving|(?:don't|do not) save) enough\b/i.test(message);
   return !/\?/.test(message) && !/\$\s*\d|\b\d+(?:\.\d+)?\s*(?:dollars?|bucks)\b/i.test(message) &&
     !/\b(?:record|log|sav(?:e|ing|ed)|add|transfer|deposit|withdraw|pay|purchase|buy|spend|spent|allocate|set aside|move)\b/i.test(normalizedSavingReflection) &&
     (/\b(?:budget|budgets|bills?|money|finances?|financial situation|spending)\b/i.test(message) ||
-      /\bsaving for\b/i.test(message)) &&
+      /\bsaving for\b/i.test(message) || savingAdequacyReflection) &&
     /\b(?:anxious|worried|stressed|overwhelm\w*|uncertain|nervous|afraid|frustrat\w*|confus\w*|hard|difficult)\b/i.test(message);
 }
 

@@ -40,6 +40,8 @@ describe("conversation routing helpers", () => {
     expect(shouldRouteToConversationResponder("I'm stressed about saving money; please save $20")).toBe(false);
     expect(shouldRouteToConversationResponder("I'm anxious about saving for retirement")).toBe(true);
     expect(shouldRouteToConversationResponder("I'm anxious about saving $200 for retirement")).toBe(false);
+    expect(shouldRouteToConversationResponder("I'm worried I don't save enough for retirement")).toBe(true);
+    expect(shouldRouteToConversationResponder("I'm worried I don't save the $200 for retirement")).toBe(false);
     expect(shouldRouteToConversationResponder("I cooked instead of ordering takeout")).toBe(false);
     expect(shouldRouteToConversationResponder("Put that toward my emergency fund.")).toBe(false);
   });

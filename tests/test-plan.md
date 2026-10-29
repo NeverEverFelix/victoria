@@ -23,6 +23,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - A free-standing non-financial reflection such as “I feel hopeful about starting my new job” reaches the conversation responder without requiring an explicit topic-switch phrase; an avoided-spend statement such as “I cooked instead of ordering takeout” remains on the finance route.
 - Anxiety about “saving money” is a read-only reflection unless the message also includes a concrete amount or explicit action request; it receives a conversational response with no proposal or ledger entry, including if finance classification labels it as avoided spending.
 - Anxiety about “saving for retirement” is likewise read-only when no concrete amount or action is requested; adding a concrete amount keeps it on the guarded financial path.
+- Worry about “not saving enough” for a goal is read-only without a concrete amount or explicit action and creates no proposal or ledger entry.
 - If conversational generation fails for an unpunctuated promotion-related anxiety reflection with no validated financial facts or pending workflow, Victoria acknowledges the change and asks a focused question without suggesting a ledger action.
 - If conversational generation fails on a mixed budget-overwhelm reflection and low-cost dinner question, Victoria preserves both with a safe financial reflection and a concrete inexpensive meal suggestion; no amount or ledger action is introduced.
 - Victoria classifies "I cooked instead of DoorDashing" as an avoided-spend event.

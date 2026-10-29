@@ -141,6 +141,8 @@ What part has been weighing on you: expectations, spending changes, or something
 
 **Implementation update (October 29, 2026):** Financial reflections phrased as “I'm anxious about saving for retirement” now route to the read-only responder even when a specialist misclassifies them as avoided spending. The routing helper normalizes “saving for” only for reflection classification and still rejects explicit amount/action language, including “I'm anxious about saving $200 for retirement.” Helper and agent tests confirm no proposal or ledger entry is created. F1 remains partial; routing is still heuristic and broader multi-intent evaluation remains open.
 
+**Implementation update (October 29, 2026):** The same guarded reflection route now handles “I'm worried I don't save enough for retirement.” It recognizes this narrow adequacy concern as reflection, while explicit amounts still take the financial path. Helper and agent regressions confirm no proposal or ledger entry is created. This expands coverage, not the first-class router; F1 remains partial.
+
 **Acceptance test:** Unpunctuated reflections, statements with money-related nouns, topic changes and indirect questions get substantive, context-specific conversational answers without any ledger proposal.
 
 ### F2 — General responder lacks the complete typed context [HIGH; confirmed source]
