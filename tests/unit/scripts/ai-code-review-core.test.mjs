@@ -1,14 +1,76 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildCompleteReviewComment,
   buildReviewRequest,
   buildReviewInput,
   chunkDiffForReview,
+  fetchPullRequestFilesDiff,
+  formatPullRequestFilesDiff,
   resolveReviewOutputTokenLimit,
   splitReviewChunkForRetry
 } from "../../../scripts/ai-code-review-core.mjs";
 
 describe("AI code review core", () => {
+  it("formats paginated changed-file records as complete diff sections", () => {
+    const diff = formatPullRequestFilesDiff([
+      { filename: "src/changed.ts", status: "modified", patch: "@@ -1 +1 @@\n-old\n+new" },
+      { filename: "src/new.ts", status: "added", patch: "@@ -0,0 +1 @@\n+new" },
+      { filename: "src/old.ts", status: "removed", patch: "@@ -1 +0,0 @@\n-old" },
+      { filename: "src/renamed.ts", previous_filename: "src/original.ts", status: "renamed", patch: "@@ -1 +1 @@\n-old\n+new" }
+    ]);
+
+    expect(diff).toContain("diff --git a/src/new.ts b/src/new.ts\n--- /dev/null\n+++ b/src/new.ts");
+    expect(diff).toContain("diff --git a/src/old.ts b/src/old.ts\n--- a/src/old.ts\n+++ /dev/null");
+    expect(diff).toContain("diff --git a/src/original.ts b/src/renamed.ts\nrename from src/original.ts\nrename to src/renamed.ts");
+    expect(diff).toContain("@@ -1 +1 @@\n-old\n+new");
+  });
+
+  it("fails closed when GitHub omits a text patch for any changed file", () => {
+    expect(() => formatPullRequestFilesDiff([{ filename: "assets/image.png", status: "modified" }]))
+      .toThrow("GitHub did not provide a text patch for changed file: assets/image.png");
+  });
+
+  it("fetches all changed-file pages past GitHub's 300-file diff endpoint limit", async () => {
+    const urls = [];
+    const fetchImpl = async (url, options) => {
+      urls.push({ url, options });
+      const page = Number(new URL(url).searchParams.get("page"));
+      const files = page === 1
+        ? Array.from({ length: 100 }, (_, index) => ({
+            filename: `docs/session-${index}.md`, status: "added", patch: `@@ -0,0 +1 @@\n+${index}`
+          }))
+        : [{ filename: "src/final.ts", status: "modified", patch: "@@ -1 +1 @@\n-old\n+new" }];
+      return { ok: true, json: async () => files };
+    };
+
+    const diff = await fetchPullRequestFilesDiff({
+      apiUrl: "https://api.github.com/repos/example/repo/pulls/1/files", token: "test-token", fetchImpl
+    });
+
+    expect(urls).toHaveLength(2);
+    expect(new URL(urls[0].url).searchParams.get("page")).toBe("1");
+    expect(new URL(urls[1].url).searchParams.get("page")).toBe("2");
+    expect(urls[0].options.headers.Authorization).toBe("Bearer test-token");
+    expect(diff).toContain("diff --git a/src/final.ts b/src/final.ts");
+    expect(diff).toContain("diff --git a/docs/session-99.md b/docs/session-99.md");
+  });
+
+  it("loads an omitted large-file patch through the supplied safe data loader", async () => {
+    const loadMissingPatch = vi.fn(async () => "@@ -1 +1 @@\n-old\n+new");
+    const diff = await fetchPullRequestFilesDiff({
+      apiUrl: "https://api.github.com/repos/example/repo/pulls/1/files",
+      token: "test-token",
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => [{ filename: "src/large.ts", status: "modified", sha: "a".repeat(40) }]
+      }),
+      loadMissingPatch
+    });
+
+    expect(loadMissingPatch).toHaveBeenCalledWith(expect.objectContaining({ filename: "src/large.ts" }));
+    expect(diff).toContain("@@ -1 +1 @@\n-old\n+new");
+  });
+
   it("uses a bounded default and allows a configured response-token limit", () => {
     expect(resolveReviewOutputTokenLimit(undefined)).toBe(2000);
     expect(resolveReviewOutputTokenLimit("2400")).toBe(2400);

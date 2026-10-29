@@ -109,6 +109,30 @@ describe("agentic setup validation", () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('runGit(["show"');
   });
+
+  it("requires pull-request AI review to paginate changed files instead of requesting the capped diff endpoint", () => {
+    const fixture = createRepositoryFixture();
+    const scriptPath = join(fixture, "scripts/ai-code-review.mjs");
+    const script = readFileSync(scriptPath, "utf8");
+    writeFileSync(scriptPath, script.replace("/pulls/${PULL_REQUEST_NUMBER}/files", "/pulls/${PULL_REQUEST_NUMBER}"), "utf8");
+
+    const result = runValidator(fixture);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("scripts/ai-code-review.mjs is missing required text: pulls/${PULL_REQUEST_NUMBER}/files");
+  });
+
+  it("requires large-file fallback to use untrusted blobs only as diff data", () => {
+    const fixture = createRepositoryFixture();
+    const scriptPath = join(fixture, "scripts/ai-code-review.mjs");
+    const script = readFileSync(scriptPath, "utf8");
+    writeFileSync(scriptPath, script.replaceAll("loadMissingPullRequestPatch", "missingPatch"), "utf8");
+
+    const result = runValidator(fixture);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("loadMissingPullRequestPatch");
+  });
 });
 
 function createRepositoryFixture(): string {

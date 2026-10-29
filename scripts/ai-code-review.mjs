@@ -1,10 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, appendFileSync } from "node:fs";
+import { existsSync, readFileSync, appendFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   buildCompleteReviewComment,
   buildReviewInput,
   buildReviewRequest,
   chunkDiffForReview,
+  fetchPullRequestFilesDiff,
   resolveReviewOutputTokenLimit,
   splitReviewChunkForRetry
 } from "./ai-code-review-core.mjs";
@@ -38,6 +41,72 @@ function runGit(args) {
     encoding: "utf8",
     maxBuffer: 20 * 1024 * 1024
   });
+}
+
+function runGitBuffer(args) {
+  return execFileSync("git", args, { maxBuffer: 120 * 1024 * 1024 });
+}
+
+async function fetchPullRequestBlob(file) {
+  if (typeof file.sha !== "string" || !/^[a-f0-9]{40}$/i.test(file.sha)) {
+    throw new Error(`GitHub omitted a text patch and did not provide a usable blob SHA for ${file.filename}.`);
+  }
+  const response = await fetch(`https://api.github.com/repos/${GITHUB_REPOSITORY}/git/blobs/${file.sha}`, {
+    headers: {
+      Authorization: `Bearer ${GITHUB_TOKEN}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    }
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`GitHub blob request failed for ${file.filename}: ${response.status} ${body}`);
+  }
+  const blob = await response.json();
+  if (blob.encoding !== "base64" || typeof blob.content !== "string") {
+    throw new Error(`GitHub returned an unsupported blob encoding for ${file.filename}.`);
+  }
+  return Buffer.from(blob.content, "base64");
+}
+
+function generateFilePatch(file, oldContent, newContent) {
+  const directory = mkdtempSync(join(tmpdir(), "victoria-ai-review-"));
+  try {
+    const oldFile = join(directory, "old-version");
+    const newFile = join(directory, "new-version");
+    writeFileSync(oldFile, oldContent);
+    writeFileSync(newFile, newContent);
+    let diff;
+    try {
+      diff = execFileSync("git", ["diff", "--no-index", "--unified=40", "--no-ext-diff", "--no-textconv", "--", oldFile, newFile], {
+        encoding: "utf8", maxBuffer: 120 * 1024 * 1024
+      });
+    } catch (error) {
+      if (error.status !== 1) throw error;
+      diff = String(error.stdout ?? "");
+    }
+    const hunkStart = diff.search(/^@@/m);
+    return hunkStart < 0 ? "[No textual hunk; file content is binary or mode-only.]" : diff.slice(hunkStart).trimEnd();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+async function loadMissingPullRequestPatch(file) {
+  const oldPath = file.previous_filename ?? file.filename;
+  let oldContent = Buffer.alloc(0);
+  let newContent = Buffer.alloc(0);
+  if (file.status !== "added") {
+    try {
+      oldContent = runGitBuffer(["show", `${BASE_SHA}:${oldPath}`]);
+    } catch {
+      throw new Error(`Trusted base version is unavailable for changed file: ${oldPath}`);
+    }
+  }
+  if (file.status !== "removed") {
+    newContent = await fetchPullRequestBlob(file);
+  }
+  return generateFilePatch(file, oldContent, newContent);
 }
 
 function readTrustedFileAtRef(ref, path, maxChars = maxTrustedFileChars) {
@@ -92,23 +161,11 @@ async function getPullRequestDiff() {
     );
   }
 
-  const response = await fetch(
-    `https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${PULL_REQUEST_NUMBER}`,
-    {
-      headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
-        Accept: "application/vnd.github.v3.diff",
-        "X-GitHub-Api-Version": "2022-11-28"
-      }
-    }
-  );
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`GitHub diff request failed: ${response.status} ${body}`);
-  }
-
-  return response.text();
+  return fetchPullRequestFilesDiff({
+    apiUrl: `https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${PULL_REQUEST_NUMBER}/files`,
+    token: GITHUB_TOKEN,
+    loadMissingPatch: loadMissingPullRequestPatch
+  });
 }
 
 async function getDiff() {
