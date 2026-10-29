@@ -25,7 +25,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Anxiety about “saving for retirement” is likewise read-only when no concrete amount or action is requested; adding a concrete amount keeps it on the guarded financial path.
 - Worry about “not saving enough” for a goal is read-only without a concrete amount or explicit action and creates no proposal or ledger entry.
 - A non-quantified reflection of guilt about spending receives a nonjudgmental conversational response without starting a regretful-spend workflow; explicit amounts continue through financial handling.
-- In a mixed turn with a separate ordinary question before an avoided-spend statement, Victoria answers the question and asks one exact confirmation for the financial action; no entry exists before explicit approval.
+- In a mixed turn with a separate ordinary question before an avoided-spend statement, Victoria answers the question and asks one exact confirmation for the financial action; action/approval questions in either position are never extracted as ordinary conversation, and no entry exists before explicit approval.
 - If conversational generation fails for an unpunctuated promotion-related anxiety reflection with no validated financial facts or pending workflow, Victoria acknowledges the change and asks a focused question without suggesting a ledger action.
 - If conversational generation fails on a mixed budget-overwhelm reflection and low-cost dinner question, Victoria preserves both with a safe financial reflection and a concrete inexpensive meal suggestion; no amount or ledger action is introduced.
 - Victoria classifies "I cooked instead of DoorDashing" as an avoided-spend event.

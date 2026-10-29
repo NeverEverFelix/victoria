@@ -18,6 +18,8 @@ describe("conversation routing helpers", () => {
   it("extracts only a clearly separate non-financial question from a mixed turn", () => {
     expect(independentOrdinaryQuestion("What could I cook for dinner? I avoided ordering takeout for $24."))
       .toBe("What could I cook for dinner?");
+    expect(independentOrdinaryQuestion("Should I record it? I avoided ordering takeout for $24."))
+      .toBeUndefined();
     expect(independentOrdinaryQuestion("I skipped a $20 book. What are good podcasts for walks?"))
       .toBe("What are good podcasts for walks?");
     expect(independentOrdinaryQuestion("I skipped a $20 book. Should I record it?"))
