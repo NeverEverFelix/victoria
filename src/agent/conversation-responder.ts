@@ -10,6 +10,8 @@ export type ConversationResponderMemory = Pick<ConversationalMemory, "id" | "key
 
 export interface ConversationResponderInput {
   readonly message: string;
+  /** Optional sub-question to answer while retaining the full current turn in the snapshot. */
+  readonly responseFocus?: string;
   readonly recentTurns: readonly string[];
   readonly memories: readonly ConversationResponderMemory[];
   readonly baselineReply: string;
@@ -155,7 +157,7 @@ export function validateConversationReply(reply: unknown, input: ConversationRes
   // remain the only source for calculations, proposals, and ledger state.
   const sourceAmounts = new Set<number>();
   const explicitAmounts = new Set<number>();
-  for (const source of [input.message, ...input.recentTurns]) {
+  for (const source of [input.message, input.responseFocus ?? "", input.contextSnapshot?.currentMessage ?? "", ...input.recentTurns]) {
     for (const amount of source.match(/\$\s?\d[\d,]*(?:\.\d{1,2})?/g) ?? []) {
       const cents = usdAmountCents(amount);
       if (cents !== undefined) {

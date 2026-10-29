@@ -1440,14 +1440,16 @@ export class VictoriaAgent {
     if (decision.action === "suggest_savings" && independentQuestion && !teamAdvice &&
         this.dependencies.conversationResponder && decision.proposal?.status === "pending") {
       const conversationalAnswer = await this.generateConversationReply({
-        message: independentQuestion,
+        message: request.message,
+        responseFocus: independentQuestion,
         recentTurns: conversationContext,
         memories: contextSnapshot.selectedMemories,
         episodicSummaries: contextSnapshot.episodicSummaries,
         baselineReply: "I can answer that separately. What would you like to know?",
         ...responsePreferenceInput,
         pendingAction: "savings_entry",
-        financialContext: responderFinancialContext
+        financialContext: responderFinancialContext,
+        contextSnapshot
       });
       userFacingMessage = `${conversationalAnswer} ${userFacingMessage}`;
       decision = { ...decision, userFacingMessage };
@@ -1455,13 +1457,15 @@ export class VictoriaAgent {
     if (decision.action === "reflect" && resolvedClassification.type === "regretful_spend" &&
         independentQuestion && this.dependencies.conversationResponder) {
       const conversationalAnswer = await this.generateConversationReply({
-        message: independentQuestion,
+        message: request.message,
+        responseFocus: independentQuestion,
         recentTurns: conversationContext,
         memories: contextSnapshot.selectedMemories,
         episodicSummaries: contextSnapshot.episodicSummaries,
         baselineReply: "A pot of lentil and tomato soup with bread is easy to make together and uses inexpensive pantry staples.",
         ...responsePreferenceInput,
-        financialContext: responderFinancialContext
+        financialContext: responderFinancialContext,
+        contextSnapshot
       });
       userFacingMessage = `${userFacingMessage} ${conversationalAnswer}`;
       decision = { ...decision, userFacingMessage };
@@ -1642,7 +1646,7 @@ export class VictoriaAgent {
       turn.role === "assistant" ? `Victoria: ${turn.content}` : turn.content
     );
     const responderInput: ConversationResponderInput = {
-      message: contextSnapshot.currentMessage,
+      message: input.responseFocus ?? contextSnapshot.currentMessage,
       recentTurns,
       memories: contextSnapshot.selectedMemories,
       episodicSummaries: contextSnapshot.episodicSummaries,

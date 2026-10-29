@@ -17,6 +17,34 @@ import type { PendingSavingsActionStore, PersistedPendingSavingsAction } from ".
 import type { ConversationResponderInput } from "../../../src/agent/conversation-responder.js";
 
 describe("VictoriaAgent", () => {
+  it("keeps the full mixed turn in the canonical snapshot while focusing the responder on the ordinary question", async () => {
+    const tools = new MockVictoriaTools();
+    const llm = new MockLlmAdapter();
+    vi.spyOn(llm, "classifyMessage").mockResolvedValue({
+      type: "avoided_spend", confidence: 0.95, amountCents: 2_000,
+      summary: "I skipped a $20 book. What are good podcasts for walks?", needsClarification: false
+    });
+    let responderInput: ConversationResponderInput | undefined;
+    const agent = new VictoriaAgent({
+      llm, memory: new MockMemoryProvider(), tools,
+      conversationResponder: { async respond(input) {
+        responderInput = input;
+        return "A short nature series could suit a walk.";
+      } }
+    });
+    const request = { userId: "mixed_context_focus_user", conversationId: "mixed_context_focus_chat" };
+
+    const response = await agent.respond({ ...request,
+      message: "I skipped a $20 book. What are good podcasts for walks?" });
+
+    expect(response.decision.action).toBe("suggest_savings");
+    expect(responderInput?.message).toBe("What are good podcasts for walks?");
+    expect(responderInput?.contextSnapshot?.currentMessage).toBe("I skipped a $20 book. What are good podcasts for walks?");
+    expect(response.message).toContain("A short nature series");
+    expect(response.message.match(/Would you like me to record/gi)).toHaveLength(1);
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+  });
+
   it("answers a separate ordinary question while keeping an avoided-spend suggestion pending", async () => {
     const tools = new MockVictoriaTools();
     const base = createMockAgentTeamSpecialists();
