@@ -53,3 +53,43 @@ The conversational model remains advisory. It cannot authorize, construct, or ex
 3. Measure and reduce specialist latency/cost without weakening typed service and deterministic policy boundaries.
 4. Extend local PostgreSQL reliability coverage for outage/recovery and deployed multi-worker behavior; restart and concurrent approval are already covered by the passing loopback suite. Keep remote migration/deployment work separately reviewed.
 5. Keep traces content-free; decide retention/access controls before adding durable per-stage trace storage.
+
+## Crosswalk To The 2026-10-29 Conversation Architecture Review
+
+The attached review groups overlapping concerns into findings F01–F08. This crosswalk records the current implementation status against those findings; passing deterministic tests is not provider-quality evidence.
+
+| Finding | Status | Current evidence and remaining gap |
+| --- | --- | --- |
+| F01 Rule-heavy intent and route recognition | Partially addressed | `ConversationIntentPlan` remains the deterministic safety-oriented baseline. For turns that can bypass financial classification, `interpretConversationTurn` asks the model to interpret the full bounded context snapshot into a validated advisory plan; `shouldDispatchConversationIntent` permits only safe read-only routing from it. Strict amount/workflow parsing stays deterministic. Held-out provider-backed paraphrase evaluation is open. |
+| F02 Fragmented overlapping interpretations | Partially addressed | The model-assisted `AdvisoryTurnPlan` is passed to the read-only responder and can inform its single dispatch guard. Turns handled by Financial Moment do not incur a second interpretation call; its contextual classification and deterministic pending-workflow policy remain authoritative. A unified plan for every workflow, shadow disagreement telemetry, and provider-quality evidence remain open. |
+| F03 Conversation as the default interaction | Implemented in current local behavior; quality review open | Context-aware read-only responses and no-action reflection cases are covered, including topic switches while an approval is pending. The responder has no mutation tools. Naturalness and multi-intent quality still need blinded review. |
+| F04 `VictoriaAgent` coordinator complexity | Partially addressed | Context building, workflow state, reply composition, routing hints, and persistence already live in focused modules. Provider memory extraction, validation, supersession, and turn provenance now share `memory-learning-service.ts`; `VictoriaAgent` remains a large coordinator and needs further seam-by-seam parity work. |
+| F05 Safe but conversation-poor fallback | Improved; residual coverage open | On provider failure during clear promotion or debt topic switches with a pending savings proposal, fallback now addresses the topic and states the proposal remains unchanged. Regression coverage verifies read-only behavior; the promotion scenario also verifies a later explicit yes records exactly once. Other unrecognized topics may still use a bounded baseline. |
+| F06 Memory relevance and learning latency | Partially addressed | Scoped, provenance-aware retrieval, same-fact supersession, relevance reasons, and bounded memory context are implemented and tested. Provider extraction still runs synchronously in some response paths; a durable idempotent learning queue and blinded relevance scoring remain open. |
+| F07 Context and continuity parity | Mostly implemented; external runtime coverage open | A typed context snapshot carries scoped dialogue, facts, memory, episodes, references, workflows, and verified calculations. Regression coverage includes monthly/annual resolution, proposal revision, ambiguity, topic switch, and restart. Hosted multi-worker/outage parity remains open. |
+| F08 Model/specialist overhead | Open for post-fix provider evidence | The recorded pre-fix provider comparison showed higher latency/cost for specialists without matching gains in intent/action/amount scores. A corrected mock comparison is plumbing evidence only. A fresh live rerun, blinded review, and approved budgets require provider credentials, a rate card, and human reviewers. |
+
+### Ten Review Scenarios And Their Expected Outcomes
+
+These are acceptance scenarios, not claimed live-provider transcripts. The cited unit/integration suite exercises the deterministic safety and routing behavior; provider-quality wording remains unverified without the external evaluation gate.
+
+| Scenario | Expected behavior | Evidence |
+| --- | --- | --- |
+| Promotion and unease about saving | Acknowledge the personal change; do not create a proposal or ledger entry. | `tests/test-plan.md`, reflection and fallback cases |
+| “Yes, but what about the debt?” during pending approval | Treat the message as ambiguous/read-only; no approval or write. | Pending-workflow and mixed-intent tests |
+| Counterfactual use of a freed gym amount | Resolve only a validated reference; keep it planning context, not realized savings. | Planning-reference and conditional-projection tests |
+| Historical “I moved money last week” question | Answer as a read-only historical question; do not initiate a transfer. | Intent-plan and money-movement boundary tests |
+| “I don’t want to transfer money” | Honor negation and keep the turn read-only. | Intent-plan regression table and movement-intent tests |
+| Topic switch during pending approval with provider outage | Answer the topic-specific promotion question, state the proposal is unchanged, and make no write. | New fallback and agent regressions |
+| Irrelevant remembered interest | Do not introduce it into a response unless current context makes it useful. | Memory retrieval/context selection tests; human relevance scoring open |
+| Monthly vs annual follow-up | Attach the answer to the current covered expense; retain annual amount as conditional projection. | Planning-choice and restart tests |
+| Revised pending amount | Supersede/version the proposal and require fresh exact approval. | Proposal-revision and persistence tests |
+| Provider cost/quality tradeoff | Compare frozen post-fix provider runs and blinded scores; do not infer quality from mock tests. | Open: provider key/rate card and human scoring required |
+
+### Current Change From This Crosswalk
+
+- Consolidated the read-only dialogue dispatch condition in `src/agent/conversation-intent-plan.ts`; `VictoriaAgent` now calls that single handoff after the plan is built. This does not promote the advisory plan into approval authority.
+- Improved the pending-proposal provider-outage fallback for an explicit promotion discussion and added a regression proving the pending proposal remains unchanged until a later explicit confirmation.
+- Added a strict model-assisted advisory turn plan for the read-only conversation path. It receives the canonical scoped context snapshot, rejects unknown fields (including amounts, IDs, permissions, and tool calls), and cannot authorize a financial action. Financial Moment turns reuse their existing model interpretation rather than paying for a duplicate call.
+- Extracted the shared optional memory-learning persistence path into `memory-learning-service.ts`, preserving current validation, append-only supersession, retry deduplication, source-turn provenance, and content-free failure reporting.
+- Added the fallback expectation to `tests/test-plan.md`.

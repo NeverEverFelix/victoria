@@ -20,6 +20,7 @@ export * from "./memory/episodic-summary.js";
 export * from "./memory/postgres-memory-repository.js";
 export * from "./memory/sqlite-cached-memory-provider.js";
 export * from "./memory/memory-orchestrator.js";
+export * from "./memory/memory-learning-service.js";
 export * from "./tools/contracts.js";
 export * from "./tools/mock-tools.js";
 export * from "./prompts/system-prompt.js";

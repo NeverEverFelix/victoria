@@ -1,11 +1,13 @@
 import { calculateReadOnlySavingsQuestion } from "./read-only-calculator.js";
+import type { AdvisoryTurnPlan } from "./turn-understanding.js";
 import {
   independentOrdinaryQuestion,
   isExplicitFinancialActionQuestion,
   isOrdinaryQuestion,
   isConversationTopicTurn,
   isReadOnlyFinancialReflection,
-  isExplicitReadOnlyTopicSwitch
+  isExplicitReadOnlyTopicSwitch,
+  shouldRouteToConversationResponder
 } from "./conversation-routing.js";
 
 export type ConversationIntent = "dialogue" | "financial_analysis" | "savings_proposal" | "correction" | "memory_control";
@@ -164,4 +166,28 @@ function directCandidateContext(message: string): boolean {
 /** Only read-only dialogue with no requested mutation can use this path. */
 export function mayDispatchConversationIntent(plan: ConversationIntentPlan): boolean {
   return plan.intents.includes("dialogue") && plan.requestedActions.length === 0 && !plan.needsClarification;
+}
+
+/** The single read-only dialogue handoff; descriptive plans never grant workflow authority. */
+export function shouldDispatchConversationIntent(
+  plan: ConversationIntentPlan,
+  message: string,
+  advisoryPlan?: AdvisoryTurnPlan,
+  classificationType?: string
+): boolean {
+  const deterministicReadOnly = mayDispatchConversationIntent(plan) &&
+    (shouldRouteToConversationResponder(message) ||
+      (plan.intents.includes("dialogue") && plan.readOnlyQuestions[0] === message.trim()));
+  if (deterministicReadOnly) return true;
+
+  const modelDescribesReadOnlyDialogue = advisoryPlan !== undefined &&
+    (advisoryPlan.primaryIntent === "dialogue" || advisoryPlan.primaryIntent === "financial_reflection" ||
+      advisoryPlan.primaryIntent === "planning") &&
+    advisoryPlan.requestedAction === "none" && advisoryPlan.actionMention === "none" &&
+    !advisoryPlan.uncertainty.needsClarification;
+  const descriptiveRequestIsReadOnly = plan.actionRequest.kind === "none" || plan.actionRequest.kind === "plan_only";
+  const deterministicSafetyAllowsReadOnly = classificationType === "general_finance" &&
+    descriptiveRequestIsReadOnly && plan.requestedActions.length === 0 && !plan.needsClarification && !plan.ambiguous &&
+    !plan.dialogueActs.includes("attempt_confirmation") && !plan.dialogueActs.includes("attempt_decline") && !plan.dialogueActs.includes("revise");
+  return modelDescribesReadOnlyDialogue && deterministicSafetyAllowsReadOnly;
 }

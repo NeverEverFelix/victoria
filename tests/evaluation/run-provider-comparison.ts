@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { readFileSync } from "node:fs";
-import { FINANCIAL_MOMENT_PROMPT_VERSION, OpenAiFinancialMomentAdapter } from "../../src/agent/llm/openai-financial-moment.js";
+import { FINANCIAL_MOMENT_PROMPT_VERSION, TURN_UNDERSTANDING_PROMPT_VERSION, OpenAiFinancialMomentAdapter } from "../../src/agent/llm/openai-financial-moment.js";
 import { createOpenAiAgentTeamSpecialists, SAVINGS_REASONING_PROMPT_VERSION } from "../../src/agent/team/openai-specialists.js";
 import { MockMemoryProvider } from "../../src/agent/memory/mock-memory.js";
 import { MockVictoriaTools } from "../../src/agent/tools/mock-tools.js";
@@ -86,11 +86,13 @@ export interface ProviderComparisonReport {
   environment: "local";
   timeoutMs: 8_000;
   promptVersions: {
+    turnUnderstanding: typeof TURN_UNDERSTANDING_PROMPT_VERSION;
     financialMoment: typeof FINANCIAL_MOMENT_PROMPT_VERSION;
     savingsReasoning: typeof SAVINGS_REASONING_PROMPT_VERSION;
     companionVoice: "companion-voice-instructions-v1";
   };
   schemaVersions: {
+    turnUnderstanding: "advisory_turn_plan_v1";
     financialMoment: "financial_moment_v1";
     savingsReasoning: "savings_assessment_v1";
     companionVoice: "companion_voice_v1";
@@ -126,11 +128,13 @@ export async function runProviderComparison(options: ProviderComparisonOptions):
     environment: "local",
     timeoutMs: 8_000,
     promptVersions: {
+      turnUnderstanding: TURN_UNDERSTANDING_PROMPT_VERSION,
       financialMoment: FINANCIAL_MOMENT_PROMPT_VERSION,
       savingsReasoning: SAVINGS_REASONING_PROMPT_VERSION,
       companionVoice: "companion-voice-instructions-v1"
     },
     schemaVersions: {
+      turnUnderstanding: "advisory_turn_plan_v1",
       financialMoment: "financial_moment_v1",
       savingsReasoning: "savings_assessment_v1",
       companionVoice: "companion_voice_v1"
@@ -310,6 +314,7 @@ async function runArm(
       )),
       costPerTurnUsd: summarizeLatencies(turns.flatMap((turn) => turn.estimatedCostUsd === null ? [] : [turn.estimatedCostUsd])),
       roleLatencyMs: {
+        turn_understanding: summarizeLatencies(roleLatencies.turn_understanding),
         financial_moment: summarizeLatencies(roleLatencies.financial_moment),
         savings_reasoning: summarizeLatencies(roleLatencies.savings_reasoning),
         companion_voice: summarizeLatencies(roleLatencies.companion_voice)

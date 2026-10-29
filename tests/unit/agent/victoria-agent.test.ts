@@ -15,8 +15,65 @@ import type { PendingAmountClarificationStore } from "../../../src/agent/pending
 import type { PendingEntryCorrectionStore, PersistedPendingEntryCorrection } from "../../../src/agent/pending-entry-correction-store.js";
 import type { PendingSavingsActionStore, PersistedPendingSavingsAction } from "../../../src/agent/pending-savings-action-store.js";
 import type { ConversationResponderInput } from "../../../src/agent/conversation-responder.js";
+import type { ConversationContextSnapshot } from "../../../src/agent/conversation-responder.js";
 
 describe("VictoriaAgent", () => {
+  it("passes a validated model understanding of the complete turn into the response context", async () => {
+    const llm = new MockLlmAdapter();
+    const modelPlan = {
+      schemaVersion: 1 as const,
+      primaryIntent: "financial_reflection" as const,
+      secondaryIntents: ["dialogue" as const],
+      dialogueActs: ["personal_update" as const, "question" as const],
+      questionFocus: "How should I think about this change?",
+      references: [{ phrase: "this change", kind: "prior_topic" as const, confidence: "clear" as const }],
+      requestedReadOnlyTools: [] as ("financial_profile" | "savings_history" | "calculator")[],
+      actionMention: "none" as const,
+      requestedAction: "none" as const,
+      uncertainty: { needsClarification: false, reasons: [] as string[] }
+    };
+    const understandTurn = vi.fn(async (input: { readonly contextSnapshot: ConversationContextSnapshot }) => {
+      void input;
+      return modelPlan;
+    });
+    const llmWithUnderstanding = Object.assign(llm, { understandTurn });
+    let responderInput: ConversationResponderInput | undefined;
+    const base = createMockAgentTeamSpecialists();
+    const agent = new VictoriaAgent({
+      llm: llmWithUnderstanding, memory: new MockMemoryProvider(), tools: new MockVictoriaTools(),
+      specialists: { ...base, financialMoment: { analyze: async ({ message }) => ({ classification: {
+        type: "general_finance", confidence: 0.9, summary: message, needsClarification: false
+      } }) } },
+      conversationResponder: { async respond(input) { responderInput = input; return "Let's work through the change together."; } }
+    });
+    const message = "Work gave me a raise, and I feel weird about it. How should I think about this change?";
+
+    const response = await agent.respond({ userId: "turn_understanding_user", conversationId: "turn_understanding_chat", message });
+
+    expect(response.decision.action).toBe("reflect");
+    expect(understandTurn).toHaveBeenCalledOnce();
+    expect(understandTurn.mock.calls[0]?.[0].contextSnapshot.currentMessage).toBe(message);
+    expect(responderInput?.contextSnapshot?.turnUnderstanding).toEqual(modelPlan);
+  });
+
+  it("reuses financial classification instead of making a second understanding call", async () => {
+    const llm = new MockLlmAdapter();
+    const understandTurn = vi.fn(async (_input: { readonly contextSnapshot: ConversationContextSnapshot }) => {
+      void _input;
+      return {};
+    });
+    const agent = new VictoriaAgent({
+      llm: Object.assign(llm, { understandTurn }),
+      memory: new MockMemoryProvider(), tools: new MockVictoriaTools(),
+      conversationResponder: { async respond(input) { return input.baselineReply; } }
+    });
+
+    const response = await agent.respond({ userId: "financial_no_duplicate_plan", message: "I almost bought a $12 book but decided to wait." });
+
+    expect(response.decision.action).toBe("suggest_savings");
+    expect(understandTurn).not.toHaveBeenCalled();
+  });
+
   it("keeps hedged agreement ambiguous in the deterministic evaluation classifier", async () => {
     const memory = new MockMemoryProvider();
     const classification = await new MockLlmAdapter().classifyMessage({
@@ -1107,6 +1164,37 @@ describe("VictoriaAgent", () => {
     expect(reflection.decision.action).toBe("reflect");
     expect(responder).toHaveBeenCalledOnce();
     expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+    const approved = await agent.respond({ ...request, message: "Yes" });
+    expect(approved.decision.action).toBe("create_ledger_entry");
+    expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);
+  });
+
+  it("answers a promotion topic switch from the safe fallback while a proposal stays pending", async () => {
+    const tools = new MockVictoriaTools();
+    const base = createMockAgentTeamSpecialists();
+    const responder = vi.fn(async () => { throw new Error("provider unavailable"); });
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      conversationResponder: { respond: responder },
+      specialists: { ...base, financialMoment: { analyze: async ({ message }) => ({ classification: {
+        type: message.includes("promotion means") ? "general_finance" : "avoided_spend",
+        confidence: 0.9, summary: message, needsClarification: false,
+        ...(message.includes("promotion means") ? {} : { amountCents: 3_500 })
+      } }) } }
+    });
+    const request = { userId: "promotion_topic_fallback_user", conversationId: "promotion_topic_fallback_chat" };
+    await agent.respond({ ...request, message: "I skipped a $35 purchase." });
+
+    const reflection = await agent.respond({ ...request,
+      message: "I actually want to talk about what the promotion means for my budget." });
+
+    expect(reflection.message).toContain("A promotion can bring a lot of change");
+    expect(reflection.message).toContain("remains pending and unchanged");
+    expect(reflection.message).not.toMatch(/approve|recording \$35/i);
+    expect(reflection.decision.action).toBe("reflect");
+    expect(responder).toHaveBeenCalledOnce();
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+
     const approved = await agent.respond({ ...request, message: "Yes" });
     expect(approved.decision.action).toBe("create_ledger_entry");
     expect(await tools.listSavingsEntries(request.userId)).toHaveLength(1);

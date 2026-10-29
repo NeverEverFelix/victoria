@@ -622,7 +622,7 @@ describe("conversation response boundary", () => {
 
     const topicShift = await agent.respond({ ...request, message: "Let's talk about groceries instead." });
 
-    expect(topicShift.message).toMatch(/savings suggestion remains pending and has not been recorded/i);
+    expect(topicShift.message).toMatch(/savings suggestion remains pending and unchanged/i);
     expect(topicShift.message).not.toContain("$500");
     expect(respond).toHaveBeenCalledTimes(2);
     expect(await tools.listSavingsEntries(request.userId)).toEqual([]);

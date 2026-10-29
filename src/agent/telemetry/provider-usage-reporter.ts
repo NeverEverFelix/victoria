@@ -1,7 +1,7 @@
 import { immutableSnapshot } from "../../domain/immutable.js";
 
 export interface ProviderUsageRecord {
-  role: "financial_moment" | "savings_reasoning" | "companion_voice";
+  role: "turn_understanding" | "financial_moment" | "savings_reasoning" | "companion_voice";
   inputTokens?: number;
   outputTokens?: number;
   requestId?: string;
@@ -54,7 +54,7 @@ export class ProviderUsageReporter {
       throw new Error("Provider usage rate card must include a date and finite non-negative rates.");
     }
 
-    const roles: ProviderUsageRecord["role"][] = ["financial_moment", "savings_reasoning", "companion_voice"];
+    const roles: ProviderUsageRecord["role"][] = ["turn_understanding", "financial_moment", "savings_reasoning", "companion_voice"];
     const callsByRole = Object.fromEntries(roles.map((role) => [role, 0])) as ProviderUsageSummary["callsByRole"];
     const tokensByRole = Object.fromEntries(roles.map((role) => [role, { input: 0, output: 0 }])) as ProviderUsageSummary["tokensByRole"];
     let inputTokens = 0;
@@ -97,7 +97,7 @@ export class ProviderUsageReporter {
   }
 
   roleLatenciesMs(): Record<ProviderUsageRecord["role"], readonly number[]> {
-    const roles: ProviderUsageRecord["role"][] = ["financial_moment", "savings_reasoning", "companion_voice"];
+    const roles: ProviderUsageRecord["role"][] = ["turn_understanding", "financial_moment", "savings_reasoning", "companion_voice"];
     const latencies = Object.fromEntries(roles.map((role) => [role, [] as number[]])) as Record<ProviderUsageRecord["role"], number[]>;
     for (const record of this.records) {
       if (record.elapsedMs !== undefined) latencies[record.role].push(record.elapsedMs);

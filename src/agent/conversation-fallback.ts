@@ -1,5 +1,5 @@
 import type { ConversationResponderInput } from "./conversation-responder.js";
-import { isOrdinaryQuestion, isReadOnlyFinancialReflection } from "./conversation-routing.js";
+import { isOrdinaryQuestion, isReadOnlyFinancialReflection, isSafePendingWorkflowTopicSwitch } from "./conversation-routing.js";
 
 function lowCostMealAnswer(message: string): string | undefined {
   if (/\b(?:low[- ]cost|budget[- ]friendly|inexpensive|affordable)\b/i.test(message) &&
@@ -11,12 +11,30 @@ function lowCostMealAnswer(message: string): string | undefined {
 
 /** Safe deterministic recovery for read-only conversation when generation is unavailable. */
 export function deterministicConversationFallback(input: ConversationResponderInput): string {
+  const pendingWorkflow = Boolean(input.pendingAction || input.pendingWorkflowReference ||
+    input.financialContext?.workflowState);
+  const explicitTopicSwitch = /^\s*(?:let'?s|can we|i(?:'d| would| actually want to))\s+(?:talk|discuss|think)\b/i.test(input.message);
+  const safePendingTopicSwitch = pendingWorkflow && explicitTopicSwitch &&
+    isSafePendingWorkflowTopicSwitch(input.message);
+  // A clear pending-workflow topic switch remains read-only. Answer the current
+  // topic before the general financial-context guard so an outage cannot turn
+  // a promotion discussion into a repeated approval prompt.
+  if (safePendingTopicSwitch && /\b(?:promotion|promoted|new role|raise)\b/i.test(input.message) &&
+      /\b(?:let's|can we|i(?:'d| would| actually want to))\s+(?:talk|discuss)\b/i.test(input.message)) {
+    return "A promotion can bring a lot of change, even when it's good news. What feels most uncertain: expectations, day-to-day changes, or how you'd like to approach it? The savings suggestion remains pending and unchanged.";
+  }
+  if (safePendingTopicSwitch && /\b(?:debt|credit card|loan|interest rate)\b/i.test(input.message)) {
+    return "We can focus on the debt first. The savings suggestion remains pending and unchanged. If you want, we can compare the debt's interest rate with how much flexibility you want to keep in your budget.";
+  }
   if (isOrdinaryQuestion(input.message) && /\b(?:weekend|rainy day)\b/i.test(input.message) &&
       /\b(?:brainstorm|suggest|ideas|options|things to do)\b/i.test(input.message)) {
     return "For a rainy weekend, you could visit a library or museum, watch a movie at home, or try a new recipe. Choose based on whether you want to stay in or get out.";
   }
   if (input.responseFocus && /\bpodcasts?\b/i.test(input.responseFocus) && /\bwalks?\b/i.test(input.responseFocus)) {
     return "For a relaxed walk, try a conversational interview podcast or a short nature series; a 20–30 minute episode can fit the route.";
+  }
+  if (safePendingTopicSwitch) {
+    return "Of course—we can focus on what you raised. The savings suggestion remains pending and unchanged while we talk. What would you like to work through first?";
   }
   if (input.pendingAction || (input.financialContext?.workflowState !== undefined) ||
       (input.financialContext?.financialFacts.length ?? 0) > 0 ||

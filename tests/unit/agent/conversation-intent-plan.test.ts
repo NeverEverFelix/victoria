@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildConversationIntentPlan, mayDispatchConversationIntent } from "../../../src/agent/conversation-intent-plan.js";
+import { buildConversationIntentPlan, mayDispatchConversationIntent, shouldDispatchConversationIntent } from "../../../src/agent/conversation-intent-plan.js";
+import type { AdvisoryTurnPlan } from "../../../src/agent/turn-understanding.js";
 
 describe("contextual multi-intent plan", () => {
   it.each([
@@ -75,6 +76,35 @@ describe("contextual multi-intent plan", () => {
     for (const candidate of [plan, record, transfer, noTransfer]) {
       expect(candidate.requestedActions).not.toContainEqual(expect.objectContaining({ kind: "approve" }));
     }
+  });
+
+  it("uses one read-only handoff and keeps action or ambiguous plans out of it", () => {
+    const dialogue = buildConversationIntentPlan({
+      message: "I actually want to talk about the promotion instead.",
+      hasPendingWorkflow: true
+    });
+    const proposal = buildConversationIntentPlan({ message: "Please record the $35 savings entry." });
+    const ambiguousApproval = buildConversationIntentPlan({ message: "Yes, but what about the debt?", hasPendingWorkflow: true });
+
+    expect(shouldDispatchConversationIntent(dialogue, "I actually want to talk about the promotion instead.")).toBe(true);
+    expect(shouldDispatchConversationIntent(proposal, "Please record the $35 savings entry.")).toBe(false);
+    expect(shouldDispatchConversationIntent(ambiguousApproval, "Yes, but what about the debt?")).toBe(false);
+  });
+
+  it("uses model interpretation to route nuanced read-only dialogue while preserving savings-moment routing", () => {
+    const modelDialogue: AdvisoryTurnPlan = {
+      schemaVersion: 1, primaryIntent: "financial_reflection", secondaryIntents: ["dialogue"],
+      dialogueActs: ["personal_update", "reflection"], questionFocus: "What feels different about saving now?",
+      references: [], requestedReadOnlyTools: [], actionMention: "none", requestedAction: "none",
+      uncertainty: { needsClarification: false, reasons: [] }
+    };
+    const reflection = "Work promoted me and I feel strange about saving more.";
+    const reflectionPlan = buildConversationIntentPlan({ message: reflection });
+    const avoidedSpend = "I cooked at home instead of ordering takeout.";
+    const avoidedSpendPlan = buildConversationIntentPlan({ message: avoidedSpend });
+
+    expect(shouldDispatchConversationIntent(reflectionPlan, reflection, modelDialogue, "general_finance")).toBe(true);
+    expect(shouldDispatchConversationIntent(avoidedSpendPlan, avoidedSpend, modelDialogue, "avoided_spend")).toBe(false);
   });
 
   it("marks contextual referents as hints without resolving or authorizing them", () => {

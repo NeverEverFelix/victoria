@@ -44,12 +44,12 @@ describe("provider comparison runner", () => {
     expect(report.arms[0]?.summary.usage.calls).toBe(2);
     expect(report.arms[1]?.summary.usage.calls).toBe(4);
     expect(report.arms[1]?.summary.usage.callsByRole).toEqual({
-      financial_moment: 2, savings_reasoning: 1, companion_voice: 1
+      turn_understanding: 0, financial_moment: 2, savings_reasoning: 1, companion_voice: 1
     });
     expect(report.arms[1]?.summary.usage.requestIds).toHaveLength(4);
     expect(report.arms[1]?.summary.roleLatencyMs.financial_moment.sampleCount).toBe(2);
     expect(report.arms[1]?.summary.usage.estimatedCostUsdByRole).toEqual({
-      financial_moment: 0.00008, savings_reasoning: 0.00004, companion_voice: 0.00004
+      turn_understanding: 0, financial_moment: 0.00008, savings_reasoning: 0.00004, companion_voice: 0.00004
     });
     expect(report.arms[1]?.summary.costPerTurnUsd.sampleCount).toBe(1);
     expect(report.arms[1]?.summary.safetyFailures).toBe(0);

@@ -67,24 +67,25 @@ import { buildVictoriaConversationContext, resolveFinancialReferenceHint } from 
 import type { ResolvedFinancialReference, VictoriaConversationContext } from "./conversation-context-builder.js";
 import { isRetrievableMemory, planMemoryRetrieval } from "./memory/retrieval-planner.js";
 import { isMemoryLearningEligibleTurn } from "./memory/memory-learning-policy.js";
+import { learnConversationalMemories, withCurrentTurnEvidence } from "./memory/memory-learning-service.js";
 import type { ContextReferenceResolver } from "./context-reference-resolver.js";
 import { buildConversationContextSnapshot, type ConversationContextSnapshot, type ConversationReplyFallbackReason, type ConversationResponder, type ConversationResponderInput, type ConversationResponderMemory } from "./conversation-responder.js";
 import { ConversationReplyService } from "./conversation-reply-service.js";
 import { calculateReadOnlySavingsQuestion } from "./read-only-calculator.js";
-import { buildConversationIntentPlan, mayDispatchConversationIntent } from "./conversation-intent-plan.js";
+import { buildConversationIntentPlan, shouldDispatchConversationIntent } from "./conversation-intent-plan.js";
+import { interpretConversationTurn, type TurnUnderstandingProvider } from "./turn-understanding.js";
 import {
   isPendingCorrectionReplacementRequest,
   isPendingGoalRetargetRequest,
   isSafePendingWorkflowTopicSwitch,
   canSkipFinancialClassification,
   isOrdinaryQuestion,
-  shouldRouteToConversationResponder,
   isReadOnlyEventHistoryQuestion
 } from "./conversation-routing.js";
 import { isPendingFinancialWorkflowExpired, resolvePendingWorkflowMessage } from "./pending-workflow-policy.js";
 import { isUsableTransactionHistoryEstimate, type TransactionHistoryProvider } from "./transaction-history-provider.js";
 import { employerCoveredRecurringSpend, freedRecurringSpend, isBudgetingAdviceQuestion, isExplicitRealMoneyMovementRequest, isRealMoneyMovementRequest } from "./money-movement-intent.js";
-import { isExplicitInterestCorrectionEvidence, isExplicitUserEvidence, validateMemoryCandidates, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
+import { isExplicitInterestCorrectionEvidence, isExplicitUserEvidence, type ConversationalMemoryExtractor } from "./memory/conversational-memory-extractor.js";
 import { authoritativeEpisodeOutcome, isUsableEpisodicSummary, SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY, suppressLifecycleConflictingEpisodes, validateEpisodicSummary, type AuthoritativeEpisodeOutcome, type EpisodicMemorySummarizer } from "./memory/episodic-summary.js";
 import { validatePersonalizedReply, type ConversationalReplyPersonalizer } from "./memory/personalized-reply.js";
 import type { PendingAmountClarification, PendingAmountClarificationStore } from "./pending-amount-clarification-store.js";
@@ -111,6 +112,8 @@ export interface VictoriaAgentDependencies {
   onConversationalMemoryExtractionFailure?: (errorName: string) => void;
   /** Receives an enumerated fallback reason only; no user message or draft content is included. */
   onConversationReplyFallback?: (reason: ConversationReplyFallbackReason) => void;
+  /** Reports only a categorical reason when contextual interpretation falls back to the typed deterministic plan. */
+  onTurnUnderstandingFallback?: (reason: "unavailable" | "invalid_output") => void;
   /** Receives only the failed provider stage; the turn continues with conservative deterministic interpretation. */
   onFinancialMomentFallback?: (source: "classifier" | "specialist") => void;
   /** Safe runtime trace: excludes message text, memory values, and hidden reasoning. */
@@ -1118,7 +1121,7 @@ export class VictoriaAgent {
     }
     const responsePreferenceInput = conversationResponsePreferenceInput(memory.conversationalMemories ?? []);
     const episodicSummaries = selectConversationEpisodeSummaries(memory.conversationalMemories ?? [], request.message);
-    const contextSnapshot = buildConversationContextSnapshot({
+    const baseContextSnapshot = buildConversationContextSnapshot({
       message: request.message,
       recentTurns: conversationContext,
       memories: conversationResponderMemories(memory.conversationalMemories ?? [], responderFinancialContext, request.message),
@@ -1128,6 +1131,25 @@ export class VictoriaAgent {
       ...(canUseEventHistory ? { conversationSavingsEvents: responderFinancialContext.conversationSavingsEvents } : {}),
       financialContext: responderFinancialContext
     });
+    const canSkipFinancialMoment = Boolean(this.dependencies.conversationResponder) &&
+      canSkipFinancialClassification(request.message) && !pendingAction && !pendingGoalAction &&
+      !pendingCorrection && !pendingClarification;
+    const understandingProvider = this.dependencies.llm.understandTurn
+      ? this.dependencies.llm as TurnUnderstandingProvider
+      : undefined;
+    const interpretation = await interpretConversationTurn({
+      contextSnapshot: baseContextSnapshot,
+      fallback: intentPlan,
+      ...(canSkipFinancialMoment && understandingProvider ? { provider: understandingProvider } : {})
+    });
+    const contextSnapshot: ConversationContextSnapshot = Object.freeze({
+      ...baseContextSnapshot,
+      turnUnderstanding: interpretation.plan
+    });
+    if (interpretation.failure) {
+      try { this.dependencies.onTurnUnderstandingFallback?.(interpretation.failure); }
+      catch { /* Content-free diagnostics cannot interrupt the current turn. */ }
+    }
     const activeProposalReference = financialContext.workflowState?.status === "awaiting_confirmation"
       ? financialContext.workflowState.currentMessageProposalReference
       : undefined;
@@ -1157,9 +1179,6 @@ export class VictoriaAgent {
         decision: { ...pendingAction.decision, action: "ask_follow_up", classification, userFacingMessage: message }
       };
     }
-    const canSkipFinancialMoment = Boolean(this.dependencies.conversationResponder) &&
-      canSkipFinancialClassification(request.message) && !pendingAction && !pendingGoalAction &&
-      !pendingCorrection && !pendingClarification;
     const { classification: classifiedMessage, teamAdvice, resolvedReference } = canSkipFinancialMoment
       ? {
           classification: {
@@ -1213,34 +1232,19 @@ export class VictoriaAgent {
     });
     if (memoryLearningTurn && !scopedAllocationTargetChoice && !interestSavedThisTurn && this.dependencies.conversationalMemoryExtractor &&
         !pendingCorrection && !pendingGoalAction && !pendingAction) {
-      try {
-        const candidates = await this.dependencies.conversationalMemoryExtractor.extract({ userMessage: request.message });
-        const memories = validateMemoryCandidates(candidates, request.message);
-        for (const candidate of memories) {
-          const history = await this.dependencies.memory.listConversationalMemories(request.userId);
-          const prior = [...history].reverse().find((item) =>
-            item.category === candidate.category && item.key === candidate.key);
-          if (prior?.value === candidate.value && prior.evidence === candidate.evidence) continue;
-          await this.dependencies.memory.rememberConversationalMemory(request.userId, {
-            ...withCurrentTurnEvidence(candidate, request),
-            ...(prior ? { supersedesId: prior.id } : {})
-          });
-        }
-        if (memories.length > 0) {
-          memoryAcknowledgement = "I'll keep that in mind for future conversations.";
-        }
-      } catch {
-        try {
-          this.dependencies.onConversationalMemoryExtractionFailure?.("provider_or_validation_error");
-        } catch {
-          // Failure reporting is best-effort and cannot block the current turn.
-        }
-        // Optional extraction cannot block the current turn or financial safety checks.
+      const learnedCount = await learnConversationalMemories({
+        request,
+        storage: this.dependencies.memory,
+        extractor: this.dependencies.conversationalMemoryExtractor,
+        ...(this.dependencies.onConversationalMemoryExtractionFailure
+          ? { onFailure: this.dependencies.onConversationalMemoryExtractionFailure } : {})
+      });
+      if (learnedCount > 0) {
+        memoryAcknowledgement = "I'll keep that in mind for future conversations.";
       }
     }
-    if (this.dependencies.conversationResponder && mayDispatchConversationIntent(intentPlan) &&
-        (shouldRouteToConversationResponder(request.message) ||
-          (intentPlan.intents.includes("dialogue") && intentPlan.readOnlyQuestions[0] === request.message.trim()))) {
+    if (this.dependencies.conversationResponder &&
+        shouldDispatchConversationIntent(intentPlan, request.message, interpretation.plan, classification.type)) {
       return this.respondConversationalTurn(request, conversationContext,
         "I can help think that through. What would be most useful to focus on first?", undefined,
         canUseEventHistory ? responderFinancialContext.conversationSavingsEvents : undefined,
@@ -1761,18 +1765,13 @@ export class VictoriaAgent {
   private async learnFromReadOnlyTopicTurn(request: AgentRequest): Promise<void> {
     const extractor = this.dependencies.conversationalMemoryExtractor;
     if (!extractor) return;
-    try {
-      const candidates = await extractor.extract({ userMessage: request.message });
-      for (const candidate of validateMemoryCandidates(candidates, request.message)) {
-        await this.dependencies.memory.rememberConversationalMemory(request.userId, withCurrentTurnEvidence(candidate, request));
-      }
-    } catch {
-      try {
-        this.dependencies.onConversationalMemoryExtractionFailure?.("provider_or_validation_error");
-      } catch {
-        // Best-effort telemetry cannot block the read-only response.
-      }
-    }
+    await learnConversationalMemories({
+      request,
+      storage: this.dependencies.memory,
+      extractor,
+      ...(this.dependencies.onConversationalMemoryExtractionFailure
+        ? { onFailure: this.dependencies.onConversationalMemoryExtractionFailure } : {})
+    });
   }
 
   private async correctRememberedSpendFromConversation(
@@ -3732,23 +3731,4 @@ function mapEpisodeSourceTurns(
     if (turnId?.trim()) references.push({ turnId, userMessage: message });
   }
   return Object.freeze(references);
-}
-
-function withCurrentTurnEvidence(
-  memory: Omit<ConversationalMemory, "id" | "createdAt">,
-  request: AgentRequest
-): Omit<ConversationalMemory, "id" | "createdAt"> {
-  const current = request.sourceTurnReferences?.find((reference) => reference.userMessage === request.message);
-  if (!current?.turnId.trim()) return memory;
-  const existing = Array.isArray(memory.sourceMetadata?.sourceTurnReferences)
-    ? memory.sourceMetadata.sourceTurnReferences.filter((item): item is { turnId: string } =>
-      Boolean(item && typeof item === "object" && "turnId" in item && typeof item.turnId === "string"))
-    : [];
-  return {
-    ...memory,
-    sourceMetadata: {
-      ...memory.sourceMetadata,
-      sourceTurnReferences: [...new Map([...existing, { turnId: current.turnId }].map((item) => [item.turnId, item])).values()]
-    }
-  };
 }

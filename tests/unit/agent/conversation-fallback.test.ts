@@ -119,6 +119,39 @@ describe("deterministicConversationFallback", () => {
     }))).toBe(baseline);
   });
 
+  it("answers a promotion topic switch during a pending proposal without repeating approval language", () => {
+    const reply = deterministicConversationFallback(input(
+      "I actually want to talk about what the promotion means for my budget.",
+      { pendingAction: "savings_entry", baselineReply: "Do you approve recording $35.00?" }
+    ));
+
+    expect(reply).toContain("A promotion can bring a lot of change");
+    expect(reply).toContain("remains pending and unchanged");
+    expect(reply).not.toMatch(/approve|recording \$35/i);
+  });
+
+  it("keeps a debt topic switch read-only while a savings proposal is pending", () => {
+    const reply = deterministicConversationFallback(input(
+      "Can we talk about my credit card debt instead?",
+      { pendingAction: "savings_entry", baselineReply: "Do you approve recording $35.00?" }
+    ));
+
+    expect(reply).toContain("focus on the debt first");
+    expect(reply).toContain("remains pending and unchanged");
+    expect(reply).not.toMatch(/approve|recording \$35|ledger entry/i);
+  });
+
+  it("keeps an unrecognized but explicit topic switch separate from a pending approval", () => {
+    const reply = deterministicConversationFallback(input(
+      "Can we talk about my new team instead?",
+      { pendingAction: "savings_entry", baselineReply: "Do you approve recording $35.00?" }
+    ));
+
+    expect(reply).toContain("focus on what you raised");
+    expect(reply).toContain("remains pending and unchanged");
+    expect(reply).not.toMatch(/approve|recording \$35/i);
+  });
+
   it("uses the supplied baseline for a message outside its deterministic topics", () => {
     const baseline = "Tell me what has been on your mind.";
     expect(deterministicConversationFallback(input("I've been thinking about my garden", {

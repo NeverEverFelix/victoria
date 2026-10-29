@@ -282,6 +282,7 @@ Normative safety rules and their stable identifiers live in `docs/specification/
 - Savings Reasoning chooses whether to ask, suggest, or reflect. When it chooses ask, its clarification wording goes directly to the user and Companion Voice does not rewrite it.
 - Habit-based savings wording remains explicitly estimated after companion voice drafting.
 - The curated specialist readiness corpus preserves expected baseline and advisory-team outcomes for explicit amounts, known estimates, missing amounts, vague savings, regretful spend, transfer requests, and multiple amounts.
+- Read-only conversation turns pass the full scoped context to a strict model advisory plan; malformed or authority-bearing fields fall back safely, and financial turns reuse the existing Financial Moment call instead of adding a duplicate interpretation request.
 - The readiness harness calculates nearest-rank p50/p95 summaries across multiple turns and rejects invalid latency observations; mock timings are not treated as provider SLA evidence.
 - The prototype records per-specialist and total elapsed time, the evaluation harness summarizes multi-turn p50/p95, and the orchestrator never invokes more than three specialists in a turn.
 - Turn execution has a pure queued/running/completed/failed lifecycle; retries retain the accepted turn identity, and illegal or non-chronological transitions are rejected.
@@ -463,6 +464,7 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - A read-only responder turn while a proposal revision awaits a valid amount receives the active proposal identity and `awaitingValidRevision` marker; an unrelated topic has no active-proposal reference, and “yes” still cannot approve the old amount.
 - On an eligible turn with a deterministically extracted fact and a distinct provider-extracted stable fact, both may be stored; provider candidates must retain explicit evidence, stability, sensitivity, and confidence validation, skip exact repeats, and supersede changed prior values.
 - Retrying an accepted turn with a changed extraction paraphrase for the same memory category/key must not append a second current fact when both carry the same source turn ID.
+- Shared memory learning persists only validated candidates, links a changed fact to its predecessor, preserves source-turn provenance, skips exact retries, and reports provider failure without including message content.
 - Memory retrieval resolves superseded versions by category/key identity, retaining distinct facts from different categories even when their keys match.
 - Structured conversation context, retrieval ranking, and personalized replies share the same user-provenance, confidence, non-future timestamp, inactive-interest, and bounded-evidence eligibility gate.
 - Directly extracted user memories without an explicit source type receive `user_statement` provenance consistently across storage adapters; explicit source types are preserved.
@@ -499,6 +501,7 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - When a job-change question names concern about social time, a deterministic fallback responds to that concern with practical unknowns to ask about, without assuming the user's schedule or introducing financial claims.
 - For a no-action ordinary conversation with no validated financial facts or event history, failed response generation can use a topic-specific focused clarification for evenings, groceries, or weekends; pending financial workflows retain their deterministic baseline and later require the same exact approval.
 - The review's “I actually want to talk about what the promotion means for my budget” topic switch reaches read-only conversation with a savings proposal pending; the proposal stays unrecorded and a later explicit yes records only its exact amount.
+- If conversational generation fails on that pending-proposal promotion topic switch, the fallback answers the promotion concern, says the suggestion remains pending and unchanged, and does not repeat approval language; a later explicit yes still records only the original exact amount.
 - A configured provider model and key automatically enable financial understanding and conversational generation on the chat route; mock adapters remain test doubles. No user-facing mode selection is needed.
 
 

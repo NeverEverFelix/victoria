@@ -40,9 +40,10 @@ describe("ProviderUsageReporter", () => {
       inputTokens: 1_250,
       outputTokens: 600,
       estimatedCostUsd: 0.00245,
-      estimatedCostUsdByRole: { financial_moment: 0.002, savings_reasoning: 0, companion_voice: 0.00045 },
-      callsByRole: { financial_moment: 1, savings_reasoning: 0, companion_voice: 1 },
+      estimatedCostUsdByRole: { turn_understanding: 0, financial_moment: 0.002, savings_reasoning: 0, companion_voice: 0.00045 },
+      callsByRole: { turn_understanding: 0, financial_moment: 1, savings_reasoning: 0, companion_voice: 1 },
       tokensByRole: {
+        turn_understanding: { input: 0, output: 0 },
         financial_moment: { input: 1_000, output: 500 },
         savings_reasoning: { input: 0, output: 0 },
         companion_voice: { input: 250, output: 100 }
@@ -64,7 +65,7 @@ describe("ProviderUsageReporter", () => {
       effectiveDate: "2026-10-01",
       inputUsdPerMillionTokens: 1,
       outputUsdPerMillionTokens: 2
-    }).estimatedCostUsdByRole).toEqual({ financial_moment: 0, savings_reasoning: null, companion_voice: 0 });
+    }).estimatedCostUsdByRole).toEqual({ turn_understanding: 0, financial_moment: 0, savings_reasoning: null, companion_voice: 0 });
   });
 
   it("groups available response timings by provider role", () => {
@@ -74,7 +75,7 @@ describe("ProviderUsageReporter", () => {
     reporter.report({ role: "financial_moment" });
 
     expect(reporter.roleLatenciesMs()).toEqual({
-      financial_moment: [12], savings_reasoning: [27], companion_voice: []
+      turn_understanding: [], financial_moment: [12], savings_reasoning: [27], companion_voice: []
     });
   });
 
