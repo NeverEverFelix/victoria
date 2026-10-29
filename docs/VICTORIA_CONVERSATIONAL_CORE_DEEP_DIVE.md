@@ -369,6 +369,8 @@ through priorities first. The $35 ledger proposal can stay unrecorded.
 
 **Implementation update (October 28, 2026):** The shared retrieval planner now accepts per-category ceilings and applies them after newest-version resolution and relevance ranking. Conversational responder and personalization retrieval cap categories at two records within their six-record memory budgets, while canonical financial context keeps its existing six fact slots. A regression confirms that a high-scoring cluster of goals cannot exclude relevant habit and preference memories. This reduces category crowding without broadening provenance eligibility; query rewriting, conflict handling, and episodic retrieval remain open, so F8 is still partial.
 
+**Implementation update (October 29, 2026):** Retrieval now honors explicit `supersedesId` links between the same fact identity before applying timestamp and relevance ranking. A regression with tied timestamps and a stale version that strongly matches the query confirms the corrected value remains current. This makes version resolution more robust to timestamp ties; semantic conflict detection across distinct fact keys and query rewriting remain open, so F8 stays partial.
+
 ### F9 — Short-term memory, episodic memory and financial authority require clearer boundaries [MEDIUM; confirmed source]
 
 **Evidence:** `VictoriaAgent.respond()` loads bounded transcript strings, calls `summarizeOverflowingConversation`, and persists the latest messages. `summarizeConversation` around lines 183–200 selects recent user utterances, deduplicates by digest and saves episode candidates. `MemoryOrchestrator` separately owns current-memory filtering, correction and forgetting.

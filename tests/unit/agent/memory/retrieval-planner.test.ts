@@ -23,6 +23,19 @@ describe("planMemoryRetrieval", () => {
     expect(result.map(({ id }) => id)).toEqual(["latest", "hike"]);
   });
 
+  it("uses an explicit same-fact supersession link when timestamps tie", () => {
+    const old = memory("old-goal", "goal:japan", "Saving for a trip to Japan.", {
+      category: "goal", semanticSimilarity: 1
+    });
+    const correction = memory("corrected-goal", "goal:japan", "Saving for a trip to Italy.", {
+      category: "goal", sourceType: "user_correction", supersedesId: "old-goal", semanticSimilarity: 0
+    });
+
+    const result = planMemoryRetrieval({ memories: [old, correction], query: "Japan trip", limit: 6 });
+
+    expect(result.map(({ id }) => id)).toEqual(["corrected-goal"]);
+  });
+
   it("never retrieves inactive, low confidence, or non-user memories", () => {
     const result = planMemoryRetrieval({
       memories: [

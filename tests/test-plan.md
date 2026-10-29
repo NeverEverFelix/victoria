@@ -489,6 +489,7 @@ The consent-gated Link bootstrap has executable coverage in [`unit/app/plaid-lin
 - Reads return events only for the exact user and conversation and preserve stable event identity.
 - The Context Builder passes a bounded, provenance-labeled, read-only projection to specialists without treating it as approval or ledger proof.
 - Eligible retrieved memories are deduplicated to their newest current fact and ranked for the current message and active workflow before the six-fact context cap; a relevant older correction must outrank newer unrelated facts.
+- A same-fact memory with an explicit `supersedesId` link takes precedence over the referenced prior version even when their timestamps tie; similarity to the stale value cannot restore the superseded memory.
 - Prompt-context and personalization retrieval use the same deterministic relevance planner while retaining separate category, confidence, provenance, and lifecycle eligibility gates.
 - Optional stable-memory extraction runs for eligible read-only savings-progress turns, but skips uncertain, sensitive, forget/correction, and action-oriented intents; extraction never replaces the answer or changes action state.
 - Ordinary read-only replies stay concise, while an explicit request to explain, compare, or brainstorm can receive a more detailed response; both styles use the same financial-claim and action validation.

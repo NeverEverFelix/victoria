@@ -46,11 +46,18 @@ export function planMemoryRetrieval(input: MemoryRetrievalPlanInput): readonly C
     return [{ memory, identity, createdAt, rank, alwaysRelevant }];
   });
 
-  // Resolve duplicate versions before relevance ranking so an old, highly relevant
-  // value cannot reappear when a newer correction exists.
+  // Explicit same-fact supersession wins even when timestamps tie or drift.
+  // Resolve versions before relevance ranking so a stale, highly relevant value
+  // cannot reappear when a correction exists.
   ranked.sort((a, b) => b.createdAt - a.createdAt || b.rank - a.rank || a.memory.id.localeCompare(b.memory.id));
+  const supersededIds = new Set(ranked.flatMap((candidate) => {
+    if (!candidate.memory.supersedesId) return [];
+    const prior = ranked.find((item) => item.memory.id === candidate.memory.supersedesId);
+    return prior?.identity === candidate.identity ? [prior.memory.id] : [];
+  }));
+  const unsuperseded = ranked.filter(({ memory }) => !supersededIds.has(memory.id));
   const seen = new Set<string>();
-  const current = ranked.filter(({ identity }) => {
+  const current = unsuperseded.filter(({ identity }) => {
     if (seen.has(identity)) return false;
     seen.add(identity);
     return true;
