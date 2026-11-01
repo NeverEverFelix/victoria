@@ -45,6 +45,8 @@ export interface AgentRequest {
   userId: string;
   message: string;
   conversationId?: string;
+  /** Authenticated durable turn identity, used to commit recovery receipts with financial actions. */
+  turnId?: string;
   approvedActionId?: string;
   /** Stable turn IDs and exact user text loaded from the authenticated turn repository. */
   sourceTurnReferences?: readonly { readonly turnId: string; readonly userMessage: string }[];
@@ -118,6 +120,13 @@ export interface PendingSavingsEntryCorrection {
 export interface AgentResponse {
   message: string;
   decision: AgentDecision;
+}
+
+/** User-visible result written in the same database transaction as an approved mocked action. */
+export interface TurnActionReceipt extends AgentResponse {
+  readonly turnId: string;
+  readonly userId: string;
+  readonly conversationId: string;
 }
 
 export interface ToolCallRequest {

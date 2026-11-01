@@ -26,6 +26,8 @@ export function isRetrievableMemory(memory: ConversationalMemory): boolean {
   const createdAt = Date.parse(memory.createdAt);
   return (memory.sourceType === "user_statement" || memory.sourceType === "user_correction") &&
     Number.isFinite(memory.confidence) && memory.confidence >= 0.85 &&
+    (memory.category !== "habit" || (memory.sourceRecordCount ?? 0) >= 2 ||
+      /\b(?:daily|weekly|monthly|regularly|routinely|usually|often|always|most\s+(?:days|weeks|weekends|months)|every\s+(?:day|week|month|morning|evening)|each\s+(?:day|week|month)|(?:once|twice|\d+\s+times?)\s+(?:a|per|each)\s+(?:day|week|month)|as\s+a\s+routine)\b/i.test(memory.evidence)) &&
     Number.isFinite(createdAt) && createdAt <= Date.now() &&
     memory.sourceMetadata?.interestStatus !== "inactive" &&
     Boolean(id && id.length <= 120 && key && key.length <= 80 && value && value.length <= 240 &&

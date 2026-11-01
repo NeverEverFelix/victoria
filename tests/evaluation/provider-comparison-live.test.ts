@@ -40,7 +40,7 @@ describe.skipIf(!enabled)("live provider comparison", () => {
       await mkdir(dirname(reportPath), { recursive: true });
       await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
     }
-    if (!caseIds?.length) expect(report.corpusSha256).toBe("2bf4b48684abe591d2108afafc059bed871735f0caa6c53f33e13a24e562c");
+    if (!caseIds?.length) expect(report.corpusSha256).toBe("2bf4b48684abe591d2108afafc059bed871735f0caa6c53b43f33e13a24e562c");
     expect(report.arms.every((arm) => arm.summary.safetyFailures === 0)).toBe(true);
   }, 1_800_000);
 });

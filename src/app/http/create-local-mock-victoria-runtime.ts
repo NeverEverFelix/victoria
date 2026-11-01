@@ -16,6 +16,8 @@ import { MemoryOrchestrator } from "../../agent/memory/memory-orchestrator.js";
 import { OpenAiEmbeddingProvider } from "../../agent/memory/openai-embedding-provider.js";
 import { SEMANTIC_MEMORY_EMBEDDING_DIMENSIONS } from "../../agent/memory/semantic-embedding.js";
 import { createPostgresTurnStore } from "../turns/postgres-pool.js";
+import { PostgresMemoryLearningQueue } from "../turns/memory-learning-queue.js";
+import { createMemoryLearningProcessor } from "../turns/memory-learning-processor.js";
 import { createVictoriaSessionAuthenticator } from "./signed-session-auth.js";
 import { createVictoriaChatHandler } from "./victoria-chat-handler.js";
 import { createHash, createHmac } from "node:crypto";
@@ -29,16 +31,21 @@ import { PostgresPendingEntryCorrectionStore } from "../savings/postgres-pending
 import { PostgresConversationCoordinator } from "../turns/postgres-conversation-coordinator.js";
 import { PostgresTurnRepository } from "../turns/postgres-turn-repository.js";
 import { createQueuedTurnProcessor } from "../turns/queued-turn-processor.js";
+import { createStaleTurnRecoveryProcessor } from "../turns/stale-turn-recovery.js";
 import { createMemoryManagementHandlers } from "./memory-management-handler.js";
 import { createConversationFinishHandler } from "./conversation-finish-handler.js";
 import { createTurnResultHandler } from "./turn-result-handler.js";
 import { createQueuedTurnProcessHandler } from "./queued-turn-process-handler.js";
 import { createSubmitTurnHandler } from "./submit-turn-handler.js";
+import { createStaleTurnRecoveryHandler } from "./stale-turn-recovery-handler.js";
 
 export interface LocalMockVictoriaRuntime {
   readonly handler: ReturnType<typeof createVictoriaChatHandler>;
   readonly finishHandler: ReturnType<typeof createConversationFinishHandler>;
   readonly processQueuedTurn?: ReturnType<typeof createQueuedTurnProcessor>;
+  readonly recoverStaleTurns?: ReturnType<typeof createStaleTurnRecoveryProcessor>;
+  readonly staleTurnRecoveryHandler?: ReturnType<typeof createStaleTurnRecoveryHandler>;
+  readonly processMemoryLearning?: ReturnType<typeof createMemoryLearningProcessor>;
   readonly turnResultHandler?: ReturnType<typeof createTurnResultHandler>;
   readonly processQueuedTurnHandler?: ReturnType<typeof createQueuedTurnProcessHandler>;
   readonly submitTurnHandler?: ReturnType<typeof createSubmitTurnHandler>;
@@ -76,6 +83,7 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
   let savingsEventStore: PostgresConversationSavingsEventStore | undefined;
   let conversationCoordinator: PostgresConversationCoordinator | undefined;
   let turnRepository: PostgresTurnRepository | undefined;
+  let memoryLearningQueue: PostgresMemoryLearningQueue | undefined;
   let persistentMemoryKey = "mock-memory";
   if (persistentMemoryEnabled) {
     try {
@@ -90,6 +98,7 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
         persistentPools.set(config.databaseUrl, pool);
       }
       turnRepository = new PostgresTurnRepository(pool);
+      memoryLearningQueue = new PostgresMemoryLearningQueue(pool);
       const embeddings = embeddingsEnabled
           ? new OpenAiEmbeddingProvider({
             apiKey: openAiKey!,
@@ -159,6 +168,7 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
         apiKey: openAiKey!, model: env.OPENAI_MODEL!
       })
     } : {}),
+    ...(memoryExtractorEnabled && memoryLearningQueue ? { memoryLearningEnqueuer: memoryLearningQueue } : {}),
     ...(memoryExtractorEnabled ? {
       onConversationalMemoryExtractionFailure: (errorName: string) => {
         console.warn("Victoria conversational memory extraction failed; continuing without provider-derived memories.", { errorName });
@@ -184,6 +194,16 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
   });
   const processQueuedTurn = turnRepository
     ? createQueuedTurnProcessor({ turns: turnRepository, agent, ...(conversationCoordinator ? { conversationCoordinator } : {}) })
+    : undefined;
+  const recoverStaleTurns = turnRepository && processQueuedTurn
+    ? createStaleTurnRecoveryProcessor({ turns: turnRepository, processQueuedTurn })
+    : undefined;
+  const cronSecret = env.CRON_SECRET?.trim();
+  const staleTurnRecoveryHandler = recoverStaleTurns && cronSecret && Buffer.byteLength(cronSecret, "utf8") >= 32
+    ? createStaleTurnRecoveryHandler({ cronSecret, run: recoverStaleTurns })
+    : undefined;
+  const processMemoryLearning = turnRepository && memoryLearningQueue && memoryExtractorEnabled
+    ? createMemoryLearningProcessor({ queue: memoryLearningQueue, turns: turnRepository, agent })
     : undefined;
   const turnResultHandler = turnRepository
     ? createTurnResultHandler({ authenticate: createVictoriaSessionAuthenticator(secret), turns: turnRepository })
@@ -219,6 +239,9 @@ export function getLocalMockVictoriaRuntime(env: Record<string, string | undefin
     handler,
     finishHandler,
     ...(processQueuedTurn ? { processQueuedTurn } : {}),
+    ...(recoverStaleTurns ? { recoverStaleTurns } : {}),
+    ...(staleTurnRecoveryHandler ? { staleTurnRecoveryHandler } : {}),
+    ...(processMemoryLearning ? { processMemoryLearning } : {}),
     ...(turnResultHandler ? { turnResultHandler } : {}),
     ...(processQueuedTurnHandler ? { processQueuedTurnHandler } : {}),
     ...(submitTurnHandler ? { submitTurnHandler } : {}),

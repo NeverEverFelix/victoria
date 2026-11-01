@@ -5,6 +5,13 @@ export interface LatencySummary {
   maxMs: number | null;
 }
 
+export interface NumericSummary {
+  sampleCount: number;
+  p50: number | null;
+  p95: number | null;
+  max: number | null;
+}
+
 /** Nearest-rank percentile summary; calculate over many complete turns, not one turn. */
 export function summarizeLatencies(samplesMs: readonly number[]): LatencySummary {
   if (samplesMs.some((sample) => !Number.isFinite(sample) || sample < 0)) {
@@ -17,6 +24,21 @@ export function summarizeLatencies(samplesMs: readonly number[]): LatencySummary
     p50Ms: nearestRank(sorted, 0.5),
     p95Ms: nearestRank(sorted, 0.95),
     maxMs: sorted[sorted.length - 1] ?? null
+  };
+}
+
+/** Nearest-rank summary for non-time measurements such as estimated USD cost. */
+export function summarizeValues(samples: readonly number[]): NumericSummary {
+  if (samples.some((sample) => !Number.isFinite(sample) || sample < 0)) {
+    throw new Error("Summary values must be finite non-negative numbers.");
+  }
+  if (samples.length === 0) return { sampleCount: 0, p50: null, p95: null, max: null };
+  const sorted = [...samples].sort((left, right) => left - right);
+  return {
+    sampleCount: sorted.length,
+    p50: nearestRank(sorted, 0.5),
+    p95: nearestRank(sorted, 0.95),
+    max: sorted[sorted.length - 1] ?? null
   };
 }
 

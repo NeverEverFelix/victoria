@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import nextEnv from "@next/env";
 import { OpenAiConversationResponder } from "../../src/agent/conversation-responder.js";
+import type { ConversationReplyTrace } from "../../src/agent/conversation-reply-service.js";
+import type { FinancialAssessmentRoute } from "../../src/agent/victoria-agent.js";
 import { MockVictoriaTools } from "../../src/agent/tools/mock-tools.js";
 import { createVictoriaAgent } from "../../src/app/create-victoria-agent.js";
 import { parseVictoriaEnv } from "../../src/config/env.js";
+import { ProviderUsageReporter } from "../../src/agent/telemetry/provider-usage-reporter.js";
 
 const enabled = process.env.RUN_PROVIDER_CONVERSATION_CHALLENGE === "1";
 if (enabled && (process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true")) {
@@ -31,6 +34,9 @@ describe.skipIf(!enabled)("live provider conversation challenge", () => {
     }
 
     const providerCalls: Array<{ format: string; input?: string }> = [];
+    const usageReporter = new ProviderUsageReporter();
+    const assessmentRoutes: FinancialAssessmentRoute[] = [];
+    const replyTraces: ConversationReplyTrace[] = [];
     const fetcher: typeof fetch = async (input, init) => {
       const body = JSON.parse(String(init?.body)) as { text?: { format?: { name?: string } }; input?: string };
       providerCalls.push({
@@ -46,7 +52,12 @@ describe.skipIf(!enabled)("live provider conversation challenge", () => {
       env: { ...env, openAiAgentTeamEnabled: true },
       tools,
       fetcher,
-      conversationResponder: new OpenAiConversationResponder({ apiKey: key, model: env.openAiModel, fetcher })
+      providerUsageReporter: usageReporter,
+      onFinancialAssessmentRoute: (route) => assessmentRoutes.push(route),
+      onConversationReplyTrace: (trace) => replyTraces.push(trace),
+      conversationResponder: new OpenAiConversationResponder({
+        apiKey: key, model: env.openAiModel, fetcher, usageReporter
+      })
     });
     const send = (message: string) => agent.respond({ userId, conversationId, message });
 
@@ -77,10 +88,31 @@ describe.skipIf(!enabled)("live provider conversation challenge", () => {
     const detailedRequest = providerCalls.find((call) => call.format === "conversation_reply_v1" &&
       call.input?.includes("rainy weekend"));
     expect(detailedRequest?.input).toContain('"responseDepth":"detailed"');
+    const conversationCallStart = providerCalls.length;
+    const usageStart = usageReporter.snapshot().length;
+    const conversationalTurn = await agent.respond({
+      userId, conversationId: `${conversationId}_ordinary`, message: "I had a really good weekend at the lake."
+    });
+    const conversationalCalls = providerCalls.slice(conversationCallStart);
+    const conversationalUsage = usageReporter.snapshot().slice(usageStart);
+    expect(conversationalTurn.decision.action).toBe("reflect");
+    expect(assessmentRoutes.at(-1)).toBe("skipped_model_dialogue");
+    expect(conversationalUsage.map((record) => record.role)).toContain("turn_understanding");
+    expect(conversationalUsage.map((record) => record.role)).toContain("companion_voice");
+    expect(replyTraces.at(-1)).toMatchObject({ route: "ordinary_dialogue" });
+    expect(["provider_accepted", "retry_accepted"]).toContain(replyTraces.at(-1)?.outcome);
+    const replyFallbackCount = replyTraces.filter((trace) => trace.outcome === "fallback").length;
     process.stdout.write(`${JSON.stringify({
       model: env.openAiModel,
       providerCallCount: providerCalls.length,
       providerRoles: providerCalls.map((call) => call.format),
+      modelApprovedDialogueRoute: assessmentRoutes.at(-1),
+      modelApprovedDialogueProviderRoles: conversationalCalls.map((call) => call.format),
+      modelApprovedDialogueTrace: replyTraces.at(-1),
+      modelApprovedDialogueElapsedMs: conversationalUsage.reduce((total, record) => total + (record.elapsedMs ?? 0), 0),
+      conversationReplyFallbacks: replyFallbackCount,
+      conversationReplyAttempts: replyTraces.length,
+      conversationReplyFallbackRate: replyTraces.length === 0 ? null : replyFallbackCount / replyTraces.length,
       turns: [proposal, topicShift, ambiguousApproval, history, approved].map(({ message, decision }) => ({
         message, action: decision.action, amountCents: decision.suggestion?.amountCents ?? null
       })),

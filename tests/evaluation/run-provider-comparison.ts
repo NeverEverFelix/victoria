@@ -1,15 +1,15 @@
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { readFileSync } from "node:fs";
-import { FINANCIAL_MOMENT_PROMPT_VERSION, OpenAiFinancialMomentAdapter } from "../../src/agent/llm/openai-financial-moment.js";
+import { FINANCIAL_MOMENT_PROMPT_VERSION, TURN_UNDERSTANDING_PROMPT_VERSION, OpenAiFinancialMomentAdapter } from "../../src/agent/llm/openai-financial-moment.js";
 import { createOpenAiAgentTeamSpecialists, SAVINGS_REASONING_PROMPT_VERSION } from "../../src/agent/team/openai-specialists.js";
 import { MockMemoryProvider } from "../../src/agent/memory/mock-memory.js";
 import { MockVictoriaTools } from "../../src/agent/tools/mock-tools.js";
-import { VictoriaAgent } from "../../src/agent/victoria-agent.js";
+import { VictoriaAgent, type FinancialAssessmentRoute } from "../../src/agent/victoria-agent.js";
 import type { AgentActionType, UserHabit } from "../../src/agent/types.js";
 import { ProviderUsageReporter, type ProviderUsageRateCard, type ProviderUsageRecord } from "../../src/agent/telemetry/provider-usage-reporter.js";
 import { applyProviderEvalStateSetup } from "./fixtures/provider-eval-v1-setups.js";
-import { summarizeLatencies } from "./metrics.js";
+import { summarizeLatencies, summarizeValues } from "./metrics.js";
 import corpus from "./fixtures/provider-eval-v1.json";
 
 const corpusUrl = new URL("./fixtures/provider-eval-v1.json", import.meta.url);
@@ -47,6 +47,10 @@ export interface ProviderComparisonTurn {
   actualAmountCents?: number;
   intentProbeElapsedMs: number | null;
   targetElapsedMs: number | null;
+  targetProviderCallCount: number | null;
+  targetProviderElapsedMs: number | null;
+  targetElapsedOutsideRecordedProviderCallsMs: number | null;
+  financialAssessmentRoute: FinancialAssessmentRoute | null;
   estimatedCostUsd: number | null;
   response: string | null;
   setupActions: AgentActionType[];
@@ -70,7 +74,11 @@ export interface ProviderComparisonArm {
     actionPasses: number;
     amountPasses: number;
     latencyMs: ReturnType<typeof summarizeLatencies>;
-    costPerTurnUsd: ReturnType<typeof summarizeLatencies>;
+    costPerTurnUsd: ReturnType<typeof summarizeValues>;
+    targetProviderCallsPerTurn: ReturnType<typeof summarizeValues>;
+    targetProviderElapsedMs: ReturnType<typeof summarizeLatencies>;
+    targetElapsedOutsideRecordedProviderCallsMs: ReturnType<typeof summarizeLatencies>;
+    financialAssessmentRoutes: Record<FinancialAssessmentRoute, number>;
     roleLatencyMs: Record<ProviderUsageRecord["role"], ReturnType<typeof summarizeLatencies>>;
     usage: ReturnType<ProviderUsageReporter["summarize"]>;
     retryCount: 0;
@@ -86,11 +94,13 @@ export interface ProviderComparisonReport {
   environment: "local";
   timeoutMs: 8_000;
   promptVersions: {
+    turnUnderstanding: typeof TURN_UNDERSTANDING_PROMPT_VERSION;
     financialMoment: typeof FINANCIAL_MOMENT_PROMPT_VERSION;
     savingsReasoning: typeof SAVINGS_REASONING_PROMPT_VERSION;
     companionVoice: "companion-voice-instructions-v1";
   };
   schemaVersions: {
+    turnUnderstanding: "advisory_turn_plan_v1";
     financialMoment: "financial_moment_v1";
     savingsReasoning: "savings_assessment_v1";
     companionVoice: "companion_voice_v1";
@@ -126,11 +136,13 @@ export async function runProviderComparison(options: ProviderComparisonOptions):
     environment: "local",
     timeoutMs: 8_000,
     promptVersions: {
+      turnUnderstanding: TURN_UNDERSTANDING_PROMPT_VERSION,
       financialMoment: FINANCIAL_MOMENT_PROMPT_VERSION,
       savingsReasoning: SAVINGS_REASONING_PROMPT_VERSION,
       companionVoice: "companion-voice-instructions-v1"
     },
     schemaVersions: {
+      turnUnderstanding: "advisory_turn_plan_v1",
       financialMoment: "financial_moment_v1",
       savingsReasoning: "savings_assessment_v1",
       companionVoice: "companion_voice_v1"
@@ -168,6 +180,7 @@ async function runArm(
     const memory = new MockMemoryProvider(habits);
     const tools = new MockVictoriaTools(habits);
     const recordsBeforeCase = providerUsageReporter.snapshot().length;
+    let financialAssessmentRoute: FinancialAssessmentRoute | null = null;
     const llm = new OpenAiFinancialMomentAdapter({
       apiKey: options.apiKey,
       model: options.model,
@@ -175,11 +188,12 @@ async function runArm(
       ...(options.fetcher ? { fetcher: options.fetcher } : {})
     });
     const agent = armId === "financial_moment_baseline"
-      ? new VictoriaAgent({ llm, memory, tools })
+      ? new VictoriaAgent({ llm, memory, tools, onFinancialAssessmentRoute: (route) => { financialAssessmentRoute = route; } })
       : new VictoriaAgent({
           llm,
           memory,
           tools,
+          onFinancialAssessmentRoute: (route) => { financialAssessmentRoute = route; },
           specialists: createOpenAiAgentTeamSpecialists({
             apiKey: options.apiKey,
             model: options.model,
@@ -213,6 +227,10 @@ async function runArm(
         ...(scenario.expectedAmountCents !== undefined ? { expectedAmountCents: scenario.expectedAmountCents } : {}),
         intentProbeElapsedMs: null,
         targetElapsedMs: null,
+        targetProviderCallCount: null,
+        targetProviderElapsedMs: null,
+        targetElapsedOutsideRecordedProviderCallsMs: null,
+        financialAssessmentRoute: null,
         estimatedCostUsd: estimateCost(usage, options.rateCard),
         response: null,
         setupActions: [],
@@ -247,6 +265,10 @@ async function runArm(
 
     const entriesBefore = await tools.listSavingsEntries(userId);
     const correctionsBefore = await tools.listSavingsEntryCorrections(userId);
+    const recordsBeforeTarget = providerUsageReporter.snapshot().length;
+    // Stateful setup turns use the same agent instance; report only the route
+    // chosen for the target turn, never the last setup prelude's route.
+    financialAssessmentRoute = null;
     const targetStarted = performance.now();
     let response: Awaited<ReturnType<VictoriaAgent["respond"]>> | undefined;
     try {
@@ -268,6 +290,8 @@ async function runArm(
     });
     const actualAmountCents = response ? readActualAmount(response) : undefined;
     const usage = providerUsageReporter.snapshot().slice(recordsBeforeCase);
+    const targetUsage = providerUsageReporter.snapshot().slice(recordsBeforeTarget);
+    const targetProviderElapsedMs = targetUsage.reduce((total, record) => total + (record.elapsedMs ?? 0), 0);
 
     turns.push({
       id: scenario.id,
@@ -280,6 +304,10 @@ async function runArm(
       ...(actualAmountCents !== undefined ? { actualAmountCents } : {}),
       intentProbeElapsedMs,
       targetElapsedMs,
+      targetProviderCallCount: targetUsage.length,
+      targetProviderElapsedMs,
+      targetElapsedOutsideRecordedProviderCallsMs: Math.max(0, targetElapsedMs - targetProviderElapsedMs),
+      financialAssessmentRoute,
       estimatedCostUsd: estimateCost(usage, options.rateCard),
       response: response?.message ?? null,
       setupActions: setupResponses.map((item) => item.decision.action),
@@ -308,8 +336,18 @@ async function runArm(
       latencyMs: summarizeLatencies(turns.flatMap((turn) =>
         turn.targetElapsedMs === null ? [] : [turn.targetElapsedMs]
       )),
-      costPerTurnUsd: summarizeLatencies(turns.flatMap((turn) => turn.estimatedCostUsd === null ? [] : [turn.estimatedCostUsd])),
+      costPerTurnUsd: summarizeValues(turns.flatMap((turn) => turn.estimatedCostUsd === null ? [] : [turn.estimatedCostUsd])),
+      targetProviderCallsPerTurn: summarizeValues(turns.flatMap((turn) => turn.targetProviderCallCount === null ? [] : [turn.targetProviderCallCount])),
+      targetProviderElapsedMs: summarizeLatencies(turns.flatMap((turn) => turn.targetProviderElapsedMs === null ? [] : [turn.targetProviderElapsedMs])),
+      targetElapsedOutsideRecordedProviderCallsMs: summarizeLatencies(turns.flatMap((turn) => turn.targetElapsedOutsideRecordedProviderCallsMs === null ? [] : [turn.targetElapsedOutsideRecordedProviderCallsMs])),
+      financialAssessmentRoutes: {
+        assessed: turns.filter((turn) => turn.financialAssessmentRoute === "assessed").length,
+        skipped_plain_question: turns.filter((turn) => turn.financialAssessmentRoute === "skipped_plain_question").length,
+        skipped_model_dialogue: turns.filter((turn) => turn.financialAssessmentRoute === "skipped_model_dialogue").length,
+        resolved_pending_amount: turns.filter((turn) => turn.financialAssessmentRoute === "resolved_pending_amount").length
+      },
       roleLatencyMs: {
+        turn_understanding: summarizeLatencies(roleLatencies.turn_understanding),
         financial_moment: summarizeLatencies(roleLatencies.financial_moment),
         savings_reasoning: summarizeLatencies(roleLatencies.savings_reasoning),
         companion_voice: summarizeLatencies(roleLatencies.companion_voice)

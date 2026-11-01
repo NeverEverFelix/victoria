@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { buildConversationIntentPlan, mayDispatchConversationIntent } from "../../../src/agent/conversation-intent-plan.js";
+import { buildConversationIntentPlan, mayDispatchConversationIntent, shouldDispatchConversationIntent, shouldSkipFinancialAssessmentForAdvisoryTurn } from "../../../src/agent/conversation-intent-plan.js";
+import type { AdvisoryTurnPlan } from "../../../src/agent/turn-understanding.js";
+import type { ClassifiedMessage } from "../../../src/agent/types.js";
+
+function understoodTurn(
+  deterministicPlan: ReturnType<typeof buildConversationIntentPlan>,
+  message: string,
+  financialClassificationType: ClassifiedMessage["type"] = "general_finance",
+  advisoryPlan: AdvisoryTurnPlan = {
+    schemaVersion: 1, primaryIntent: "dialogue", secondaryIntents: [], dialogueActs: ["question"],
+    references: [], requestedReadOnlyTools: [], actionMention: "none", requestedAction: "none",
+    uncertainty: { needsClarification: false, reasons: [] }
+  }
+) {
+  return { message, deterministicPlan, advisoryPlan, financialClassificationType };
+}
 
 describe("contextual multi-intent plan", () => {
   it.each([
@@ -75,6 +90,57 @@ describe("contextual multi-intent plan", () => {
     for (const candidate of [plan, record, transfer, noTransfer]) {
       expect(candidate.requestedActions).not.toContainEqual(expect.objectContaining({ kind: "approve" }));
     }
+  });
+
+  it("uses one read-only handoff and keeps action or ambiguous plans out of it", () => {
+    const dialogue = buildConversationIntentPlan({
+      message: "I actually want to talk about the promotion instead.",
+      hasPendingWorkflow: true
+    });
+    const proposal = buildConversationIntentPlan({ message: "Please record the $35 savings entry." });
+    const ambiguousApproval = buildConversationIntentPlan({ message: "Yes, but what about the debt?", hasPendingWorkflow: true });
+
+    expect(shouldDispatchConversationIntent(understoodTurn(dialogue, "I actually want to talk about the promotion instead."))).toBe(true);
+    expect(shouldDispatchConversationIntent(understoodTurn(proposal, "Please record the $35 savings entry."))).toBe(false);
+    expect(shouldDispatchConversationIntent(understoodTurn(ambiguousApproval, "Yes, but what about the debt?"))).toBe(false);
+  });
+
+  it("uses model interpretation to route nuanced read-only dialogue while preserving savings-moment routing", () => {
+    const modelDialogue: AdvisoryTurnPlan = {
+      schemaVersion: 1, primaryIntent: "financial_reflection", secondaryIntents: ["dialogue"],
+      dialogueActs: ["personal_update", "reflection"], questionFocus: "What feels different about saving now?",
+      references: [], requestedReadOnlyTools: [], actionMention: "none", requestedAction: "none",
+      uncertainty: { needsClarification: false, reasons: [] }
+    };
+    const reflection = "Work promoted me and I feel strange about saving more.";
+    const reflectionPlan = buildConversationIntentPlan({ message: reflection });
+    const avoidedSpend = "I cooked at home instead of ordering takeout.";
+    const avoidedSpendPlan = buildConversationIntentPlan({ message: avoidedSpend });
+
+    expect(shouldDispatchConversationIntent(understoodTurn(reflectionPlan, reflection, "general_finance", modelDialogue))).toBe(true);
+    expect(shouldDispatchConversationIntent(understoodTurn(avoidedSpendPlan, avoidedSpend, "avoided_spend", modelDialogue))).toBe(false);
+  });
+
+  it("skips financial assessment only when model and deterministic plans agree on plain dialogue", () => {
+    const modelDialogue: AdvisoryTurnPlan = {
+      schemaVersion: 1, primaryIntent: "dialogue", secondaryIntents: [], dialogueActs: ["personal_update"],
+      references: [], requestedReadOnlyTools: [], actionMention: "none", requestedAction: "none",
+      uncertainty: { needsClarification: false, reasons: [] }
+    };
+    const plainConversation = "I had a really good weekend at the lake.";
+    const plainPlan = buildConversationIntentPlan({ message: plainConversation });
+    expect(shouldSkipFinancialAssessmentForAdvisoryTurn({
+      message: plainConversation, deterministicPlan: plainPlan, advisoryPlan: modelDialogue
+    })).toBe(true);
+
+    for (const message of ["I saved $35 by switching gyms.", "I don't want to transfer money; let's discuss my budget.", "Yes, go ahead."]) {
+      const deterministicPlan = buildConversationIntentPlan({ message, hasPendingWorkflow: true });
+      expect(shouldSkipFinancialAssessmentForAdvisoryTurn({ message, deterministicPlan, advisoryPlan: modelDialogue })).toBe(false);
+    }
+    const uncertainPlan = { ...modelDialogue, uncertainty: { needsClarification: true, reasons: ["unclear"] } };
+    expect(shouldSkipFinancialAssessmentForAdvisoryTurn({
+      message: plainConversation, deterministicPlan: plainPlan, advisoryPlan: uncertainPlan
+    })).toBe(false);
   });
 
   it("marks contextual referents as hints without resolving or authorizing them", () => {

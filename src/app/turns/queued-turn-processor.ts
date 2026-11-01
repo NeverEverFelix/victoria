@@ -2,6 +2,8 @@ import type { VictoriaAgent } from "../../agent/victoria-agent.js";
 import type { AgentResponse } from "../../agent/types.js";
 import type { ConversationCoordinator } from "./conversation-coordinator.js";
 import type { TurnRepository } from "./turn-repository.js";
+import { completeTurnWithRecovery } from "./complete-turn-with-recovery.js";
+import { isTurnActionReceipt } from "./turn-action-receipt.js";
 
 export interface QueuedTurnProcessorDependencies {
   readonly turns: TurnRepository;
@@ -25,6 +27,35 @@ export function createQueuedTurnProcessor(dependencies: QueuedTurnProcessorDepen
     const execute = async (): Promise<ProcessQueuedTurnResult> => {
       const current = await dependencies.turns.get(input.userId, input.conversationId, input.turnId);
       if (!current) return { status: "not_queued", turnId: input.turnId };
+      if (isTurnActionReceipt(current.resultPayload)) {
+        if (current.status === "completed") return { status: "not_queued", turnId: current.id };
+        let recoverable = current;
+        try {
+          if (recoverable.status === "failed") {
+            recoverable = await dependencies.turns.compareAndTransition({
+              userId: input.userId, conversationId: input.conversationId, turnId: current.id,
+              expectedRevision: recoverable.revision, transition: { type: "retry", at: now() }
+            });
+          }
+          if (recoverable.status === "queued") {
+            recoverable = await dependencies.turns.compareAndTransition({
+              userId: input.userId, conversationId: input.conversationId, turnId: current.id,
+              expectedRevision: recoverable.revision, transition: { type: "start", at: now() }
+            });
+          }
+        } catch {
+          return { status: "already_claimed", turnId: current.id };
+        }
+        if (recoverable.status !== "running") return { status: "not_queued", turnId: current.id };
+        const response = current.resultPayload;
+        await completeTurnWithRecovery({
+          turns: dependencies.turns,
+          runningTurn: recoverable,
+          response,
+          completedAt: now()
+        });
+        return { status: "completed", turnId: current.id, response };
+      }
       if (current.status !== "queued") {
         return { status: current.status === "running" ? "already_claimed" : "not_queued", turnId: current.id };
       }
@@ -50,12 +81,14 @@ export function createQueuedTurnProcessor(dependencies: QueuedTurnProcessorDepen
           userId: running.userId,
           conversationId: running.conversationId,
           message: running.userMessage,
+          turnId: running.id,
           sourceTurnReferences
         });
-        await dependencies.turns.compareAndTransition({
-          userId: input.userId, conversationId: input.conversationId, turnId: running.id,
-          expectedRevision: running.revision,
-          transition: { type: "complete", at: now(), resultId: running.id, resultPayload: response }
+        await completeTurnWithRecovery({
+          turns: dependencies.turns,
+          runningTurn: running,
+          response,
+          completedAt: now()
         });
         return { status: "completed", turnId: running.id, response };
       } catch (error) {

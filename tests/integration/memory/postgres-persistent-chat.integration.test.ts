@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import {
   closeLocalPersistentMemoryPools,
@@ -14,6 +14,11 @@ import { PostgresMemoryRepository } from "../../../src/agent/memory/postgres-mem
 import { MemoryOrchestrator } from "../../../src/agent/memory/memory-orchestrator.js";
 import { suppressLifecycleConflictingEpisodes } from "../../../src/agent/memory/episodic-summary.js";
 import { MockLlmAdapter, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
+import { createQueuedTurn } from "../../../src/domain/turns/lifecycle.js";
+import { PostgresMemoryLearningQueue } from "../../../src/app/turns/memory-learning-queue.js";
+import { createMemoryLearningProcessor } from "../../../src/app/turns/memory-learning-processor.js";
+import { createStaleTurnRecoveryProcessor } from "../../../src/app/turns/stale-turn-recovery.js";
+import type { AgentDecision, TurnActionReceipt } from "../../../src/agent/types.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_POSTGRES_MEMORY_CHAT_INTEGRATION === "true" && isSafeLocalDatabase(databaseUrl);
@@ -49,6 +54,7 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
         category: "other", key: `interest:hiking:${randomUUID()}`,
         value: "Enjoys hiking and wants to explore local trails.", evidence: "I love hiking and want to explore local trails.",
         confidence: 0.95, sourceType: "user_statement",
+        sourceRecordCount: 2,
         sourceMetadata: { sourceTurnReferences: [{ turnId }] }
       });
       const episode = await firstMemoryRuntime.rememberConversationalMemory(userId, {
@@ -61,8 +67,10 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
 
       // A new repository and orchestrator model a process restart while keeping only the database.
       const restartedRepository = new PostgresMemoryRepository(store.pool);
+      const historicalRecords = await restartedRepository.listConversationalMemories(userId);
       const lifecycleRecords = await restartedRepository.listCurrentConversationalMemories(userId, true);
       const visibleRecords = await restartedRepository.listCurrentConversationalMemories(userId, false);
+      expect(historicalRecords.find((memory) => memory.id === fact.id)?.sourceRecordCount).toBe(2);
       expect(visibleRecords.find((memory) => memory.id === episode.id)?.sourceMetadata).toMatchObject({
         memoryKind: "episodic_summary", sourceTurnReferences: [{ turnId }]
       });
@@ -70,6 +78,91 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
         .not.toContain(episode.id);
       expect(lifecycleRecords.find((memory) => memory.sourceMetadata?.memoryStatus === "forgotten")?.sourceMetadata)
         .toMatchObject({ sourceTurnReferences: [{ turnId }] });
+    } finally {
+      await store.pool.end();
+    }
+  });
+
+  it("keeps learning jobs pending until their exact source turn completes and processes them once", async () => {
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 2 });
+    const turns = store.turns;
+    const queue = new PostgresMemoryLearningQueue(store.pool);
+    const turnId = `turn-${randomUUID()}`;
+    const acceptedAt = new Date().toISOString();
+    const baseMs = Date.parse(acceptedAt);
+    const turn = createQueuedTurn({
+      id: turnId, userId, conversationId: `memory-queue-${randomUUID()}`,
+      idempotencyKey: `idem-${randomUUID()}`, userMessage: "I like quiet mornings.",
+      requestFingerprint: randomUUID(), acceptedAt
+    });
+    const learnFromQueuedTurn = vi.fn(async () => undefined);
+    const processor = createMemoryLearningProcessor({
+      queue, turns, agent: { learnFromQueuedTurn }, createLeaseToken: () => `lease-${randomUUID()}`
+    });
+    const secondProcessor = createMemoryLearningProcessor({
+      queue, turns, agent: { learnFromQueuedTurn }, createLeaseToken: () => `lease-${randomUUID()}`
+    });
+    try {
+      await turns.accept(turn);
+      const running = await turns.compareAndTransition({
+        userId, conversationId: turn.conversationId, turnId,
+        expectedRevision: 0, transition: { type: "start", at: new Date(baseMs + 1).toISOString() }
+      });
+      expect(await queue.enqueue({ userId, conversationId: turn.conversationId, turnId })).toBe(true);
+      expect(await processor()).toMatchObject({ claimed: 0, completed: 0 });
+      expect(learnFromQueuedTurn).not.toHaveBeenCalled();
+      await turns.compareAndTransition({
+        userId, conversationId: turn.conversationId, turnId,
+        expectedRevision: running.revision,
+        transition: { type: "complete", at: new Date(baseMs + 2).toISOString(), resultId: turnId }
+      });
+
+      const [firstWorker, secondWorker] = await Promise.all([processor(), secondProcessor()]);
+      expect(firstWorker.claimed + secondWorker.claimed).toBe(1);
+      expect(firstWorker.completed + secondWorker.completed).toBe(1);
+      expect(firstWorker.retried + secondWorker.retried).toBe(0);
+      expect(learnFromQueuedTurn).toHaveBeenCalledExactlyOnceWith({
+        userId, conversationId: turn.conversationId, message: turn.userMessage,
+        sourceTurnReferences: [{ turnId, userMessage: turn.userMessage }]
+      });
+      expect(await processor()).toMatchObject({ claimed: 0, completed: 0 });
+    } finally {
+      await store.pool.end();
+    }
+  });
+
+  it("recovers a stale worker lease and rejects completion from the expired lease", async () => {
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 2 });
+    const queue = new PostgresMemoryLearningQueue(store.pool);
+    const turnId = `turn-${randomUUID()}`;
+    const acceptedAt = new Date().toISOString();
+    const baseMs = Date.parse(acceptedAt);
+    const turn = createQueuedTurn({
+      id: turnId, userId, conversationId: `memory-lease-${randomUUID()}`,
+      idempotencyKey: `idem-${randomUUID()}`, userMessage: "I prefer simple plans.",
+      requestFingerprint: randomUUID(), acceptedAt
+    });
+    try {
+      await store.turns.accept(turn);
+      const running = await store.turns.compareAndTransition({
+        userId, conversationId: turn.conversationId, turnId, expectedRevision: 0,
+        transition: { type: "start", at: new Date(baseMs + 1).toISOString() }
+      });
+      await store.turns.compareAndTransition({
+        userId, conversationId: turn.conversationId, turnId, expectedRevision: running.revision,
+        transition: { type: "complete", at: new Date(baseMs + 2).toISOString(), resultId: turnId }
+      });
+      expect(await queue.enqueue({ userId, conversationId: turn.conversationId, turnId })).toBe(true);
+      const oldLease = await queue.claim({ leaseToken: `old-${randomUUID()}`, leaseSeconds: 1 });
+      expect(oldLease?.turnId).toBe(turnId);
+      await store.pool.query(
+        "UPDATE victoria_memory_learning_jobs SET lease_expires_at = now() - interval '1 second' WHERE turn_id = $1",
+        [turnId]
+      );
+      const recoveredLease = await queue.claim({ leaseToken: `new-${randomUUID()}`, leaseSeconds: 60 });
+      expect(recoveredLease).toMatchObject({ turnId, attempts: 2 });
+      expect(await queue.complete(oldLease!)).toBe(false);
+      expect(await queue.complete(recoveredLease!)).toBe(true);
     } finally {
       await store.pool.end();
     }
@@ -641,6 +734,107 @@ describe.skipIf(!enabled)("local PostgreSQL-backed chat memory", () => {
         approval: allocation.approval,
         approvedActionId: allocation.approvedActionId
       })).rejects.toThrow("An approved action cannot be reused for a different goal allocation.");
+    } finally {
+      await store.pool.end();
+    }
+  });
+
+  it("recovers a mocked savings action after its database commit but before turn completion", async () => {
+    const recoveryUserId = `memory-check-${randomUUID()}`;
+    const conversationId = `action-receipt-${randomUUID()}`;
+    const token = signVictoriaSession({ userId: recoveryUserId, secret: firstSecret });
+    const runtime = getLocalMockVictoriaRuntime({ ...baseEnv, AUTH_SECRET: firstSecret });
+    expect(runtime?.processQueuedTurn).toBeDefined();
+
+    const proposalResponse = await runtime!.handler(chatRequest(token, conversationId,
+      "I almost bought a $12 lunch but decided to wait."), { conversationId });
+    expect(proposalResponse.status).toBe(200);
+
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 2 });
+    const turnId = `turn-${randomUUID()}`;
+    const acceptedAt = new Date(Date.now() - 30 * 60_000).toISOString();
+    const turn = createQueuedTurn({
+      id: turnId, userId: recoveryUserId, conversationId, idempotencyKey: `idem-${randomUUID()}`,
+      userMessage: "Yes", requestFingerprint: randomUUID(), acceptedAt
+    });
+    try {
+      const accepted = await store.turns.accept(turn);
+      await store.turns.compareAndTransition({
+        userId: recoveryUserId, conversationId, turnId: accepted.turn.id, expectedRevision: 0,
+        transition: { type: "start", at: new Date(Date.parse(acceptedAt) + 1).toISOString() }
+      });
+
+      const persistedProposal = await store.pool.query<{ decision: AgentDecision }>(
+        `SELECT decision FROM victoria_local_savings_proposals
+         WHERE user_id = $1 AND conversation_id = $2 ORDER BY created_at DESC LIMIT 1`,
+        [recoveryUserId, conversationId]
+      );
+      const pendingDecision = persistedProposal.rows[0]?.decision;
+      expect(pendingDecision).toBeDefined();
+      const proposal = pendingDecision?.proposal;
+      const event = pendingDecision?.savingsEvent;
+      const suggestion = pendingDecision?.suggestion;
+      const approvedActionId = pendingDecision?.toolCall?.actionId;
+      if (!proposal || !event || !suggestion || !approvedActionId) throw new Error("Expected a durable pending savings proposal.");
+
+      const message = "Done. I recorded $12.00 in your Victoria savings ledger. No real money has moved yet. This is only a mocked ledger record.";
+      const receipt: TurnActionReceipt = {
+        turnId, userId: recoveryUserId, conversationId, message,
+        decision: {
+          action: "create_ledger_entry", classification: pendingDecision.classification, userFacingMessage: message
+        }
+      };
+      const tools = new PostgresMockSavingsTools(store.pool);
+      await tools.createSavingsEntry({
+        userId: recoveryUserId, eventId: event.id, proposalId: proposal.id, approvalId: `approval-${randomUUID()}`,
+        suggestionId: suggestion.id, amountCents: suggestion.amountCents, reason: suggestion.reason,
+        ...(proposal.goalName ? { goalName: proposal.goalName } : {}), movementMode: "mock_ledger",
+        approvedActionId, turnActionReceipt: receipt
+      });
+
+      const interrupted = await store.turns.get(recoveryUserId, conversationId, turnId);
+      expect(interrupted).toMatchObject({ status: "running", resultPayload: { message, decision: { action: "create_ledger_entry" } } });
+      expect(await tools.listSavingsEntries(recoveryUserId)).toHaveLength(1);
+
+      const recoverySummary = await runtime!.recoverStaleTurns!();
+      expect(recoverySummary).toMatchObject({ scanned: 1, completedFromReceipt: 1, markedInterrupted: 0, racedOrFailed: 0 });
+      expect(await store.turns.get(recoveryUserId, conversationId, turnId)).toMatchObject({
+        status: "completed", resultPayload: { message, decision: { action: "create_ledger_entry" } }
+      });
+      expect(await tools.listSavingsEntries(recoveryUserId)).toHaveLength(1);
+    } finally {
+      await store.pool.end();
+    }
+  });
+
+  it("marks a stale pre-action turn interrupted instead of replaying the agent", async () => {
+    const store = createPostgresTurnStore(databaseUrl!, { maxPoolSize: 2 });
+    const recoveryUserId = `memory-check-${randomUUID()}`;
+    const conversationId = `stale-turn-${randomUUID()}`;
+    const turnId = `turn-${randomUUID()}`;
+    const acceptedAt = new Date(Date.now() - 30 * 60_000).toISOString();
+    const turn = createQueuedTurn({
+      id: turnId, userId: recoveryUserId, conversationId, idempotencyKey: `idem-${randomUUID()}`,
+      userMessage: "I skipped a purchase.", requestFingerprint: randomUUID(), acceptedAt
+    });
+    const processQueuedTurn = vi.fn(async () => { throw new Error("An unreceipted turn must not be replayed."); });
+    try {
+      await store.turns.accept(turn);
+      await store.turns.compareAndTransition({
+        userId: recoveryUserId, conversationId, turnId, expectedRevision: 0,
+        transition: { type: "start", at: new Date(Date.parse(acceptedAt) + 1_000).toISOString() }
+      });
+      const recover = createStaleTurnRecoveryProcessor({
+        turns: store.turns, processQueuedTurn, staleAfterMs: 60_000
+      });
+
+      await expect(recover()).resolves.toMatchObject({
+        scanned: 1, completedFromReceipt: 0, markedInterrupted: 1, racedOrFailed: 0
+      });
+      expect(processQueuedTurn).not.toHaveBeenCalled();
+      expect(await store.turns.get(recoveryUserId, conversationId, turnId)).toMatchObject({
+        status: "failed", failureCode: "worker_interrupted"
+      });
     } finally {
       await store.pool.end();
     }

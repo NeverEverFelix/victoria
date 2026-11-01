@@ -8,6 +8,7 @@ import type {
 import type { SavingsEntry, SavingsEntryCorrection, SavingsGoalAllocation } from "../../domain/savings/types.js";
 import { transitionSavingsProposal } from "../../domain/savings/proposal-lifecycle.js";
 import type { AgentDecision } from "../../agent/types.js";
+import type { TurnActionReceipt } from "../../agent/types.js";
 import { immutableSnapshot } from "../../domain/immutable.js";
 import type { PostgresPool } from "../shared/postgres-types.js";
 
@@ -96,6 +97,7 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
             input.approvedActionId, JSON.stringify(snapshot), entry.createdAt]
         );
       }
+      await persistTurnActionReceipt(client, input.userId, input.turnActionReceipt, "create_ledger_entry");
       await client.query("COMMIT");
       this.hydrateSavingsEntry(entry);
       return immutableSnapshot(entry);
@@ -153,6 +155,7 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
         if (!sameCorrection(correction, input)) {
           throw new Error("An approved action cannot be reused for a different savings correction.");
         }
+        await persistTurnActionReceipt(client, input.userId, input.turnActionReceipt, "correct_ledger_entry");
         await client.query("COMMIT");
         this.hydrateSavingsEntryCorrection(correction);
         return immutableSnapshot(correction);
@@ -224,6 +227,7 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
       const row = inserted.rows[0];
       if (!row) throw new Error("The savings correction could not be loaded after its write.");
       const correction = rowToCorrection(row);
+      await persistTurnActionReceipt(client, input.userId, input.turnActionReceipt, "correct_ledger_entry");
       await client.query("COMMIT");
       this.hydrateSavingsEntryCorrection(correction);
       return immutableSnapshot(correction);
@@ -277,6 +281,7 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
         if (!sameGoalAllocation(allocation, input)) {
           throw new Error("An approved action cannot be reused for a different goal allocation.");
         }
+        await persistTurnActionReceipt(client, input.userId, input.turnActionReceipt, "record_goal_allocation");
         await client.query("COMMIT");
         return immutableSnapshot(allocation);
       }
@@ -348,6 +353,7 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
         [allocation.id, allocation.userId, allocation.savingsEntryId, allocation.amountCents,
           allocation.goalName, allocation.approvedActionId, allocation.approval.id, allocation.createdAt]
       );
+      await persistTurnActionReceipt(client, input.userId, input.turnActionReceipt, "record_goal_allocation");
       await client.query("COMMIT");
       return immutableSnapshot(allocation);
     } catch (error) {
@@ -379,6 +385,38 @@ export class PostgresMockSavingsTools extends MockVictoriaTools {
     await this.listSavingsEntries(userId);
     await this.listSavingsEntryCorrections(userId);
     return super.getEffectiveSavingsEntryAmount(userId, savingsEntryId);
+  }
+}
+
+async function persistTurnActionReceipt(
+  client: Awaited<ReturnType<PostgresPool["connect"]>>,
+  userId: string,
+  receipt: TurnActionReceipt | undefined,
+  expectedAction: TurnActionReceipt["decision"]["action"]
+): Promise<void> {
+  if (!receipt) return;
+  if (!receipt.turnId.trim() || !receipt.conversationId.trim() || receipt.userId !== userId ||
+      !receipt.message.trim() || receipt.decision.userFacingMessage !== receipt.message ||
+      receipt.decision.action !== expectedAction) {
+    throw new Error("The turn action receipt does not match a completed approved mock-ledger action.");
+  }
+  const payload = JSON.stringify({ message: receipt.message, decision: receipt.decision });
+  const updated = await client.query<{ id: string }>(
+    `UPDATE victoria_turns SET result_payload = $4::jsonb
+     WHERE id = $1 AND user_id = $2 AND conversation_id = $3 AND status = 'running'
+       AND result_payload IS NULL
+     RETURNING id`,
+    [receipt.turnId, userId, receipt.conversationId, payload]
+  );
+  if (updated.rowCount === 1) return;
+
+  const existing = await client.query<{ status: string; same: boolean }>(
+    `SELECT status, result_payload = $4::jsonb AS same FROM victoria_turns
+     WHERE id = $1 AND user_id = $2 AND conversation_id = $3 FOR UPDATE`,
+    [receipt.turnId, userId, receipt.conversationId, payload]
+  );
+  if (existing.rows[0]?.status !== "running" || existing.rows[0].same !== true) {
+    throw new Error("The durable turn cannot accept this action receipt.");
   }
 }
 

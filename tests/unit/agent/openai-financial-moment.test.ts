@@ -1,8 +1,70 @@
 import { describe, expect, it, vi } from "vitest";
 import { OpenAiFinancialMomentAdapter } from "../../../src/agent/llm/openai-financial-moment.js";
 import { ProviderUsageReporter } from "../../../src/agent/telemetry/provider-usage-reporter.js";
+import { buildConversationContextSnapshot } from "../../../src/agent/conversation-responder.js";
 
 describe("OpenAiFinancialMomentAdapter", () => {
+  it("returns a strict advisory turn plan from the full canonical snapshot", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      usage: { input_tokens: 30, output_tokens: 20 },
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
+        schemaVersion: 1, primaryIntent: "financial_reflection", secondaryIntents: ["dialogue"],
+        dialogueActs: ["personal_update", "question"], questionFocus: "How should I think about saving?",
+        references: [], requestedReadOnlyTools: [], actionMention: "none", requestedAction: "none",
+        uncertainty: { needsClarification: false, reasons: [] }
+      }) }] }]
+    }));
+    const usageReporter = new ProviderUsageReporter();
+    const adapter = new OpenAiFinancialMomentAdapter({ apiKey: "test-key", model: "gpt-test", fetcher, usageReporter });
+    const contextSnapshot = buildConversationContextSnapshot({
+      message: "Work gave me a raise, and I feel weird about saving more. How should I think about it?",
+      recentTurns: ["Victoria: What has been on your mind about work?"], memories: []
+    });
+
+    const plan = await adapter.understandTurn({ contextSnapshot });
+
+    expect(plan).toMatchObject({ primaryIntent: "financial_reflection", requestedAction: "none" });
+    const request = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
+    expect(request.text.format).toMatchObject({ name: "advisory_turn_plan_v1", strict: true });
+    expect(request.input).toContain("Work gave me a raise");
+    expect(request.input).toContain("What has been on your mind about work?");
+    expect(request.text.format.schema.properties).not.toHaveProperty("amountCents");
+    expect(request.text.format.schema.properties).not.toHaveProperty("proposalId");
+    expect(usageReporter.snapshot()).toMatchObject([{ role: "turn_understanding", inputTokens: 30, outputTokens: 20 }]);
+  });
+
+  it("uses the same canonical snapshot, including the advisory plan, for financial classification", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
+        type: "general_finance", confidence: 0.9, merchantName: null, goalName: null,
+        revisionReason: null, referenceFactId: null, referencePeriod: null,
+        summary: "Discussing a work update", needsClarification: false
+      }) }] }]
+    }));
+    const adapter = new OpenAiFinancialMomentAdapter({ apiKey: "test-key", model: "gpt-test", fetcher });
+    const advisoryPlan = {
+      schemaVersion: 1 as const, primaryIntent: "financial_reflection" as const, secondaryIntents: ["dialogue" as const],
+      dialogueActs: ["personal_update" as const], references: [], requestedReadOnlyTools: [],
+      actionMention: "none" as const, requestedAction: "none" as const,
+      uncertainty: { needsClarification: false, reasons: [] }
+    };
+    const contextSnapshot = {
+      ...buildConversationContextSnapshot({ message: "Work gave me a raise, and I feel weird about saving more.", recentTurns: ["Victoria: What has been on your mind?"], memories: [] }),
+      turnUnderstanding: advisoryPlan
+    };
+
+    await adapter.classifyMessage({
+      userMessage: contextSnapshot.currentMessage,
+      memory: { habits: [], goals: [], recentDecisions: [] },
+      contextSnapshot
+    });
+
+    const request = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
+    expect(request.input).toContain('"turnUnderstanding":{"schemaVersion":1,"primaryIntent":"financial_reflection"');
+    expect(request.input).toContain('"content":"What has been on your mind?"');
+    expect(request.input).not.toContain('"recentConversation"');
+  });
+
   it("uses strict structured output and derives the amount from the user message", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
       usage: { input_tokens: 21, output_tokens: 13 },

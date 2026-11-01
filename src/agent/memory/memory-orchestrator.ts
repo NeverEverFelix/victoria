@@ -58,10 +58,11 @@ export class MemoryOrchestrator implements MemoryProvider {
     const sameTurnPrior = memory.sourceType !== "user_correction" && memory.sourceMetadata?.memoryStatus !== "forgotten" &&
       incomingTurnIds.size > 0 && [...active].reverse().find((item) =>
       item.category === memory.category && item.key === memory.key &&
-      [...memoryTurnIds(item)].some((turnId) => incomingTurnIds.has(turnId)));
+      [...incomingTurnIds].every((turnId) => memoryTurnIds(item).has(turnId)));
     if (sameTurnPrior) return sameTurnPrior;
     if (prior && prior.value === memory.value && prior.evidence === memory.evidence &&
         (prior.sourceType ?? "user_statement") === (memory.sourceType ?? "user_statement") &&
+        [...incomingTurnIds].every((turnId) => memoryTurnIds(prior).has(turnId)) &&
         prior.confidence >= memory.confidence) return prior;
     return this.storage.rememberConversationalMemory(userId, {
       ...memory,

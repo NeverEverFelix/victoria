@@ -146,7 +146,7 @@ async function requestOutput(input: {
   fetcher: typeof fetch;
   timeoutMs: number;
   formatName: string;
-  role: Exclude<ProviderUsageRecord["role"], "financial_moment">;
+  role: Exclude<ProviderUsageRecord["role"], "financial_moment" | "turn_understanding">;
   usageReporter?: ProviderUsageReporter;
   schema: object;
   instructions: string;

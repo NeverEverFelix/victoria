@@ -4,6 +4,14 @@
     {
       "path": "/api/cron/memory-retention",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/memory-learning",
+      "schedule": "40 3 * * *"
+    },
+    {
+      "path": "/api/cron/turn-recovery",
+      "schedule": "50 3 * * *"
     }
   ]
 }

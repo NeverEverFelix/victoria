@@ -10,7 +10,8 @@ import {
 import { createOpenAiAgentTeamSpecialists } from "../agent/team/openai-specialists.js";
 import { OpenAiContextReferenceResolver } from "../agent/context-reference-resolver.js";
 import type { ConversationReplyFallbackReason, ConversationResponder } from "../agent/conversation-responder.js";
-import type { ConversationTurnTrace } from "../agent/victoria-agent.js";
+import type { ConversationReplyTrace } from "../agent/conversation-reply-service.js";
+import type { ConversationTurnTrace, FinancialAssessmentRoute } from "../agent/victoria-agent.js";
 import type { ProviderUsageReporter } from "../agent/telemetry/provider-usage-reporter.js";
 import { buildFeatureFlags, type VictoriaEnv } from "../config/index.js";
 import type { UserHabit } from "../agent/types.js";
@@ -38,6 +39,8 @@ export interface CreateVictoriaAgentOptions {
   onCompanionVoiceValidationFailure?: (issues: readonly VoiceDraftIssue[]) => void;
   onFinancialMomentFallback?: (source: "classifier" | "specialist") => void;
   onConversationReplyFallback?: (reason: ConversationReplyFallbackReason) => void;
+  onConversationReplyTrace?: (trace: ConversationReplyTrace) => void;
+  onFinancialAssessmentRoute?: (route: FinancialAssessmentRoute) => void;
   onConversationTurnTrace?: (trace: ConversationTurnTrace) => void;
   pendingAmountClarifications?: PendingAmountClarificationStore;
   pendingSavingsActions?: PendingSavingsActionStore;
@@ -93,6 +96,8 @@ export function createVictoriaAgent(options: CreateVictoriaAgentOptions): Victor
       : {}),
     ...(options.onFinancialMomentFallback ? { onFinancialMomentFallback: options.onFinancialMomentFallback } : {}),
     ...(options.onConversationReplyFallback ? { onConversationReplyFallback: options.onConversationReplyFallback } : {}),
+    ...(options.onConversationReplyTrace ? { onConversationReplyTrace: options.onConversationReplyTrace } : {}),
+    ...(options.onFinancialAssessmentRoute ? { onFinancialAssessmentRoute: options.onFinancialAssessmentRoute } : {}),
     ...(options.onConversationTurnTrace ? { onConversationTurnTrace: options.onConversationTurnTrace } : {}),
     ...(options.pendingAmountClarifications ? { pendingAmountClarifications: options.pendingAmountClarifications } : {}),
     ...(options.pendingSavingsActions ? { pendingSavingsActions: options.pendingSavingsActions } : {}),

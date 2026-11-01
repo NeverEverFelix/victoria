@@ -28,7 +28,7 @@ export function isExplicitFinancialActionQuestion(message: string): boolean {
 }
 
 export function isConversationTopicTurn(message: string): boolean {
-  return isOrdinaryQuestion(message) ||
+  return isOrdinaryQuestion(message) || isExplicitReadOnlyTopicSwitch(message) ||
     /\b(?:let'?s|can we|i(?:'d| would) like to)\s+(?:talk|discuss|think)\s+about\b/i.test(message) ||
     /\b(?:switch|change)\s+(?:the\s+)?(?:topic|subject)\b/i.test(message) ||
     (!hasFinancialActionSignal(message) && message.trim().split(/\s+/).length >= 4 &&
@@ -102,7 +102,7 @@ export function isPendingGoalRetargetRequest(message: string): boolean {
 
 /** Explicit conversational topic changes remain read-only even when the topic contains finance words. */
 export function isExplicitReadOnlyTopicSwitch(message: string): boolean {
-  return /^\s*(?:let'?s|can we|i(?:'d| would| want to) like to|i want to)\s+(?:talk|discuss|think)\s+about\b/i.test(message) &&
+  return /^\s*(?:let'?s|can we|i(?:'d| would) like to|i want to|i actually want to)\s+(?:talk|discuss|think)\s+about\b/i.test(message) &&
     !/\b(?:record|log|revise|correct|approve|confirm|decline|transfer|deposit|withdraw|ledger)\b/i.test(message);
 }
 

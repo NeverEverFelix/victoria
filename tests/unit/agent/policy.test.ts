@@ -36,6 +36,8 @@ describe("agent policy", () => {
     expect(interpretApprovalResponse("Yes, record that $20 in my Victoria ledger.", 2_000)).toBe("explicit_approval");
     expect(interpretApprovalResponse("Yes, record that $25 in my Victoria ledger.", 2_000)).toBe("not_approval");
     expect(interpretApprovalResponse("Yes, record that $20 and transfer it from checking.", 2_000)).toBe("not_approval");
+    expect(interpretApprovalResponse("Yes, record that $20, and what did I say about rent?", 2_000)).toBe("not_approval");
+    expect(interpretApprovalResponse("Yes, record that $20. Also, which event did I mention first?", 2_000)).toBe("not_approval");
   });
 
   it("blocks real money movement without explicit approval", () => {

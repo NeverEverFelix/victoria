@@ -18,6 +18,9 @@ import { PostgresConversationSavingsEventStore } from "../savings/postgres-conve
 import { PostgresConversationCoordinator } from "../turns/postgres-conversation-coordinator.js";
 import { createQueuedTurnProcessor } from "../turns/queued-turn-processor.js";
 import { createPostgresTurnStore } from "../turns/postgres-pool.js";
+import { PostgresMemoryLearningQueue } from "../turns/memory-learning-queue.js";
+import { createMemoryLearningProcessor } from "../turns/memory-learning-processor.js";
+import { createStaleTurnRecoveryProcessor } from "../turns/stale-turn-recovery.js";
 import { createSupabaseBearerAuthenticator } from "../auth/supabase-bearer-auth.js";
 import { createVictoriaAgent } from "../create-victoria-agent.js";
 import { ProviderUsageReporter } from "../../agent/telemetry/provider-usage-reporter.js";
@@ -28,6 +31,8 @@ import { createConversationFinishHandler } from "./conversation-finish-handler.j
 import { createTurnResultHandler } from "./turn-result-handler.js";
 import { createQueuedTurnProcessHandler } from "./queued-turn-process-handler.js";
 import { createSubmitTurnHandler } from "./submit-turn-handler.js";
+import { createMemoryLearningHandler } from "./memory-learning-handler.js";
+import { createStaleTurnRecoveryHandler } from "./stale-turn-recovery-handler.js";
 
 type ChatHandler = ReturnType<typeof createVictoriaChatHandler>;
 type FinishHandler = ReturnType<typeof createConversationFinishHandler>;
@@ -36,9 +41,13 @@ type MemoryHandlers = ReturnType<typeof createMemoryManagementHandlers>;
 let cached: { readonly key: string; readonly runtime: {
   handler: ChatHandler; finishHandler: FinishHandler; memories: MemoryHandlers;
   processQueuedTurn: ReturnType<typeof createQueuedTurnProcessor>;
+  recoverStaleTurns: ReturnType<typeof createStaleTurnRecoveryProcessor>;
   turnResultHandler: TurnResultHandler;
   processQueuedTurnHandler: ReturnType<typeof createQueuedTurnProcessHandler>;
   submitTurnHandler: ReturnType<typeof createSubmitTurnHandler>;
+  processMemoryLearning?: ReturnType<typeof createMemoryLearningProcessor>;
+  memoryLearningHandler?: ReturnType<typeof createMemoryLearningHandler>;
+  staleTurnRecoveryHandler?: ReturnType<typeof createStaleTurnRecoveryHandler>;
 } } | undefined;
 
 /** Persistent server runtime: Supabase Auth is the sole identity issuer; PostgreSQL stores chat state. */
@@ -56,6 +65,7 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
     const providerEnabled = env.openAiModel !== "mock" && Boolean(env.openAiApiKey.trim()) &&
       !/(?:local-openai|replace|example|placeholder|changeme)/i.test(env.openAiApiKey);
     if (!providerEnabled) return null;
+    const memoryExtractionEnabled = source.OPENAI_MEMORY_EXTRACTION_ENABLED !== "false";
     const supabaseUrl = source.SUPABASE_URL?.trim();
     const publishableKey = source.SUPABASE_PUBLISHABLE_KEY?.trim();
     if (!supabaseUrl || !publishableKey) return null;
@@ -64,11 +74,13 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
       .update("\0").update(source.OPENAI_MEMORY_EXTRACTION_ENABLED === "false" ? "memory-off" : "memory-on")
       .update("\0").update(episodicSummariesEnabled ? "episodes-on" : "episodes-off")
       .update("\0").update(personalizedRepliesEnabled ? "personalized-replies-on" : "personalized-replies-off")
-      .update("\0").update(supabaseUrl).update("\0").update(publishableKey).digest("hex");
+      .update("\0").update(supabaseUrl).update("\0").update(publishableKey)
+      .update("\0").update(source.CRON_SECRET ?? "").digest("hex");
     if (cached?.key === key) return cached.runtime;
 
     const authenticate = createSupabaseBearerAuthenticator({ supabaseUrl, publishableKey, ...(fetcher ? { fetcher } : {}) });
     const { pool, turns } = createPostgresTurnStore(env.databaseUrl, { maxPoolSize: 2 });
+    const memoryLearningQueue = new PostgresMemoryLearningQueue(pool);
     const embeddings = new OpenAiEmbeddingProvider({ apiKey: env.openAiApiKey, dimensions: SEMANTIC_MEMORY_EMBEDDING_DIMENSIONS, ...(fetcher ? { fetcher } : {}) });
     const repository = new PostgresMemoryRepository(pool, undefined, embeddings);
     const memory = new MemoryOrchestrator(repository, { financialProfiles: repository });
@@ -85,10 +97,16 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
       savingsEvents,
       pendingSavingsActions, pendingGoalAllocationActions, pendingEntryCorrections, idFactory: randomUUID,
       providerUsageReporter,
-      ...(source.OPENAI_MEMORY_EXTRACTION_ENABLED !== "false" ? {
+      ...(memoryExtractionEnabled ? {
         conversationalMemoryExtractor: new OpenAiConversationalMemoryExtractor({
           apiKey: env.openAiApiKey, model: env.openAiModel, ...(fetcher ? { fetcher } : {})
         })
+      } : {}),
+      ...(memoryExtractionEnabled ? {
+        memoryLearningEnqueuer: memoryLearningQueue,
+        onMemoryLearningQueueFailure: (reason: "unavailable" | "turn_reference_missing") => {
+          console.warn("Victoria conversational memory learning was not queued.", { reason });
+        }
       } : {}),
       ...(source.OPENAI_MEMORY_EXTRACTION_ENABLED !== "false" ? {
         onConversationalMemoryExtractionFailure: (errorName: string) => {
@@ -103,6 +121,9 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
       },
       onConversationReplyFallback: (reason) => {
         console.warn("Victoria conversation reply used deterministic recovery.", { schemaVersion: 1, reason });
+      },
+      onConversationReplyTrace: (trace) => {
+        console.info("Victoria conversation reply trace", trace);
       },
       onConversationTurnTrace: (trace) => {
         console.info("Victoria turn trace", trace);
@@ -125,6 +146,10 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
     });
     const conversationCoordinator = new PostgresConversationCoordinator(pool);
     const processQueuedTurn = createQueuedTurnProcessor({ turns, agent, conversationCoordinator });
+    const recoverStaleTurns = createStaleTurnRecoveryProcessor({ turns, processQueuedTurn });
+    const processMemoryLearning = memoryExtractionEnabled
+      ? createMemoryLearningProcessor({ queue: memoryLearningQueue, turns, agent })
+      : undefined;
     const turnResultHandler = createTurnResultHandler({ authenticate, turns });
     const processQueuedTurnHandler = createQueuedTurnProcessHandler({ authenticate, process: processQueuedTurn });
     const submitTurnHandler = createSubmitTurnHandler({
@@ -143,7 +168,18 @@ export function getPersistentChatRuntime(source: EnvSource = process.env, fetche
     const finishHandler = createConversationFinishHandler({ authenticate, agent, conversationCoordinator, turns });
     const memoryForUser = createRlsScopedMemoryManagement(pool, embeddings);
     const memories = createMemoryManagementHandlers({ authenticate, memoryForUser });
-    const runtime = Object.freeze({ handler, finishHandler, memories, processQueuedTurn, turnResultHandler, processQueuedTurnHandler, submitTurnHandler });
+    const cronSecret = source.CRON_SECRET?.trim();
+    const staleTurnRecoveryHandler = cronSecret && Buffer.byteLength(cronSecret, "utf8") >= 32
+      ? createStaleTurnRecoveryHandler({ cronSecret, run: recoverStaleTurns })
+      : undefined;
+    const memoryLearningHandler = processMemoryLearning && cronSecret && Buffer.byteLength(cronSecret, "utf8") >= 32
+      ? createMemoryLearningHandler({ cronSecret, run: processMemoryLearning })
+      : undefined;
+    const runtime = Object.freeze({ handler, finishHandler, memories, processQueuedTurn, recoverStaleTurns, turnResultHandler,
+      processQueuedTurnHandler, submitTurnHandler,
+      ...(staleTurnRecoveryHandler ? { staleTurnRecoveryHandler } : {}),
+      ...(processMemoryLearning ? { processMemoryLearning } : {}),
+      ...(memoryLearningHandler ? { memoryLearningHandler } : {}) });
     cached = Object.freeze({ key, runtime });
     return runtime;
   } catch {
