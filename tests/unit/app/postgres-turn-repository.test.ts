@@ -113,4 +113,22 @@ describe("PostgresTurnRepository", () => {
     expect(update?.sql).toContain("result_payload = $7::jsonb");
     expect(update?.values[6]).toBe(JSON.stringify(payload));
   });
+
+  it("limits stale running-turn scans to the explicit cutoff and batch size", async () => {
+    const pool = new ScriptedPool((sql) => sql.includes("status = 'running'")
+      ? { rows: [row({ status: "running", attempt: 1, revision: 1, updated_at: "2026-10-05T11:00:00.000Z" })], rowCount: 1 }
+      : { rows: [], rowCount: 0 });
+    const repository = new PostgresTurnRepository(pool);
+
+    const stale = await repository.listStaleRunning({ olderThan: "2026-10-05T11:30:00.000Z", limit: 25 });
+
+    expect(stale).toHaveLength(1);
+    expect(stale[0]).toMatchObject({ status: "running", revision: 1 });
+    expect(pool.statements[0]?.sql).toContain("updated_at <= $1");
+    expect(pool.statements[0]?.sql).toContain("ORDER BY updated_at, id LIMIT $2");
+    expect(pool.statements[0]?.values).toEqual(["2026-10-05T11:30:00.000Z", 25]);
+    await expect(repository.listStaleRunning({ olderThan: "invalid", limit: 25 })).rejects.toThrow("valid cutoff");
+    await expect(repository.listStaleRunning({ olderThan: "2026-10-05T11:30:00.000Z", limit: 501 }))
+      .rejects.toThrow("limit from 1 through 500");
+  });
 });

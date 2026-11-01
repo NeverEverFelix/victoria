@@ -19,6 +19,9 @@ export interface TurnRepository {
   /** Returns accepted turns in stable chronological order, scoped to their owner and conversation. */
   listConversation?(userId: string, conversationId: string): Promise<readonly TurnRecord[]>;
 
+  /** Internal recovery scan; returns only running turns older than the supplied cutoff. */
+  listStaleRunning?(input: { readonly olderThan: string; readonly limit: number }): Promise<readonly TurnRecord[]>;
+
   /** Atomically applies a lifecycle transition only at the expected revision. */
   compareAndTransition(input: {
     userId: string;

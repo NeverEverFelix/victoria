@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildConversationContextSnapshot } from "../../../src/agent/conversation-responder.js";
 import { buildConversationIntentPlan } from "../../../src/agent/conversation-intent-plan.js";
-import { interpretConversationTurn, validateAdvisoryTurnPlan, type AdvisoryTurnPlan } from "../../../src/agent/turn-understanding.js";
+import { ConversationTurnUnderstandingService, interpretConversationTurn, validateAdvisoryTurnPlan, type AdvisoryTurnPlan } from "../../../src/agent/turn-understanding.js";
 
 const modelPlan: AdvisoryTurnPlan = {
   schemaVersion: 1,
@@ -68,5 +68,38 @@ describe("advisory turn understanding", () => {
     expect(validateAdvisoryTurnPlan({ ...modelPlan, requestedAction: "execute_transfer" })).toBeUndefined();
     expect(validateAdvisoryTurnPlan({ ...modelPlan, references: [{ phrase: "this", kind: "prior_topic", confidence: "clear", resolvedId: "proposal-1" }] }))
       .toBeUndefined();
+  });
+
+  it("owns content-free disagreement telemetry and ignores observer failures", async () => {
+    const contextSnapshot = snapshot();
+    const fallback = buildConversationIntentPlan({ message: contextSnapshot.currentMessage });
+    const onComparison = vi.fn();
+    const service = new ConversationTurnUnderstandingService({
+      provider: { understandTurn: async () => modelPlan }, onComparison
+    });
+    const result = await service.understand({ contextSnapshot, fallback });
+    expect(result.source).toBe("model");
+    expect(onComparison).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      deterministicAction: "none", modelAction: "none"
+    }));
+    expect(JSON.stringify(onComparison.mock.calls)).not.toContain(contextSnapshot.currentMessage);
+
+    const failingObserver = new ConversationTurnUnderstandingService({
+      provider: { understandTurn: async () => modelPlan },
+      onComparison() { throw new Error("diagnostic failure"); }
+    });
+    await expect(failingObserver.understand({ contextSnapshot, fallback })).resolves.toMatchObject({ source: "model" });
+  });
+
+  it("reports only an enumerated fallback reason when model interpretation fails", async () => {
+    const contextSnapshot = snapshot();
+    const fallback = buildConversationIntentPlan({ message: contextSnapshot.currentMessage });
+    const onFallback = vi.fn();
+    const service = new ConversationTurnUnderstandingService({
+      provider: { understandTurn: async () => { throw new Error(contextSnapshot.currentMessage); } }, onFallback
+    });
+    await service.understand({ contextSnapshot, fallback });
+    expect(onFallback).toHaveBeenCalledExactlyOnceWith("unavailable");
+    expect(JSON.stringify(onFallback.mock.calls)).not.toContain(contextSnapshot.currentMessage);
   });
 });

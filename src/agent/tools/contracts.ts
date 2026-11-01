@@ -5,6 +5,7 @@ import type {
   SavingsGoalAllocation,
   SavingsSuggestion
 } from "../../domain/savings/types.js";
+import type { TurnActionReceipt } from "../types.js";
 
 export type { SavingsEntry } from "../../domain/savings/types.js";
 
@@ -36,6 +37,8 @@ export interface CreateSavingsEntryInput {
   goalName?: string;
   movementMode: MoneyMovementMode;
   approvedActionId: string;
+  /** Persisted atomically with the ledger row for crash-safe turn completion. */
+  turnActionReceipt?: TurnActionReceipt;
 }
 
 export interface CreateSavingsGoalAllocationInput {
@@ -45,6 +48,8 @@ export interface CreateSavingsGoalAllocationInput {
   goalName: string;
   approval: SavingsGoalAllocation["approval"];
   approvedActionId: string;
+  /** Persisted atomically with the allocation row for crash-safe turn completion. */
+  turnActionReceipt?: TurnActionReceipt;
 }
 
 export interface CreateSavingsEntryCorrectionInput {
@@ -54,6 +59,8 @@ export interface CreateSavingsEntryCorrectionInput {
   reason: string;
   approvalId: string;
   approvedActionId: string;
+  /** Persisted atomically with the correction row for crash-safe turn completion. */
+  turnActionReceipt?: TurnActionReceipt;
 }
 
 export interface VictoriaTools {

@@ -143,7 +143,10 @@ describe("MemoryOrchestrator", () => {
 
   it("makes missing, stale, and future profile observations unavailable in mock retrieval", async () => {
     const storage = new MockMemoryProvider();
-    const { observedThrough: _observedThrough, ...missingObservation } = profileMemory({ key: "profile:missing" });
+    const missingObservation: Omit<ConversationalMemory, "id" | "createdAt"> = {
+      category: "financial_pattern", key: "profile:missing", value: "Typical spend at Cafe is $8.00.",
+      evidence: "Derived from posted transaction history.", confidence: 0.8, sourceType: "plaid_transaction_profile"
+    };
     await storage.rememberConversationalMemory("user-a", missingObservation);
     await storage.rememberConversationalMemory("user-a", profileMemory({ key: "profile:stale", observedThrough: "2026-01-01" }));
     await storage.rememberConversationalMemory("user-a", profileMemory({ key: "profile:future", observedThrough: "2027-01-01" }));

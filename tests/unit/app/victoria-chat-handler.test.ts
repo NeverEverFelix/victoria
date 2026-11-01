@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { createVictoriaSessionAuthenticator, signVictoriaSession } from "../../../src/app/http/signed-session-auth.js";
 import { createVictoriaChatHandler } from "../../../src/app/http/victoria-chat-handler.js";
+import { createTurnResultHandler } from "../../../src/app/http/turn-result-handler.js";
 import { getLocalMockVictoriaChatHandler, getLocalMockVictoriaRuntime } from "../../../src/app/http/create-local-mock-victoria-runtime.js";
 import { buildTransactionFinancialProfile } from "../../../src/domain/financial-profile.js";
 import { InMemoryTurnRepository } from "../../../src/app/turns/in-memory-turn-repository.js";
+import { MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
 
 const secret = "test-only-session-secret-with-more-than-32-bytes";
 
@@ -54,14 +56,78 @@ describe("Victoria chat HTTP boundary", () => {
     const turns = new InMemoryTurnRepository();
     const handler = createVictoriaChatHandler({ authenticate: createVictoriaSessionAuthenticator(secret), agent, turns });
     const token = signVictoriaSession({ userId: "turn-user", secret });
-    await handler(chatRequest(token, "turn-chat", "I want to plan my weekends."), { conversationId: "turn-chat" });
+    const firstResponse = await handler(chatRequest(token, "turn-chat", "I want to plan my weekends."), { conversationId: "turn-chat" });
+    const firstBody = await firstResponse.json() as { turnId?: string };
     await handler(chatRequest(token, "turn-chat", "I enjoy hiking."), { conversationId: "turn-chat" });
 
     expect(seen).toHaveLength(2);
     expect(seen[0]).toMatchObject([{ turnId: expect.any(String), userMessage: "I want to plan my weekends." }]);
     expect(seen[1]).toHaveLength(2);
-    expect((await turns.listConversation("turn-user", "turn-chat"))).toHaveLength(2);
+    const completedTurns = await turns.listConversation("turn-user", "turn-chat");
+    expect(completedTurns).toHaveLength(2);
+    expect(firstBody.turnId).toBe(completedTurns[0]?.id);
+    expect(completedTurns[0]).toMatchObject({
+      status: "completed",
+      resultPayload: {
+        message: "Got it.",
+        decision: { action: "reflect", classification: { type: "general_finance" } }
+      }
+    });
+    const resultHandler = createTurnResultHandler({ authenticate: createVictoriaSessionAuthenticator(secret), turns });
+    const resultResponse = await resultHandler(new Request("https://victoria.local/api/turn-result", {
+      headers: { authorization: `Bearer ${token}` }
+    }), { conversationId: "turn-chat", turnId: firstBody.turnId! });
+    expect(await resultResponse.json()).toMatchObject({
+      turnId: firstBody.turnId,
+      status: "completed",
+      result: { message: "Got it.", decision: { action: "reflect" } }
+    });
     expect((await turns.listConversation("another-user", "turn-chat"))).toEqual([]);
+  });
+
+  it("completes and exposes an approved mock-ledger result when assistant transcript storage fails", async () => {
+    const memory = new MockMemoryProvider();
+    const persist = memory.setConversationMessages.bind(memory);
+    let failApprovalAssistantWrite = false;
+    vi.spyOn(memory, "setConversationMessages").mockImplementation(async (userId, conversationId, messages) => {
+      if (failApprovalAssistantWrite && messages.some((message) => message.role === "user" && message.content === "Yes") &&
+          messages.at(-1)?.role === "assistant") {
+        failApprovalAssistantWrite = false;
+        throw new Error("assistant transcript storage unavailable");
+      }
+      await persist(userId, conversationId, messages);
+    });
+    const tools = new MockVictoriaTools();
+    const agent = new VictoriaAgent({ llm: new MockLlmAdapter(), memory, tools });
+    const turns = new InMemoryTurnRepository();
+    const handler = createVictoriaChatHandler({ authenticate: createVictoriaSessionAuthenticator(secret), agent, turns });
+    const token = signVictoriaSession({ userId: "durable-ack-user", secret });
+    const conversationId = "durable-ack-chat";
+
+    const proposal = await handler(chatRequest(token, conversationId, "I stopped a class that cost me $35 each month."), { conversationId });
+    expect(proposal.status).toBe(200);
+    failApprovalAssistantWrite = true;
+    const approval = await handler(chatRequest(token, conversationId, "Yes"), { conversationId });
+    const approvalBody = await approval.json() as { turnId?: string; message?: string; decision?: { action?: string } };
+
+    expect(approval.status).toBe(200);
+    expect(approvalBody).toMatchObject({
+      turnId: expect.any(String), decision: { action: "create_ledger_entry" }
+    });
+    expect(approvalBody.message).toMatch(/recorded \$35\.00 in your Victoria savings ledger/i);
+    const completed = await turns.get("durable-ack-user", conversationId, approvalBody.turnId!);
+    expect(completed).toMatchObject({
+      status: "completed", resultPayload: { message: approvalBody.message, decision: { action: "create_ledger_entry" } }
+    });
+    expect(await tools.listSavingsEntries("durable-ack-user")).toHaveLength(1);
+
+    const results = createTurnResultHandler({ authenticate: createVictoriaSessionAuthenticator(secret), turns });
+    const result = await results(new Request("https://victoria.local/api/turn-result", {
+      headers: { authorization: `Bearer ${token}` }
+    }), { conversationId, turnId: approvalBody.turnId! });
+    expect(await result.json()).toMatchObject({
+      status: "completed", result: { message: approvalBody.message, decision: { action: "create_ledger_entry" } }
+    });
   });
 
   it("rejects unsigned, expired, and tampered sessions", async () => {

@@ -3,6 +3,8 @@ import { parseExplicitDollarAmount } from "../domain/financial-events/parse-expl
 /** Conservative deterministic fallback for explicit requests to move real funds. */
 export function isRealMoneyMovementRequest(message: string): boolean {
   const text = message.toLowerCase();
+  const beginsWithNegatedMovement = /^\s*(?:(?:i\s+)?(?:don't|do not|never)\s+(?:(?:want|need|plan|intend|wish)\s+to\s+)?|please\s+don't\s+|do not\s+)(?:move|transfer|send|deposit|withdraw)\b/i.test(message);
+  if (beginsWithNegatedMovement && !isExplicitRealMoneyMovementRequest(message)) return false;
   return (
     /\b(?:move|transfer|send|deposit|withdraw)\b.{0,50}\b(?:money|funds|cash)\b/.test(text) ||
     /\b(?:money|funds|cash)\b.{0,50}\b(?:move|transfer|send|deposit|withdraw)\b/.test(text) ||

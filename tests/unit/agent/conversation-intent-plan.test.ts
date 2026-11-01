@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { buildConversationIntentPlan, mayDispatchConversationIntent, shouldDispatchConversationIntent } from "../../../src/agent/conversation-intent-plan.js";
+import { buildConversationIntentPlan, mayDispatchConversationIntent, shouldDispatchConversationIntent, shouldSkipFinancialAssessmentForAdvisoryTurn } from "../../../src/agent/conversation-intent-plan.js";
 import type { AdvisoryTurnPlan } from "../../../src/agent/turn-understanding.js";
+import type { ClassifiedMessage } from "../../../src/agent/types.js";
+
+function understoodTurn(
+  deterministicPlan: ReturnType<typeof buildConversationIntentPlan>,
+  message: string,
+  financialClassificationType: ClassifiedMessage["type"] = "general_finance",
+  advisoryPlan: AdvisoryTurnPlan = {
+    schemaVersion: 1, primaryIntent: "dialogue", secondaryIntents: [], dialogueActs: ["question"],
+    references: [], requestedReadOnlyTools: [], actionMention: "none", requestedAction: "none",
+    uncertainty: { needsClarification: false, reasons: [] }
+  }
+) {
+  return { message, deterministicPlan, advisoryPlan, financialClassificationType };
+}
 
 describe("contextual multi-intent plan", () => {
   it.each([
@@ -86,9 +100,9 @@ describe("contextual multi-intent plan", () => {
     const proposal = buildConversationIntentPlan({ message: "Please record the $35 savings entry." });
     const ambiguousApproval = buildConversationIntentPlan({ message: "Yes, but what about the debt?", hasPendingWorkflow: true });
 
-    expect(shouldDispatchConversationIntent(dialogue, "I actually want to talk about the promotion instead.")).toBe(true);
-    expect(shouldDispatchConversationIntent(proposal, "Please record the $35 savings entry.")).toBe(false);
-    expect(shouldDispatchConversationIntent(ambiguousApproval, "Yes, but what about the debt?")).toBe(false);
+    expect(shouldDispatchConversationIntent(understoodTurn(dialogue, "I actually want to talk about the promotion instead."))).toBe(true);
+    expect(shouldDispatchConversationIntent(understoodTurn(proposal, "Please record the $35 savings entry."))).toBe(false);
+    expect(shouldDispatchConversationIntent(understoodTurn(ambiguousApproval, "Yes, but what about the debt?"))).toBe(false);
   });
 
   it("uses model interpretation to route nuanced read-only dialogue while preserving savings-moment routing", () => {
@@ -103,8 +117,30 @@ describe("contextual multi-intent plan", () => {
     const avoidedSpend = "I cooked at home instead of ordering takeout.";
     const avoidedSpendPlan = buildConversationIntentPlan({ message: avoidedSpend });
 
-    expect(shouldDispatchConversationIntent(reflectionPlan, reflection, modelDialogue, "general_finance")).toBe(true);
-    expect(shouldDispatchConversationIntent(avoidedSpendPlan, avoidedSpend, modelDialogue, "avoided_spend")).toBe(false);
+    expect(shouldDispatchConversationIntent(understoodTurn(reflectionPlan, reflection, "general_finance", modelDialogue))).toBe(true);
+    expect(shouldDispatchConversationIntent(understoodTurn(avoidedSpendPlan, avoidedSpend, "avoided_spend", modelDialogue))).toBe(false);
+  });
+
+  it("skips financial assessment only when model and deterministic plans agree on plain dialogue", () => {
+    const modelDialogue: AdvisoryTurnPlan = {
+      schemaVersion: 1, primaryIntent: "dialogue", secondaryIntents: [], dialogueActs: ["personal_update"],
+      references: [], requestedReadOnlyTools: [], actionMention: "none", requestedAction: "none",
+      uncertainty: { needsClarification: false, reasons: [] }
+    };
+    const plainConversation = "I had a really good weekend at the lake.";
+    const plainPlan = buildConversationIntentPlan({ message: plainConversation });
+    expect(shouldSkipFinancialAssessmentForAdvisoryTurn({
+      message: plainConversation, deterministicPlan: plainPlan, advisoryPlan: modelDialogue
+    })).toBe(true);
+
+    for (const message of ["I saved $35 by switching gyms.", "I don't want to transfer money; let's discuss my budget.", "Yes, go ahead."]) {
+      const deterministicPlan = buildConversationIntentPlan({ message, hasPendingWorkflow: true });
+      expect(shouldSkipFinancialAssessmentForAdvisoryTurn({ message, deterministicPlan, advisoryPlan: modelDialogue })).toBe(false);
+    }
+    const uncertainPlan = { ...modelDialogue, uncertainty: { needsClarification: true, reasons: ["unclear"] } };
+    expect(shouldSkipFinancialAssessmentForAdvisoryTurn({
+      message: plainConversation, deterministicPlan: plainPlan, advisoryPlan: uncertainPlan
+    })).toBe(false);
   });
 
   it("marks contextual referents as hints without resolving or authorizing them", () => {

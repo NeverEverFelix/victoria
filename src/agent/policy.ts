@@ -25,8 +25,9 @@ export function interpretApprovalResponse(message: string, expectedAmountCents?:
   }
 
   if (expectedAmountCents !== undefined &&
-      /^yes\s+(?:please\s+)?(?:record|save|log)\b/.test(normalized) &&
-      !/\b(?:move|transfer|send|withdraw|checking|bank account)\b/.test(normalized)) {
+      /^yes\s*,?\s+(?:please\s+)?(?:record|save|log)\b/i.test(message.trim()) &&
+      !/[?]/.test(message) &&
+      !/\b(?:and|but|also|then|move|transfer|send|withdraw|checking|bank account)\b/i.test(message)) {
     const explicitAmount = parseExplicitDollarAmount(message);
     if (explicitAmount.status === "valid" && explicitAmount.amountCents === expectedAmountCents) {
       return "explicit_approval";

@@ -33,6 +33,38 @@ describe("OpenAiFinancialMomentAdapter", () => {
     expect(usageReporter.snapshot()).toMatchObject([{ role: "turn_understanding", inputTokens: 30, outputTokens: 20 }]);
   });
 
+  it("uses the same canonical snapshot, including the advisory plan, for financial classification", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({
+        type: "general_finance", confidence: 0.9, merchantName: null, goalName: null,
+        revisionReason: null, referenceFactId: null, referencePeriod: null,
+        summary: "Discussing a work update", needsClarification: false
+      }) }] }]
+    }));
+    const adapter = new OpenAiFinancialMomentAdapter({ apiKey: "test-key", model: "gpt-test", fetcher });
+    const advisoryPlan = {
+      schemaVersion: 1 as const, primaryIntent: "financial_reflection" as const, secondaryIntents: ["dialogue" as const],
+      dialogueActs: ["personal_update" as const], references: [], requestedReadOnlyTools: [],
+      actionMention: "none" as const, requestedAction: "none" as const,
+      uncertainty: { needsClarification: false, reasons: [] }
+    };
+    const contextSnapshot = {
+      ...buildConversationContextSnapshot({ message: "Work gave me a raise, and I feel weird about saving more.", recentTurns: ["Victoria: What has been on your mind?"], memories: [] }),
+      turnUnderstanding: advisoryPlan
+    };
+
+    await adapter.classifyMessage({
+      userMessage: contextSnapshot.currentMessage,
+      memory: { habits: [], goals: [], recentDecisions: [] },
+      contextSnapshot
+    });
+
+    const request = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
+    expect(request.input).toContain('"turnUnderstanding":{"schemaVersion":1,"primaryIntent":"financial_reflection"');
+    expect(request.input).toContain('"content":"What has been on your mind?"');
+    expect(request.input).not.toContain('"recentConversation"');
+  });
+
   it("uses strict structured output and derives the amount from the user message", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
       usage: { input_tokens: 21, output_tokens: 13 },

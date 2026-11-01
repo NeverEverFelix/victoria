@@ -46,4 +46,51 @@ describe("turn result HTTP boundary", () => {
     const response = await handler(new Request("https://victoria.local"), { conversationId: "chat-a", turnId: "turn-pending" });
     expect(await response.json()).toEqual({ turnId: "turn-pending", status: "queued" });
   });
+
+  it("finalizes an approved-action receipt when the owner polls an interrupted running turn", async () => {
+    const base = new InMemoryTurnRepository();
+    await base.accept(createQueuedTurn({
+      id: "turn-with-receipt", userId: "user-a", conversationId: "chat-a", idempotencyKey: "key-receipt",
+      userMessage: "Yes", requestFingerprint: "fingerprint-receipt", acceptedAt: "2026-10-27T12:00:00.000Z"
+    }));
+    const running = await base.compareAndTransition({
+      userId: "user-a", conversationId: "chat-a", turnId: "turn-with-receipt", expectedRevision: 0,
+      transition: { type: "start", at: "2026-10-27T12:00:01.000Z" }
+    });
+    const receipt = {
+      message: "Done. I recorded $12.00 in your Victoria savings ledger. No real money has moved yet.",
+      decision: {
+        action: "create_ledger_entry" as const,
+        classification: {
+          type: "avoided_spend" as const, summary: "Skipped a purchase", confidence: 1, needsClarification: false
+        },
+        userFacingMessage: "Done. I recorded $12.00 in your Victoria savings ledger. No real money has moved yet."
+      }
+    };
+    const turns = {
+      accept: base.accept.bind(base),
+      listConversation: base.listConversation.bind(base),
+      compareAndTransition: base.compareAndTransition.bind(base),
+      get: async (userId: string, conversationId: string, turnId: string) => {
+        const current = await base.get(userId, conversationId, turnId);
+        return current?.id === running.id ? { ...current, resultPayload: receipt } : current;
+      }
+    };
+    const handler = createTurnResultHandler({ authenticate: async () => ({ userId: "user-a" }), turns });
+
+    const response = await handler(new Request("https://victoria.local"), {
+      conversationId: "chat-a", turnId: running.id
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      turnId: running.id,
+      status: "completed",
+      result: {
+        message: receipt.message,
+        decision: { action: "create_ledger_entry", classification: { type: "avoided_spend", summary: "Skipped a purchase" } }
+      }
+    });
+    expect(await base.get("user-a", "chat-a", running.id)).toMatchObject({ status: "completed", resultPayload: receipt });
+  });
 });

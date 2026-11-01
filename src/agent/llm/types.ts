@@ -12,6 +12,8 @@ export interface LlmAdapter {
 export interface ClassifyMessageInput {
   userMessage: string;
   memory: AgentMemory;
+  /** Shared canonical transcript, workflow, provenance, and advisory interpretation when available. */
+  contextSnapshot?: ConversationContextSnapshot;
   conversationContext?: readonly string[];
   /** Curated read-only facts and workflow state; never an approval signal. */
   financialContext?: VictoriaConversationContext;

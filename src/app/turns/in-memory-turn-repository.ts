@@ -46,6 +46,17 @@ export class InMemoryTurnRepository implements TurnRepository {
       .sort((left, right) => left.acceptedAt.localeCompare(right.acceptedAt) || left.id.localeCompare(right.id)));
   }
 
+  async listStaleRunning(input: { readonly olderThan: string; readonly limit: number }): Promise<readonly TurnRecord[]> {
+    const cutoff = Date.parse(input.olderThan);
+    if (!Number.isFinite(cutoff) || !Number.isSafeInteger(input.limit) || input.limit < 1) {
+      throw new Error("Stale turn scan requires a valid cutoff and positive limit.");
+    }
+    return Object.freeze([...this.turnsById.values()]
+      .filter((turn) => turn.status === "running" && Date.parse(turn.updatedAt) <= cutoff)
+      .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt) || left.id.localeCompare(right.id))
+      .slice(0, input.limit));
+  }
+
   async compareAndTransition(input: {
     userId: string;
     conversationId: string;

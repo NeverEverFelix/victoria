@@ -1,9 +1,30 @@
 import { describe, expect, it } from "vitest";
 import { MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
 import { MemoryOrchestrator } from "../../../src/agent/memory/memory-orchestrator.js";
+import { EpisodicMemoryService } from "../../../src/agent/memory/episodic-memory-service.js";
 import { authoritativeEpisodeOutcome, EPISODIC_MEMORY_MAX_AGE_MS, isUsableEpisodicSummary, SEMANTIC_MEMORY_RECALL_MIN_SIMILARITY, suppressLifecycleConflictingEpisodes, validateEpisodicSummary } from "../../../src/agent/memory/episodic-summary.js";
 
 describe("episodic memory summaries", () => {
+  it("keeps an optional summary from failing the turn when summary-history storage is unavailable", async () => {
+    const service = new EpisodicMemoryService({
+      async listConversationalMemories() { throw new Error("memory store unavailable"); },
+      async rememberConversationalMemory() { throw new Error("should not write"); }
+    }, {
+      async summarize() {
+        return {
+          summary: "The user is building a steady weekly routine for personal projects.",
+          evidenceQuotes: ["I want a steadier weekly routine."], confidence: 0.93, sensitivity: "ordinary"
+        };
+      }
+    });
+
+    await expect(service.summarize({
+      userId: "summary_storage_failure_user",
+      context: ["I want a steadier weekly routine.", "I want to keep it manageable."],
+      finishing: true
+    })).resolves.toBe(false);
+  });
+
   it("summarizes context before the short-term window rolls over and retrieves the episode later", async () => {
     const memory = new MockMemoryProvider();
     const llm = new MockLlmAdapter();

@@ -2,9 +2,42 @@ import { describe, expect, it, vi } from "vitest";
 import { MockLlmAdapter, MockMemoryProvider, MockVictoriaTools, VictoriaAgent } from "../../../src/agent/index.js";
 import { buildConversationContextSnapshot, OpenAiConversationResponder, validateConversationReply, validateConversationReplyDetailed } from "../../../src/agent/conversation-responder.js";
 import type { ConversationResponderInput } from "../../../src/agent/conversation-responder.js";
+import { ConversationReplyService } from "../../../src/agent/conversation-reply-service.js";
 import { ProviderUsageReporter } from "../../../src/agent/telemetry/provider-usage-reporter.js";
 
 describe("conversation response boundary", () => {
+  it("reports only route, retry, rejection, and fallback categories", async () => {
+    const onTrace = vi.fn();
+    const responder = { respond: vi.fn()
+      .mockResolvedValueOnce("Your balance is $500.")
+      .mockResolvedValueOnce("We can talk through the change together.") };
+    const service = new ConversationReplyService(responder, undefined, onTrace);
+    const input: ConversationResponderInput = {
+      message: "I feel unsettled about my new role.", recentTurns: [], memories: [],
+      baselineReply: "What part feels most unsettled?"
+    };
+
+    await expect(service.respond(input)).resolves.toBe("We can talk through the change together.");
+    expect(onTrace).toHaveBeenCalledExactlyOnceWith({
+      route: "ordinary_dialogue", outcome: "retry_accepted", retryCount: 1,
+      rejectionReason: "unsupported_numeric_claim"
+    });
+    expect(JSON.stringify(onTrace.mock.calls)).not.toContain(input.message);
+  });
+
+  it("reports a content-free fallback when the provider is unavailable", async () => {
+    const onTrace = vi.fn();
+    const service = new ConversationReplyService({ respond: async () => { throw new Error("private provider detail"); } }, undefined, onTrace);
+    await service.respond({
+      message: "Can we talk about debt?", recentTurns: [], memories: [], baselineReply: "Please confirm the pending suggestion.",
+      pendingAction: "savings_entry"
+    });
+    expect(onTrace).toHaveBeenCalledExactlyOnceWith({
+      route: "pending_workflow", outcome: "fallback", retryCount: 0, fallbackReason: "provider_unavailable"
+    });
+    expect(JSON.stringify(onTrace.mock.calls)).not.toContain("private provider detail");
+  });
+
   it("reports response-stage latency and token usage without exposing the prompt", async () => {
     const usageReporter = new ProviderUsageReporter();
     const responder = new OpenAiConversationResponder({

@@ -1,4 +1,6 @@
 import type { TurnRepository } from "../turns/turn-repository.js";
+import { completeTurnWithRecovery } from "../turns/complete-turn-with-recovery.js";
+import { isTurnActionReceipt } from "../turns/turn-action-receipt.js";
 
 const CONVERSATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -27,8 +29,30 @@ export function createTurnResultHandler(dependencies: TurnResultHandlerDependenc
     if (!user?.userId.trim()) return respond(401, { error: "unauthorized" });
 
     try {
-      const turn = await dependencies.turns.get(user.userId, context.conversationId, context.turnId);
+      let turn = await dependencies.turns.get(user.userId, context.conversationId, context.turnId);
       if (!turn) return respond(404, { error: "turn_not_found" });
+      if (turn.status !== "completed" && isTurnActionReceipt(turn.resultPayload)) {
+        if (turn.status === "failed") {
+          turn = await dependencies.turns.compareAndTransition({
+            userId: user.userId, conversationId: context.conversationId, turnId: turn.id,
+            expectedRevision: turn.revision, transition: { type: "retry", at: new Date().toISOString() }
+          });
+        }
+        if (turn.status === "queued") {
+          turn = await dependencies.turns.compareAndTransition({
+            userId: user.userId, conversationId: context.conversationId, turnId: turn.id,
+            expectedRevision: turn.revision, transition: { type: "start", at: new Date().toISOString() }
+          });
+        }
+      }
+      if (turn.status === "running" && isTurnActionReceipt(turn.resultPayload)) {
+        turn = await completeTurnWithRecovery({
+          turns: dependencies.turns,
+          runningTurn: turn,
+          response: turn.resultPayload,
+          completedAt: new Date().toISOString()
+        });
+      }
       if (turn.status !== "completed") {
         return respond(200, {
           turnId: turn.id, status: turn.status,

@@ -13,18 +13,34 @@ function lowCostMealAnswer(message: string): string | undefined {
 export function deterministicConversationFallback(input: ConversationResponderInput): string {
   const pendingWorkflow = Boolean(input.pendingAction || input.pendingWorkflowReference ||
     input.financialContext?.workflowState);
-  const explicitTopicSwitch = /^\s*(?:let'?s|can we|i(?:'d| would| actually want to))\s+(?:talk|discuss|think)\b/i.test(input.message);
-  const safePendingTopicSwitch = pendingWorkflow && explicitTopicSwitch &&
+  const advisoryFallback = modelInterpretedFallback(input, pendingWorkflow);
+  if (advisoryFallback) return advisoryFallback;
+  const asksToDiscussTopic = /\b(?:let'?s|can we|i(?:'d| would| actually want to))\s+(?:talk|discuss|think)\s+about\b/i.test(input.message);
+  const safePendingTopicSwitch = pendingWorkflow && asksToDiscussTopic &&
     isSafePendingWorkflowTopicSwitch(input.message);
+  const pendingStatus = pendingWorkflowStatus(input);
+  const historicalReference = input.financialContext?.historicalEventReference;
+  if (historicalReference?.kind === "resolved" && pendingWorkflow) {
+    const event = input.financialContext?.conversationSavingsEvents.find(
+      (candidate) => candidate.eventId === historicalReference.eventId
+    );
+    if (event) {
+      return `In this conversation, you described this avoided-spend moment: ${event.summary} This is conversation history, not a money movement. ${pendingStatus}`;
+    }
+  }
   // A clear pending-workflow topic switch remains read-only. Answer the current
   // topic before the general financial-context guard so an outage cannot turn
   // a promotion discussion into a repeated approval prompt.
   if (safePendingTopicSwitch && /\b(?:promotion|promoted|new role|raise)\b/i.test(input.message) &&
       /\b(?:let's|can we|i(?:'d| would| actually want to))\s+(?:talk|discuss)\b/i.test(input.message)) {
-    return "A promotion can bring a lot of change, even when it's good news. What feels most uncertain: expectations, day-to-day changes, or how you'd like to approach it? The savings suggestion remains pending and unchanged.";
+    return `A promotion can bring a lot of change, even when it's good news. What feels most uncertain: expectations, day-to-day changes, or how you'd like to approach it? ${pendingStatus}`;
   }
   if (safePendingTopicSwitch && /\b(?:debt|credit card|loan|interest rate)\b/i.test(input.message)) {
-    return "We can focus on the debt first. The savings suggestion remains pending and unchanged. If you want, we can compare the debt's interest rate with how much flexibility you want to keep in your budget.";
+    return `We can focus on the debt first. ${pendingStatus} If you want, we can compare the debt's interest rate with how much flexibility you want to keep in your budget.`;
+  }
+  if (pendingWorkflow && isSafePendingWorkflowTopicSwitch(input.message) &&
+      /\bwhat if\b/i.test(input.message) && /\b(?:trip|vacation|travel|something else)\b/i.test(input.message)) {
+    return `We can explore that as a planning option; it isn't money already saved. ${pendingStatus} What cost or timing are you considering?`;
   }
   if (isOrdinaryQuestion(input.message) && /\b(?:weekend|rainy day)\b/i.test(input.message) &&
       /\b(?:brainstorm|suggest|ideas|options|things to do)\b/i.test(input.message)) {
@@ -34,7 +50,7 @@ export function deterministicConversationFallback(input: ConversationResponderIn
     return "For a relaxed walk, try a conversational interview podcast or a short nature series; a 20–30 minute episode can fit the route.";
   }
   if (safePendingTopicSwitch) {
-    return "Of course—we can focus on what you raised. The savings suggestion remains pending and unchanged while we talk. What would you like to work through first?";
+    return `Of course—we can focus on what you raised. ${pendingStatus} What would you like to work through first?`;
   }
   if (input.pendingAction || (input.financialContext?.workflowState !== undefined) ||
       (input.financialContext?.financialFacts.length ?? 0) > 0 ||
@@ -87,4 +103,36 @@ export function deterministicConversationFallback(input: ConversationResponderIn
     return "I couldn't shape a thoughtful answer just now. For your weekend, are you looking to relax, get out, or catch up on something?";
   }
   return input.baselineReply;
+}
+
+function modelInterpretedFallback(
+  input: ConversationResponderInput,
+  pendingWorkflow: boolean
+): string | undefined {
+  const snapshot = input.contextSnapshot;
+  const plan = snapshot?.turnUnderstanding;
+  if (snapshot?.turnUnderstandingSource !== "model" || !plan || plan.requestedAction !== "none" ||
+      plan.uncertainty.needsClarification) return undefined;
+
+  const pendingStatus = pendingWorkflow ? `${pendingWorkflowStatus(input)} ` : "";
+  if (plan.dialogueActs.includes("topic_switch")) {
+    return `We can focus on the topic you raised. ${pendingStatus}I can't give a full answer right now, but what would be most helpful to work through first?`;
+  }
+  if (plan.primaryIntent === "financial_reflection") {
+    return `Money decisions can feel complicated. ${pendingStatus}We can take it one step at a time; what feels most important to sort through first?`;
+  }
+  return undefined;
+}
+
+function pendingWorkflowStatus(input: ConversationResponderInput): string {
+  const kind = input.pendingWorkflowReference?.kind ?? input.pendingAction;
+  if (kind === "goal_allocation") return "The goal allocation remains pending and unrecorded.";
+  if (kind === "entry_correction") return "The correction remains pending; the recorded entry is unchanged.";
+  if (kind === "savings_entry" || input.financialContext?.workflowState?.status === "awaiting_confirmation") {
+    return "The savings suggestion remains pending and unchanged.";
+  }
+  if (input.financialContext?.workflowState?.status === "awaiting_amount") {
+    return "The amount clarification remains open.";
+  }
+  return "The pending financial workflow remains unchanged.";
 }

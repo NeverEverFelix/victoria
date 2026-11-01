@@ -47,6 +47,8 @@ export interface ConversationContextSnapshot {
   readonly currentMessage: string;
   /** Model interpretation of the full turn; advisory only and never financial authority. */
   readonly turnUnderstanding?: AdvisoryTurnPlan;
+  /** Distinguishes provider interpretation from deterministic fallback classification. */
+  readonly turnUnderstandingSource?: "model" | "fallback";
   /** Role-tagged view of legacy transcript strings plus the current user turn. */
   readonly dialogueTurns: readonly { readonly role: "user" | "assistant"; readonly content: string }[];
   /** Explicit conversational continuity, derived from this scoped transcript and resolved references. */

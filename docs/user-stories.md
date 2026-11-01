@@ -505,6 +505,7 @@ Expected behavior:
 - Preserve exact supporting evidence, provenance, user scope, and linked append-only updates.
 - Keep transaction-profile facts separate with their existing authorization and freshness rules.
 - Keep deterministic direct learning independent of provider availability; provider extraction must pass the same privacy and evidence validation before storage.
+- Queue optional provider extraction by completed, scoped turn identity so model extraction does not delay the current reply. The queue stores no duplicate conversation text, and provider candidates pass the same privacy and evidence validation before storage.
 - Provider extraction or validation failures continue the ordinary turn without provider-derived facts and emit a privacy-safe operational signal; they do not include the user message or provider payload.
 
 Acceptance criteria:
@@ -512,6 +513,7 @@ Acceptance criteria:
 - Clear supported direct statements are acknowledged and stored without a separate confirmation prompt.
 - Tentative, ambiguous, hypothetical, sensitive, credential-bearing, and third-party content is not stored.
 - Provider-generated candidates pass the same explicit-evidence and privacy gate before storage.
+- Eligible provider extraction is retried through bounded, idempotent background jobs and never blocks the user-facing answer.
 - Memory learning never acts as approval for a savings action.
 
 

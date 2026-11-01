@@ -90,6 +90,18 @@ export class PostgresTurnRepository implements TurnRepository {
     return Object.freeze(result.rows.map(fromRow));
   }
 
+  async listStaleRunning(input: { readonly olderThan: string; readonly limit: number }): Promise<readonly TurnRecord[]> {
+    if (!Number.isFinite(Date.parse(input.olderThan)) || !Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 500) {
+      throw new Error("Stale turn scan requires a valid cutoff and a limit from 1 through 500.");
+    }
+    const result = await this.pool.query<TurnRow>(
+      `SELECT * FROM victoria_turns WHERE status = 'running' AND updated_at <= $1
+       ORDER BY updated_at, id LIMIT $2`,
+      [input.olderThan, input.limit]
+    );
+    return Object.freeze(result.rows.map(fromRow));
+  }
+
   async compareAndTransition(input: {
     userId: string;
     conversationId: string;

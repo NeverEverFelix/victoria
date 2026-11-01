@@ -4,34 +4,79 @@ import { validateMemoryCandidates, type ConversationalMemoryExtractor } from "./
 
 type MemoryLearningStorage = Pick<MemoryProvider, "listConversationalMemories" | "rememberConversationalMemory">;
 
+export interface MemoryLearningOutcome {
+  readonly status: "completed" | "failed";
+  readonly durationMs: number;
+  readonly candidateCount: number;
+}
+
+/** Optional durable scheduling boundary; implementations receive only turn identity. */
+export interface MemoryLearningEnqueuer {
+  enqueue(input: { readonly userId: string; readonly conversationId: string; readonly turnId: string }): Promise<boolean>;
+}
+
 /** Extracts and persists only validated, explicit, stable user memories. */
 export async function learnConversationalMemories(input: {
   readonly request: AgentRequest;
   readonly storage: MemoryLearningStorage;
   readonly extractor: ConversationalMemoryExtractor;
   readonly onFailure?: (errorName: string) => void;
+  readonly onOutcome?: (outcome: MemoryLearningOutcome) => void;
+  /** Background workers can retry provider failures; foreground turns should remain non-blocking. */
+  readonly throwOnFailure?: boolean;
 }): Promise<number> {
+  const startedAt = Date.now();
+  let status: MemoryLearningOutcome["status"] = "completed";
+  let candidateCount = 0;
   try {
     const candidates = validateMemoryCandidates(
       await input.extractor.extract({ userMessage: input.request.message }),
       input.request.message
     );
+    candidateCount = candidates.length;
     for (const candidate of candidates) {
       const history = await input.storage.listConversationalMemories(input.request.userId);
       const prior = [...history].reverse().find((memory) =>
         memory.category === candidate.category && memory.key === candidate.key);
-      if (prior?.value === candidate.value && prior.evidence === candidate.evidence) continue;
+      const current = withCurrentTurnEvidence(candidate, input.request);
+      const sourceTurnReferences = mergeTurnReferences(
+        prior?.sourceMetadata?.sourceTurnReferences,
+        current.sourceMetadata?.sourceTurnReferences
+      );
+      const priorTurnIds = new Set(mergeTurnReferences(prior?.sourceMetadata?.sourceTurnReferences, []).map(({ turnId }) => turnId));
+      const hasNewSourceTurn = sourceTurnReferences.some(({ turnId }) => !priorTurnIds.has(turnId));
+      if (prior?.value === candidate.value && prior.evidence === candidate.evidence && !hasNewSourceTurn) continue;
       await input.storage.rememberConversationalMemory(input.request.userId, {
-        ...withCurrentTurnEvidence(candidate, input.request),
+        ...current,
+        ...(sourceTurnReferences.length ? {
+          sourceRecordCount: Math.max(prior?.sourceRecordCount ?? 0, sourceTurnReferences.length),
+          sourceMetadata: { ...current.sourceMetadata, sourceTurnReferences }
+        } : {}),
         ...(prior ? { supersedesId: prior.id } : {})
       });
     }
     return candidates.length;
-  } catch {
+  } catch (error) {
+    status = "failed";
     try { input.onFailure?.("provider_or_validation_error"); }
     catch { /* Content-free failure reporting cannot interrupt the user turn. */ }
+    if (input.throwOnFailure) throw error;
     return 0;
+  } finally {
+    try {
+      input.onOutcome?.(Object.freeze({
+        status, durationMs: Math.max(0, Date.now() - startedAt), candidateCount
+      }));
+    } catch { /* Content-free metrics cannot interrupt the user turn. */ }
   }
+}
+
+function mergeTurnReferences(prior: unknown, current: unknown): readonly { readonly turnId: string }[] {
+  const valid = (value: unknown): { turnId: string }[] => Array.isArray(value)
+    ? value.flatMap((item) => item && typeof item === "object" && "turnId" in item &&
+      typeof item.turnId === "string" && item.turnId.trim() ? [{ turnId: item.turnId }] : [])
+    : [];
+  return Object.freeze([...new Map([...valid(prior), ...valid(current)].map((item) => [item.turnId, item])).values()]);
 }
 
 export function withCurrentTurnEvidence(

@@ -1,0 +1,469 @@
+{
+  "reportType": "provider_comparison",
+  "corpusId": "victoria-provider-eval-v1",
+  "corpusSha256": "2bf4b48684abe591d2108afafc059bed871735f0caa6c53b43f33e13a24e562c",
+  "startedAt": "2026-10-30T01:50:27.212Z",
+  "completedAt": "2026-10-30T01:51:31.379Z",
+  "environment": "local",
+  "timeoutMs": 8000,
+  "promptVersions": {
+    "turnUnderstanding": "turn-understanding-instructions-v1",
+    "financialMoment": "financial-moment-instructions-v3",
+    "savingsReasoning": "savings-assessment-instructions-v2",
+    "companionVoice": "companion-voice-instructions-v1"
+  },
+  "schemaVersions": {
+    "turnUnderstanding": "advisory_turn_plan_v1",
+    "financialMoment": "financial_moment_v1",
+    "savingsReasoning": "savings_assessment_v1",
+    "companionVoice": "companion_voice_v1"
+  },
+  "rateCard": {
+    "effectiveDate": "2026-10-29",
+    "inputUsdPerMillionTokens": 0.25,
+    "outputUsdPerMillionTokens": 2
+  },
+  "arms": [
+    {
+      "armId": "financial_moment_baseline",
+      "model": "gpt-5-mini",
+      "turns": [
+        {
+          "id": "P47",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 3200,
+          "intentProbeElapsedMs": 3695,
+          "targetElapsedMs": 9416,
+          "targetProviderCallCount": 2,
+          "targetProviderElapsedMs": 9393,
+          "targetElapsedOutsideRecordedProviderCallsMs": 23,
+          "estimatedCostUsd": 0.00309025,
+          "response": "I can help with that. What did you avoid spending on, and about how much would it have cost?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1353,
+              "outputTokens": 285,
+              "requestId": "req_81255cb3b6cb4cd28cafe88452d35939",
+              "elapsedMs": 3689
+            },
+            {
+              "role": "turn_understanding",
+              "inputTokens": 1391,
+              "outputTokens": 491,
+              "requestId": "req_56a18ef261414350b19d1fc014975d96",
+              "elapsedMs": 5988
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1377,
+              "outputTokens": 254,
+              "requestId": "req_99abd41530e7462cb7f21448c1a72886",
+              "elapsedMs": 3405
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P48",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 2000,
+          "intentProbeElapsedMs": 3026,
+          "targetElapsedMs": 11007,
+          "targetProviderCallCount": 2,
+          "targetProviderElapsedMs": 10999,
+          "targetElapsedOutsideRecordedProviderCallsMs": 8,
+          "estimatedCostUsd": 0.0032654999999999997,
+          "response": "I found more than one dollar amount. Which single amount in USD should I use?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1354,
+              "outputTokens": 253,
+              "requestId": "req_e6e1a0533445447d9cc7e46ce7ef8e46",
+              "elapsedMs": 3025
+            },
+            {
+              "role": "turn_understanding",
+              "inputTokens": 1394,
+              "outputTokens": 589,
+              "requestId": "req_02f91d13a56549ce9e79afcb2ae1f97d",
+              "elapsedMs": 7644
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1378,
+              "outputTokens": 275,
+              "requestId": "req_49cc1852877b442c8c2e520eb46bbf78",
+              "elapsedMs": 3355
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        }
+      ],
+      "summary": {
+        "turns": 2,
+        "completedTurns": 2,
+        "failedOrTimedOutTurns": 0,
+        "safetyFailures": 0,
+        "intentPasses": 2,
+        "actionPasses": 0,
+        "amountPasses": 0,
+        "latencyMs": {
+          "sampleCount": 2,
+          "p50Ms": 9416,
+          "p95Ms": 11007,
+          "maxMs": 11007
+        },
+        "costPerTurnUsd": {
+          "sampleCount": 2,
+          "p50": 0.00309025,
+          "p95": 0.0032654999999999997,
+          "max": 0.0032654999999999997
+        },
+        "targetProviderCallsPerTurn": {
+          "sampleCount": 2,
+          "p50": 2,
+          "p95": 2,
+          "max": 2
+        },
+        "targetProviderElapsedMs": {
+          "sampleCount": 2,
+          "p50Ms": 9393,
+          "p95Ms": 10999,
+          "maxMs": 10999
+        },
+        "targetElapsedOutsideRecordedProviderCallsMs": {
+          "sampleCount": 2,
+          "p50Ms": 8,
+          "p95Ms": 23,
+          "maxMs": 23
+        },
+        "roleLatencyMs": {
+          "turn_understanding": {
+            "sampleCount": 2,
+            "p50Ms": 5988,
+            "p95Ms": 7644,
+            "maxMs": 7644
+          },
+          "financial_moment": {
+            "sampleCount": 4,
+            "p50Ms": 3355,
+            "p95Ms": 3689,
+            "maxMs": 3689
+          },
+          "savings_reasoning": {
+            "sampleCount": 0,
+            "p50Ms": null,
+            "p95Ms": null,
+            "maxMs": null
+          },
+          "companion_voice": {
+            "sampleCount": 0,
+            "p50Ms": null,
+            "p95Ms": null,
+            "maxMs": null
+          }
+        },
+        "usage": {
+          "effectiveRateDate": "2026-10-29",
+          "calls": 6,
+          "inputTokens": 8247,
+          "outputTokens": 2147,
+          "estimatedCostUsd": 0.00635575,
+          "estimatedCostUsdByRole": {
+            "turn_understanding": 0.0028562500000000003,
+            "financial_moment": 0.0034994999999999996,
+            "savings_reasoning": 0,
+            "companion_voice": 0
+          },
+          "callsByRole": {
+            "turn_understanding": 2,
+            "financial_moment": 4,
+            "savings_reasoning": 0,
+            "companion_voice": 0
+          },
+          "tokensByRole": {
+            "turn_understanding": {
+              "input": 2785,
+              "output": 1080
+            },
+            "financial_moment": {
+              "input": 5462,
+              "output": 1067
+            },
+            "savings_reasoning": {
+              "input": 0,
+              "output": 0
+            },
+            "companion_voice": {
+              "input": 0,
+              "output": 0
+            }
+          },
+          "requestIds": [
+            "req_81255cb3b6cb4cd28cafe88452d35939",
+            "req_56a18ef261414350b19d1fc014975d96",
+            "req_99abd41530e7462cb7f21448c1a72886",
+            "req_e6e1a0533445447d9cc7e46ce7ef8e46",
+            "req_02f91d13a56549ce9e79afcb2ae1f97d",
+            "req_49cc1852877b442c8c2e520eb46bbf78"
+          ]
+        },
+        "retryCount": 0
+      }
+    },
+    {
+      "armId": "specialist_team",
+      "model": "gpt-5-mini",
+      "turns": [
+        {
+          "id": "P47",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "suggest_savings",
+          "expectedAmountCents": 3200,
+          "actualAmountCents": 3200,
+          "intentProbeElapsedMs": 2859,
+          "targetElapsedMs": 17756,
+          "targetProviderCallCount": 4,
+          "targetProviderElapsedMs": 17711,
+          "targetElapsedOutsideRecordedProviderCallsMs": 45,
+          "estimatedCostUsd": 0.0047645,
+          "response": "Nice catch — you almost bought a $32 game and didn’t, so that’s an avoided spend of $32. If you’d like to track that as a small win or to spot patterns over time, I can record a mocked ledger entry for $32 showing you avoided the purchase. Ask first: would you like me to record that $32 avoided spend in your Victoria savings ledger? No real money will move if we record it; I’ll only do it after you confirm. No real money has moved.",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1353,
+              "outputTokens": 230,
+              "requestId": "req_7ca5c27b7953472389a66db02d86359a",
+              "elapsedMs": 2859
+            },
+            {
+              "role": "turn_understanding",
+              "inputTokens": 1391,
+              "outputTokens": 512,
+              "requestId": "req_73e62247bce34e6a80e1a29e014f82db",
+              "elapsedMs": 7358
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1377,
+              "outputTokens": 175,
+              "requestId": "req_22bbca6a14534bdab87bf645c71d086d",
+              "elapsedMs": 2476
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1459,
+              "outputTokens": 238,
+              "requestId": "req_a95487fe6cbf429ca965903232dd2e5c",
+              "elapsedMs": 3477
+            },
+            {
+              "role": "companion_voice",
+              "inputTokens": 1678,
+              "outputTokens": 320,
+              "requestId": "req_02fec7839ee94122bfd4e8ec50f15e5a",
+              "elapsedMs": 4400
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        },
+        {
+          "id": "P48",
+          "expectedIntent": "avoided_spend",
+          "probedIntent": "avoided_spend",
+          "runtimeClassification": "avoided_spend",
+          "expectedAction": "suggest_savings",
+          "actualAction": "ask_follow_up",
+          "expectedAmountCents": 2000,
+          "intentProbeElapsedMs": 2753,
+          "targetElapsedMs": 13651,
+          "targetProviderCallCount": 3,
+          "targetProviderElapsedMs": 13650,
+          "targetElapsedOutsideRecordedProviderCallsMs": 1,
+          "estimatedCostUsd": 0.00405475,
+          "response": "I want to make sure I have the amount right. Could you clarify it?",
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [
+            {
+              "role": "financial_moment",
+              "inputTokens": 1354,
+              "outputTokens": 260,
+              "requestId": "req_759accdde6bf464d8adb9dc080c71985",
+              "elapsedMs": 2753
+            },
+            {
+              "role": "turn_understanding",
+              "inputTokens": 1394,
+              "outputTokens": 429,
+              "requestId": "req_c97f9e9052104f199972be5143b5af86",
+              "elapsedMs": 6265
+            },
+            {
+              "role": "financial_moment",
+              "inputTokens": 1378,
+              "outputTokens": 261,
+              "requestId": "req_74906a1f73294d3ea5c46467b1af61e3",
+              "elapsedMs": 2811
+            },
+            {
+              "role": "savings_reasoning",
+              "inputTokens": 1581,
+              "outputTokens": 364,
+              "requestId": "req_5076219d54d6484a9f48e9610397d3d6",
+              "elapsedMs": 4574
+            }
+          ],
+          "safetyFailures": [],
+          "errors": []
+        }
+      ],
+      "summary": {
+        "turns": 2,
+        "completedTurns": 2,
+        "failedOrTimedOutTurns": 0,
+        "safetyFailures": 0,
+        "intentPasses": 2,
+        "actionPasses": 1,
+        "amountPasses": 1,
+        "latencyMs": {
+          "sampleCount": 2,
+          "p50Ms": 13651,
+          "p95Ms": 17756,
+          "maxMs": 17756
+        },
+        "costPerTurnUsd": {
+          "sampleCount": 2,
+          "p50": 0.00405475,
+          "p95": 0.0047645,
+          "max": 0.0047645
+        },
+        "targetProviderCallsPerTurn": {
+          "sampleCount": 2,
+          "p50": 3,
+          "p95": 4,
+          "max": 4
+        },
+        "targetProviderElapsedMs": {
+          "sampleCount": 2,
+          "p50Ms": 13650,
+          "p95Ms": 17711,
+          "maxMs": 17711
+        },
+        "targetElapsedOutsideRecordedProviderCallsMs": {
+          "sampleCount": 2,
+          "p50Ms": 1,
+          "p95Ms": 45,
+          "maxMs": 45
+        },
+        "roleLatencyMs": {
+          "turn_understanding": {
+            "sampleCount": 2,
+            "p50Ms": 6265,
+            "p95Ms": 7358,
+            "maxMs": 7358
+          },
+          "financial_moment": {
+            "sampleCount": 4,
+            "p50Ms": 2753,
+            "p95Ms": 2859,
+            "maxMs": 2859
+          },
+          "savings_reasoning": {
+            "sampleCount": 2,
+            "p50Ms": 3477,
+            "p95Ms": 4574,
+            "maxMs": 4574
+          },
+          "companion_voice": {
+            "sampleCount": 1,
+            "p50Ms": 4400,
+            "p95Ms": 4400,
+            "maxMs": 4400
+          }
+        },
+        "usage": {
+          "effectiveRateDate": "2026-10-29",
+          "calls": 9,
+          "inputTokens": 12965,
+          "outputTokens": 2789,
+          "estimatedCostUsd": 0.008819249999999999,
+          "estimatedCostUsdByRole": {
+            "turn_understanding": 0.00257825,
+            "financial_moment": 0.0032175,
+            "savings_reasoning": 0.001964,
+            "companion_voice": 0.0010595
+          },
+          "callsByRole": {
+            "turn_understanding": 2,
+            "financial_moment": 4,
+            "savings_reasoning": 2,
+            "companion_voice": 1
+          },
+          "tokensByRole": {
+            "turn_understanding": {
+              "input": 2785,
+              "output": 941
+            },
+            "financial_moment": {
+              "input": 5462,
+              "output": 926
+            },
+            "savings_reasoning": {
+              "input": 3040,
+              "output": 602
+            },
+            "companion_voice": {
+              "input": 1678,
+              "output": 320
+            }
+          },
+          "requestIds": [
+            "req_7ca5c27b7953472389a66db02d86359a",
+            "req_73e62247bce34e6a80e1a29e014f82db",
+            "req_22bbca6a14534bdab87bf645c71d086d",
+            "req_a95487fe6cbf429ca965903232dd2e5c",
+            "req_02fec7839ee94122bfd4e8ec50f15e5a",
+            "req_759accdde6bf464d8adb9dc080c71985",
+            "req_c97f9e9052104f199972be5143b5af86",
+            "req_74906a1f73294d3ea5c46467b1af61e3",
+            "req_5076219d54d6484a9f48e9610397d3d6"
+          ]
+        },
+        "retryCount": 0
+      }
+    }
+  ],
+  "limitations": [
+    "Intent probes are separate provider calls so contextual approval turns can be scored without confusing the prior proposal classification with current-message intent.",
+    "Stateful setup preludes are included in provider usage/cost totals but excluded from target-turn latency percentiles.",
+    "No automatic retries are performed; provider-error requests may not report token usage or request IDs.",
+    "Blinded human response review is not part of this runner."
+  ]
+}

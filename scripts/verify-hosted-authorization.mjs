@@ -103,6 +103,19 @@ const learnedPreference = await request(memoryChatPath, process.env.VICTORIA_STA
 });
 assert(learnedPreference.status === 200, `user A can save a direct preference (HTTP ${learnedPreference.status})`);
 
+const learningPath = "/api/cron/memory-learning";
+const unauthorizedLearning = await request(learningPath, null);
+assert(unauthorizedLearning.status === 401, "memory learning rejects a request without the cron secret");
+const learning = await fetch(new URL(learningPath, base), {
+  headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+  redirect: "error",
+  cache: "no-store"
+});
+assert(learning.status === 200, `authorized memory learning batch succeeds (HTTP ${learning.status})`);
+const learningBody = await learning.json();
+assert(Number.isInteger(learningBody.claimed) && Number.isInteger(learningBody.completed),
+  "memory learning reports bounded content-free batch counts");
+
 const laterConversationId = `memory-recall-smoke-${crypto.randomUUID()}`;
 const laterReflection = await request(`/api/victoria/${laterConversationId}`, process.env.VICTORIA_STAGING_USER_A_TOKEN, {
   method: "POST",

@@ -69,7 +69,7 @@ The server-side memory controls are paginated `GET/PATCH /api/memories` and `POS
 
 ## Retention And Operational Maintenance
 
-Migrations `0018_memory_retention_and_operations.sql` and `0019_expire_stale_memory_recall.sql` add `victoria_run_memory_retention(now())` and the restricted `victoria_retention_runs` audit table. The routine removes expired context, reuses the 90-day Plaid cleanup, and deletes expired/forgotten memory lineages with their vectors in one transaction. Migration 0019 also enforces the 24-month cutoff inside semantic search. The scheduled `/api/cron/memory-retention` route requires a constant-time checked `CRON_SECRET`; Vercel production invokes it daily at 03:30 UTC. SQL run status and deletion counts are auditable. See [the lifecycle and recovery runbook](../operations/memory-lifecycle-and-recovery.md).
+Migrations `0018_memory_retention_and_operations.sql` and `0019_expire_stale_memory_recall.sql` add `victoria_run_memory_retention(now())` and the restricted `victoria_retention_runs` audit table. The routine removes expired context, reuses the 90-day Plaid cleanup, and deletes expired/forgotten memory lineages with their vectors in one transaction. Migration 0019 also enforces the 24-month cutoff inside semantic search. Migration `0028_durable_memory_learning_queue.sql` stores identity-only jobs referencing the original completed turn. The protected `/api/cron/memory-learning` route uses a constant-time checked `CRON_SECRET`; Vercel production invokes it daily at 03:40 UTC, after retention. Queue failures and batch counts are logged without conversation content. See [the lifecycle and recovery runbook](../operations/memory-lifecycle-and-recovery.md).
 
 ## Remaining Deployment Work
 

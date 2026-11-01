@@ -9,11 +9,20 @@ import {
   type ConversationResponderInput
 } from "./conversation-responder.js";
 
+export interface ConversationReplyTrace {
+  readonly route: "pending_workflow" | "grounded_read_only" | "ordinary_dialogue";
+  readonly outcome: "provider_accepted" | "retry_accepted" | "fallback";
+  readonly retryCount: 0 | 1;
+  readonly rejectionReason?: ConversationReplyRejectionReason;
+  readonly fallbackReason?: ConversationReplyFallbackReason;
+}
+
 /** Read-only dialogue generation, validation, and degraded-mode recovery. */
 export class ConversationReplyService {
   constructor(
     private readonly responder?: ConversationResponder,
-    private readonly onFallback?: (reason: ConversationReplyFallbackReason) => void
+    private readonly onFallback?: (reason: ConversationReplyFallbackReason) => void,
+    private readonly onTrace?: (trace: ConversationReplyTrace) => void
   ) {}
 
   async respond(input: ConversationResponderInput): Promise<string> {
@@ -52,7 +61,9 @@ export class ConversationReplyService {
     try {
       candidate = await this.responder.respond(responderInput);
     } catch (error) {
-      this.reportFallback(error instanceof ConversationResponderError ? error.reason : "provider_unavailable");
+      const reason = error instanceof ConversationResponderError ? error.reason : "provider_unavailable";
+      this.reportFallback(reason);
+      this.reportTrace({ input, outcome: "fallback", retryCount: 0, fallbackReason: reason });
       return fallbackReply;
     }
 
@@ -62,6 +73,7 @@ export class ConversationReplyService {
         responderInput.baselineReply.trim().replace(/\s+/g, " ");
       const hasMoreSpecificFallback = fallbackReply.trim().replace(/\s+/g, " ") !==
         responderInput.baselineReply.trim().replace(/\s+/g, " ");
+      this.reportTrace({ input, outcome: "provider_accepted", retryCount: 0 });
       return unchangedBaseline && hasMoreSpecificFallback ? fallbackReply : validation.reply;
     }
 
@@ -76,14 +88,41 @@ export class ConversationReplyService {
       const retryValidation = validateConversationReplyDetailed(
         await this.responder.respond(retryInput), retryInput
       );
-      if (retryValidation.ok) return retryValidation.reply;
+      if (retryValidation.ok) {
+        this.reportTrace({ input, outcome: "retry_accepted", retryCount: 1, rejectionReason: validation.reason });
+        return retryValidation.reply;
+      }
       retryReason = retryValidation.reason;
     } catch (error) {
-      this.reportFallback(error instanceof ConversationResponderError ? error.reason : "provider_unavailable");
+      const reason = error instanceof ConversationResponderError ? error.reason : "provider_unavailable";
+      this.reportFallback(reason);
+      this.reportTrace({ input, outcome: "fallback", retryCount: 1,
+        rejectionReason: validation.reason, fallbackReason: reason });
       return fallbackReply;
     }
-    this.reportFallback(fallbackReasonForValidation(retryReason));
+    const fallbackReason = fallbackReasonForValidation(retryReason);
+    this.reportFallback(fallbackReason);
+    this.reportTrace({ input, outcome: "fallback", retryCount: 1,
+      rejectionReason: retryReason, fallbackReason });
     return fallbackReply;
+  }
+
+  private reportTrace(input: {
+    readonly input: ConversationResponderInput;
+    readonly outcome: ConversationReplyTrace["outcome"];
+    readonly retryCount: ConversationReplyTrace["retryCount"];
+    readonly rejectionReason?: ConversationReplyRejectionReason;
+    readonly fallbackReason?: ConversationReplyFallbackReason;
+  }): void {
+    const route = input.input.pendingAction || input.input.pendingWorkflowReference || input.input.financialContext?.workflowState
+      ? "pending_workflow"
+      : input.input.verifiedCalculations?.length || input.input.financialContext?.financialFacts.length
+        ? "grounded_read_only" : "ordinary_dialogue";
+    try {
+      this.onTrace?.(Object.freeze({ route, outcome: input.outcome, retryCount: input.retryCount,
+        ...(input.rejectionReason ? { rejectionReason: input.rejectionReason } : {}),
+        ...(input.fallbackReason ? { fallbackReason: input.fallbackReason } : {}) }));
+    } catch { /* Content-free observability cannot block response recovery. */ }
   }
 
   private reportFallback(reason: ConversationReplyFallbackReason): void {

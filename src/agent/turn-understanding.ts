@@ -55,6 +55,57 @@ export interface TurnUnderstandingProvider {
   understandTurn(input: { readonly contextSnapshot: ConversationContextSnapshot }): Promise<unknown>;
 }
 
+export interface TurnUnderstandingComparison {
+  readonly deterministicIntents: readonly TurnPrimaryIntent[];
+  readonly modelIntents: readonly TurnPrimaryIntent[];
+  readonly intentsDisagree: boolean;
+  readonly deterministicAction: TurnRequestedAction;
+  readonly modelAction: TurnRequestedAction;
+  readonly actionsDisagree: boolean;
+}
+
+/** Owns advisory model interpretation and its content-free deterministic shadow comparison. */
+export class ConversationTurnUnderstandingService {
+  constructor(private readonly dependencies: {
+    readonly provider?: TurnUnderstandingProvider;
+    readonly onFallback?: (reason: "unavailable" | "invalid_output") => void;
+    readonly onComparison?: (comparison: TurnUnderstandingComparison) => void;
+  } = {}) {}
+
+  async understand(input: {
+    readonly contextSnapshot: ConversationContextSnapshot;
+    readonly fallback: ConversationIntentPlan;
+  }) {
+    const interpretation = await interpretConversationTurn({
+      ...input,
+      ...(this.dependencies.provider ? { provider: this.dependencies.provider } : {})
+    });
+    if (interpretation.failure) {
+      try { this.dependencies.onFallback?.(interpretation.failure); } catch { /* Observer-only. */ }
+    }
+    if (interpretation.source === "model") {
+      const deterministic = deterministicAdvisoryPlan(input.fallback);
+      const deterministicIntents = Object.freeze([...new Set([
+        deterministic.primaryIntent, ...deterministic.secondaryIntents
+      ])].sort());
+      const modelIntents = Object.freeze([...new Set([
+        interpretation.plan.primaryIntent, ...interpretation.plan.secondaryIntents
+      ])].sort());
+      try {
+        this.dependencies.onComparison?.(Object.freeze({
+          deterministicIntents,
+          modelIntents,
+          intentsDisagree: deterministicIntents.join("|") !== modelIntents.join("|"),
+          deterministicAction: deterministic.requestedAction,
+          modelAction: interpretation.plan.requestedAction,
+          actionsDisagree: deterministic.requestedAction !== interpretation.plan.requestedAction
+        }));
+      } catch { /* Shadow diagnostics cannot interrupt the turn. */ }
+    }
+    return interpretation;
+  }
+}
+
 export async function interpretConversationTurn(input: {
   readonly contextSnapshot: ConversationContextSnapshot;
   readonly fallback: ConversationIntentPlan;
@@ -71,7 +122,7 @@ export async function interpretConversationTurn(input: {
   }
 }
 
-function deterministicAdvisoryPlan(plan: ConversationIntentPlan): AdvisoryTurnPlan {
+export function deterministicAdvisoryPlan(plan: ConversationIntentPlan): AdvisoryTurnPlan {
   const primaryIntent: TurnPrimaryIntent = plan.intents.includes("memory_control") ? "memory_control"
     : plan.intents.includes("savings_proposal") ? "workflow_action"
     : plan.actionRequest.kind !== "none" ? "planning"

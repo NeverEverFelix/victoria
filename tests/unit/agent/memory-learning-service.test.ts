@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { MockMemoryProvider } from "../../../src/agent/memory/mock-memory.js";
+import { MemoryOrchestrator } from "../../../src/agent/memory/memory-orchestrator.js";
 import { learnConversationalMemories } from "../../../src/agent/memory/memory-learning-service.js";
+import type { MemoryLearningOutcome } from "../../../src/agent/memory/memory-learning-service.js";
 
 const request = {
   userId: "memory-learning-user",
@@ -41,6 +43,20 @@ describe("learnConversationalMemories", () => {
     });
   });
 
+  it("reports only content-free extraction timing and counts", async () => {
+    const onOutcome = vi.fn();
+    await learnConversationalMemories({
+      request, storage: new MockMemoryProvider(),
+      extractor: { extract: vi.fn(async () => [candidate]) }, onOutcome
+    });
+
+    expect(onOutcome).toHaveBeenCalledOnce();
+    expect(onOutcome.mock.calls[0]?.[0]).toMatchObject({
+      status: "completed", durationMs: expect.any(Number), candidateCount: 1
+    });
+    expect(JSON.stringify(onOutcome.mock.calls[0]?.[0])).not.toContain(request.message);
+  });
+
   it("does not append a duplicate current memory on an extraction retry", async () => {
     const storage = new MockMemoryProvider();
     const extractor = { extract: vi.fn(async () => [candidate]) };
@@ -51,17 +67,49 @@ describe("learnConversationalMemories", () => {
     expect(await storage.listConversationalMemories(request.userId)).toHaveLength(1);
   });
 
+  it("counts distinct source turns for unchanged facts without rewriting prior records", async () => {
+    const backend = new MockMemoryProvider();
+    const storage = new MemoryOrchestrator(backend);
+    const extractor = { extract: vi.fn(async () => [candidate]) };
+    await learnConversationalMemories({ request, storage, extractor });
+    await learnConversationalMemories({
+      request: { ...request, sourceTurnReferences: [{ turnId: "turn_2", userMessage: request.message }] },
+      storage, extractor
+    });
+    await learnConversationalMemories({
+      request: { ...request, sourceTurnReferences: [{ turnId: "turn_2", userMessage: request.message }] },
+      storage, extractor
+    });
+
+    const history = await backend.listConversationalMemories(request.userId);
+    expect(history).toHaveLength(2);
+    expect(history[0]?.sourceRecordCount).toBe(1);
+    expect(history[1]).toMatchObject({
+      sourceRecordCount: 2,
+      supersedesId: history[0]?.id,
+      sourceMetadata: { sourceTurnReferences: [{ turnId: "turn_1" }, { turnId: "turn_2" }] }
+    });
+  });
+
   it("keeps provider failures content-free and non-blocking", async () => {
     const onFailure = vi.fn();
+    const onOutcome = vi.fn((outcome: MemoryLearningOutcome) => {
+      expect(outcome.status).toBe("failed");
+      throw new Error("metrics sink failure");
+    });
     const count = await learnConversationalMemories({
       request,
       storage: new MockMemoryProvider(),
       extractor: { async extract() { throw new Error("private message content"); } },
-      onFailure
+      onFailure, onOutcome
     });
 
     expect(count).toBe(0);
     expect(onFailure).toHaveBeenCalledExactlyOnceWith("provider_or_validation_error");
     expect(JSON.stringify(onFailure.mock.calls)).not.toContain("private message content");
+    expect(onOutcome).toHaveBeenCalledOnce();
+    expect(onOutcome.mock.calls[0]?.[0]).toMatchObject({
+      status: "failed", durationMs: expect.any(Number), candidateCount: 0
+    });
   });
 });

@@ -1,5 +1,6 @@
 import { calculateReadOnlySavingsQuestion } from "./read-only-calculator.js";
 import type { AdvisoryTurnPlan } from "./turn-understanding.js";
+import type { ClassifiedMessage } from "./types.js";
 import {
   independentOrdinaryQuestion,
   isExplicitFinancialActionQuestion,
@@ -7,6 +8,7 @@ import {
   isConversationTopicTurn,
   isReadOnlyFinancialReflection,
   isExplicitReadOnlyTopicSwitch,
+  hasFinancialActionSignal,
   shouldRouteToConversationResponder
 } from "./conversation-routing.js";
 
@@ -44,6 +46,14 @@ export interface ConversationIntentPlan {
   readonly readOnlyQuestions: readonly string[];
   readonly unresolvedReferences: readonly string[];
   readonly needsClarification: boolean;
+}
+
+/** Combined descriptive inputs for the one read-only routing handoff. */
+export interface UnderstoodTurn {
+  readonly message: string;
+  readonly deterministicPlan: ConversationIntentPlan;
+  readonly advisoryPlan: AdvisoryTurnPlan;
+  readonly financialClassificationType: ClassifiedMessage["type"];
 }
 
 /**
@@ -170,11 +180,9 @@ export function mayDispatchConversationIntent(plan: ConversationIntentPlan): boo
 
 /** The single read-only dialogue handoff; descriptive plans never grant workflow authority. */
 export function shouldDispatchConversationIntent(
-  plan: ConversationIntentPlan,
-  message: string,
-  advisoryPlan?: AdvisoryTurnPlan,
-  classificationType?: string
+  turn: UnderstoodTurn
 ): boolean {
+  const { deterministicPlan: plan, message, advisoryPlan, financialClassificationType: classificationType } = turn;
   const deterministicReadOnly = mayDispatchConversationIntent(plan) &&
     (shouldRouteToConversationResponder(message) ||
       (plan.intents.includes("dialogue") && plan.readOnlyQuestions[0] === message.trim()));
@@ -190,4 +198,28 @@ export function shouldDispatchConversationIntent(
     descriptiveRequestIsReadOnly && plan.requestedActions.length === 0 && !plan.needsClarification && !plan.ambiguous &&
     !plan.dialogueActs.includes("attempt_confirmation") && !plan.dialogueActs.includes("attempt_decline") && !plan.dialogueActs.includes("revise");
   return modelDescribesReadOnlyDialogue && deterministicSafetyAllowsReadOnly;
+}
+
+/**
+ * Avoid running the financial specialist for an ordinary conversational turn
+ * only when both the validated model interpretation and the deterministic plan
+ * agree that it contains no financial or workflow intent. This is a latency
+ * optimization; it can never authorize or suppress a monetary action.
+ */
+export function shouldSkipFinancialAssessmentForAdvisoryTurn(input: {
+  readonly message: string;
+  readonly deterministicPlan: ConversationIntentPlan;
+  readonly advisoryPlan: AdvisoryTurnPlan;
+}): boolean {
+  const { message, deterministicPlan, advisoryPlan } = input;
+  const modelDescribesPlainDialogue = advisoryPlan.primaryIntent === "dialogue" &&
+    advisoryPlan.secondaryIntents.length === 0 && advisoryPlan.requestedAction === "none" &&
+    advisoryPlan.actionMention === "none" && advisoryPlan.requestedReadOnlyTools.length === 0 &&
+    !advisoryPlan.uncertainty.needsClarification;
+  const deterministicPlanIsReadOnlyDialogue = deterministicPlan.intents.every((intent) => intent === "dialogue") &&
+    deterministicPlan.actionRequest.kind === "none" && deterministicPlan.requestedActions.length === 0 &&
+    !deterministicPlan.needsClarification && !deterministicPlan.ambiguous &&
+    !deterministicPlan.dialogueActs.some((act) =>
+      act === "attempt_confirmation" || act === "attempt_decline" || act === "revise");
+  return modelDescribesPlainDialogue && deterministicPlanIsReadOnlyDialogue && !hasFinancialActionSignal(message);
 }

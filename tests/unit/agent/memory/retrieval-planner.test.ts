@@ -78,6 +78,24 @@ describe("planMemoryRetrieval", () => {
     expect(result.map(({ id }) => id)).toEqual(["valid"]);
   });
 
+  it("does not promote a one-off behavior into a remembered habit without recurrence evidence", () => {
+    const result = planMemoryRetrieval({
+      memories: [
+        memory("one-off", "habit:walks", "Enjoys a walk after work.", { category: "habit" }),
+        memory("explicit-routine", "habit:walks-weekly", "Enjoys a walk every week.", {
+          category: "habit", evidence: "I go for a walk every week."
+        }),
+        memory("repeated-observation", "habit:walks-often", "Often takes a walk after work.", {
+          category: "habit", sourceRecordCount: 2
+        })
+      ],
+      query: "walk after work", limit: 5
+    });
+
+    expect(result.map(({ id }) => id)).toEqual(expect.arrayContaining(["explicit-routine", "repeated-observation"]));
+    expect(result.map(({ id }) => id)).not.toContain("one-off");
+  });
+
   it("bounds always-relevant memories so a topical goal retains a retrieval slot", () => {
     const preferences = Array.from({ length: 6 }, (_, index) => memory(
       `style-${index}`, `reply_style_${index}`, `Prefers practical answer style ${index}.`,
@@ -99,7 +117,7 @@ describe("planMemoryRetrieval", () => {
       { category: "goal", semanticSimilarity: 0.99 }
     ));
     const habit = memory("habit", "habit:walks", "Enjoys taking a walk after work.", {
-      category: "habit", semanticSimilarity: 0.8
+      category: "habit", semanticSimilarity: 0.8, sourceRecordCount: 2
     });
     const preference = memory("preference", "reply_style", "Prefers practical answers.", {
       category: "preference", semanticSimilarity: 0.7

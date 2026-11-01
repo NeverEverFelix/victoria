@@ -1,6 +1,7 @@
 import type { VictoriaAgent } from "../../agent/victoria-agent.js";
 import type { ConversationCoordinator } from "../turns/conversation-coordinator.js";
 import type { TurnRepository } from "../turns/turn-repository.js";
+import { completeTurnWithRecovery } from "../turns/complete-turn-with-recovery.js";
 import { createQueuedTurn } from "../../domain/turns/lifecycle.js";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -44,6 +45,7 @@ export function createVictoriaChatHandler(dependencies: VictoriaChatHandlerDepen
     if (!isMessageBody(body)) return respond(400, { error: "invalid_chat_request" });
 
     try {
+      let completedTurnId: string | undefined;
       const runAgent = async () => {
         if (!dependencies.turns) {
           return dependencies.agent.respond({ userId: user.userId, conversationId: context.conversationId, message: body.message });
@@ -59,6 +61,7 @@ export function createVictoriaChatHandler(dependencies: VictoriaChatHandlerDepen
           userId: user.userId, conversationId: context.conversationId, turnId: accepted.turn.id,
           expectedRevision: accepted.turn.revision, transition: { type: "start", at: new Date().toISOString() }
         });
+        completedTurnId = running.id;
         try {
           const conversationTurns = dependencies.turns.listConversation
             ? await dependencies.turns.listConversation(user.userId, context.conversationId)
@@ -67,12 +70,14 @@ export function createVictoriaChatHandler(dependencies: VictoriaChatHandlerDepen
             .filter((item) => item.status === "completed" || item.id === accepted.turn.id)
             .map((item) => ({ turnId: item.id, userMessage: item.userMessage }));
           const response = await dependencies.agent.respond({
-            userId: user.userId, conversationId: context.conversationId, message: body.message, sourceTurnReferences
+            userId: user.userId, conversationId: context.conversationId, message: body.message,
+            turnId: running.id, sourceTurnReferences
           });
-          await dependencies.turns.compareAndTransition({
-            userId: user.userId, conversationId: context.conversationId, turnId: running.id,
-            expectedRevision: running.revision,
-            transition: { type: "complete", at: new Date().toISOString(), resultId: running.id }
+          await completeTurnWithRecovery({
+            turns: dependencies.turns,
+            runningTurn: running,
+            response,
+            completedAt: new Date().toISOString()
           });
           return response;
         } catch (error) {
@@ -90,6 +95,7 @@ export function createVictoriaChatHandler(dependencies: VictoriaChatHandlerDepen
         ? await dependencies.conversationCoordinator.runExclusive(user.userId, context.conversationId, runAgent)
         : await runAgent();
       return respond(200, {
+        ...(completedTurnId ? { turnId: completedTurnId } : {}),
         message: response.message,
         decision: {
           action: response.decision.action,
