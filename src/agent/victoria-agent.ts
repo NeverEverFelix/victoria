@@ -60,9 +60,9 @@ import type { ConversationReplyTrace } from "./conversation-reply-service.js";
 import { ConversationTurnReplyService, conversationResponderMemories, conversationResponsePreferenceInput, selectConversationEpisodeSummaries, withoutConversationEventHistory } from "./conversation-turn-reply-service.js";
 import {
   buildConversationIntentPlan,
-  shouldDispatchConversationIntent,
   shouldSkipFinancialAssessmentForAdvisoryTurn
 } from "./conversation-intent-plan.js";
+import { coordinateConversationTurn } from "./conversation-turn-coordinator.js";
 import { ConversationTurnUnderstandingService, type TurnUnderstandingComparison, type TurnUnderstandingProvider } from "./turn-understanding.js";
 import {
   canSkipFinancialClassification,
@@ -97,6 +97,7 @@ import { PendingSavingsHistoryResponseService } from "./pending-savings-history-
 import { PendingSavingsReadOnlyResponseService } from "./pending-savings-read-only-response-service.js";
 import { PendingSavingsDeclineResponseService } from "./pending-savings-decline-response-service.js";
 import { PendingSavingsConfirmationService } from "./pending-savings-confirmation-service.js";
+import { appendDialogueWorkingTurn, type DialogueWorkingState } from "./dialogue-working-state.js";
 
 export type { TurnUnderstandingComparison } from "./turn-understanding.js";
 
@@ -406,7 +407,9 @@ export class VictoriaAgent {
       loaded: loadedTranscript
     });
     await this.conversationTranscript.persist(request.userId, conversationId, withUserMessages);
-    const response = immutableSnapshot(await this.respondTurn(request, priorContext));
+    const priorDialogueState = await this.dependencies.memory.getDialogueWorkingState?.(request.userId, conversationId)
+      .catch(() => undefined);
+    const response = immutableSnapshot(await this.respondTurn(request, priorContext, priorDialogueState));
     const savingsEventPersisted = await this.conversationTurnCompletion.recordSavingsEvent(response, conversationId);
     const workflowStatePersisted = await this.conversationTurnCompletion.persistWorkflowState({
       persistence: this.pendingWorkflowPersistence,
@@ -420,6 +423,18 @@ export class VictoriaAgent {
     const assistantTranscriptPersisted = await this.conversationTurnCompletion.persistAssistantTranscript({
       userId: request.userId, conversationId, messages: withUserMessages, response
     });
+    const currentUserMessage = withUserMessages.at(-1);
+    const updatedDialogueState = appendDialogueWorkingTurn({
+      ...(priorDialogueState ? { state: priorDialogueState } : {}),
+      conversationId,
+      sourceTurnId: currentUserMessage?.id ?? request.sourceTurnReferences?.at(-1)?.turnId ?? "",
+      text: request.message,
+      ...(currentUserMessage?.createdAt ? { createdAt: currentUserMessage.createdAt } : {})
+    });
+    if (updatedDialogueState && this.dependencies.memory.setDialogueWorkingState) {
+      await this.dependencies.memory.setDialogueWorkingState(request.userId, conversationId, updatedDialogueState)
+        .catch(() => undefined);
+    }
     const trace: ConversationTurnTrace = Object.freeze({
       schemaVersion: 5,
       durationMs: Math.max(0, Date.now() - startedAt),
@@ -476,19 +491,23 @@ export class VictoriaAgent {
     return this.episodicMemory.summarize({ userId, context, finishing, entries, sourceTurnReferences });
   }
 
-  private async respondTurn(request: AgentRequest, conversationContext: readonly string[]): Promise<AgentResponse> {
+  private async respondTurn(
+    request: AgentRequest,
+    conversationContext: readonly string[],
+    dialogueWorkingState?: DialogueWorkingState
+  ): Promise<AgentResponse> {
     const conversationKey = this.conversationKey(request);
     const { turnContext, annualProjection } = await this.financialFacts.build(request.message, conversationContext);
     const answerToRecentQuestion = isAnswerToRecentVictoriaQuestion(conversationContext);
     const scopedAllocationTargetChoice = isCoveredAllocationTargetChoice(request.message, conversationContext);
     let interestSavedThisTurn = false;
     const pendingCorrection = this.pendingEntryCorrectionService.getForConversation(request.userId, conversationKey);
-    const correctionResponse = await this.pendingWorkflowResponses.resolveEntryCorrection(request, conversationContext);
-    if (correctionResponse) return correctionResponse;
+    const correctionOutcome = await this.pendingWorkflowResponses.resolveEntryCorrection(request, conversationContext);
+    if (correctionOutcome.kind === "handled") return correctionOutcome.response;
     const pendingGoal = this.pendingGoalAllocationService.getForConversation(request.userId, conversationKey);
     const pendingGoalAction = pendingGoal?.state;
-    const goalAllocationResponse = await this.pendingWorkflowResponses.resolveGoalAllocation(request, conversationContext);
-    if (goalAllocationResponse) return goalAllocationResponse;
+    const goalAllocationOutcome = await this.pendingWorkflowResponses.resolveGoalAllocation(request, conversationContext);
+    if (goalAllocationOutcome.kind === "handled") return goalAllocationOutcome.response;
 
     const pendingSavingsContext = this.pendingSavingsProposalService.getContextForConversation(
       request.userId, conversationKey, conversationContext
@@ -498,7 +517,7 @@ export class VictoriaAgent {
     const pendingSavingsConversationState = pendingSavingsContext?.workflowState;
 
     if (pendingAction && pendingActionId) {
-      const pendingResponse = await this.pendingSavingsConfirmations.resolve({
+      const pendingOutcome = await this.pendingSavingsConfirmations.resolve({
         request,
         recentTurns: conversationContext,
         turnContext,
@@ -507,7 +526,7 @@ export class VictoriaAgent {
         ...(annualProjection ? { annualProjection } : {}),
         ...(turnContext.annualProjection?.eventCount === 2 ? { recurringCosts: turnContext.recurringCosts } : {})
       });
-      if (pendingResponse) return pendingResponse;
+      if (pendingOutcome.kind === "handled") return pendingOutcome.response;
     }
 
     const priorUserTurn = conversationContext.at(-2);
@@ -614,6 +633,7 @@ export class VictoriaAgent {
       recentTurns: conversationContext,
       memories: conversationResponderMemories(memory.conversationalMemories ?? [], responderFinancialContext, request.message),
       episodicSummaries,
+      ...(dialogueWorkingState ? { priorDialogueTurns: dialogueWorkingState.turns } : {}),
       ...responsePreferenceInput,
       ...(pendingAction ? { pendingAction: "savings_entry" as const } : {}),
       ...(canUseEventHistory ? { conversationSavingsEvents: responderFinancialContext.conversationSavingsEvents } : {}),
@@ -794,6 +814,14 @@ export class VictoriaAgent {
     try { this.dependencies.onFinancialAssessmentRoute?.(assessmentRoute); }
     catch { /* Content-free routing metrics cannot interrupt a user turn. */ }
     const classification = resolveCoveredSpendPeriodAnswer(classifiedMessage, request.message, conversationContext);
+    const coordinatedTurn = coordinateConversationTurn({
+      message: request.message,
+      deterministicPlan: intentPlan,
+      advisoryPlan: interpretation.plan,
+      financialClassificationType: classification.type,
+      hasPendingWorkflow: Boolean(pendingAction || pendingGoalAction || pendingCorrection || pendingClarification),
+      responderEnabled: Boolean(this.dependencies.conversationResponder)
+    });
     const planningChoice = pendingAction?.decision.planningChoice;
     if (pendingAction && pendingActionId && pendingAction.decision.proposal?.status === "pending" &&
         planningChoice?.selectedHorizon === "annual" && resolvedReference?.period === "annual" &&
@@ -818,13 +846,7 @@ export class VictoriaAgent {
       const learnedCount = await this.memoryLearning.learnEligibleTurn(request);
       if (learnedCount > 0) memoryAcknowledgement = "I'll keep that in mind for future conversations.";
     }
-    if (this.dependencies.conversationResponder &&
-        shouldDispatchConversationIntent({
-          message: request.message,
-          deterministicPlan: intentPlan,
-          advisoryPlan: interpretation.plan,
-          financialClassificationType: classification.type
-        })) {
+    if (coordinatedTurn.route === "read_only") {
       return this.respondConversationalTurn(request, conversationContext,
         "I can help think that through. What would be most useful to focus on first?", undefined,
         canUseEventHistory ? responderFinancialContext.conversationSavingsEvents : undefined,

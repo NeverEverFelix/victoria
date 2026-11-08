@@ -4,6 +4,18 @@
 
 Pending savings-entry correction proposals and terminal outcomes are implemented in migration `0021`; amount- and target-clarification markers are implemented in migrations `0022` and `0023`. Verify both in persistent local chat and apply them to staging/production before considering restart continuity closed. Versioned role-preserving transcript records, derived dialogue state, content-free retrieval reason codes, and privacy-safe turn/fallback traces now exist. Durable dialogue state beyond the rolling 20-message context, provider usage/cost aggregation, retention of trace history, and asynchronous memory processing remain open. The product owner has confirmed the staged Context Builder + Intent and Reference Resolver + Conversation State Manager direction alongside the orchestrator/specialist pattern; see the [conversation context architecture review](VICTORIA_CONVERSATION_CONTEXT_ARCHITECTURE_REVIEW.md) and [ADR 0001](architecture/decisions/0001-orchestrated-multi-agent-architecture.md). Existing turn-context work is partial. Before implementation, reconcile durable workflow state with pending-action repositories and the current projection-versus-realized-savings contract. Do not treat the review's illustrative schemas as approved.
 
+### Conversation Architecture Review Follow-up (2026-11-01)
+
+The external repository review is an engineering input, not a replacement for this queue or the MVP contract. A regression now routes explicit advice questions about newly freed recurring costs to the read-only responder; an avoided-spend classification alone no longer decides that the user wants a savings proposal. The review's remaining slices are ordered here:
+
+1. Extend the initial typed turn coordinator (`src/agent/conversation-turn-coordinator.ts`) to collect read-only answers and workflow outcomes before composing one reply, while preserving the existing deterministic mutation path. The first slice now coordinates route, recognized event, descriptive requested action, pending-workflow disposition, and assessment-skip signal; it does not yet own transcript handling or reply composition.
+2. Add bounded, durable dialogue working state with source-turn provenance and expiry; do not use it as financial evidence or approval.
+3. Add cross-session financial-history retrieval from scoped typed records, and tune memory relevance only against held-out recall and forgetting cases.
+4. Measure response-claim validation and fallback quality on multi-intent and detailed-answer cases; retain hard money-safety checks.
+5. Complete blinded human conversation review and compare specialist routing cost/latency before changing the team strategy.
+6. Keep real transfers deferred until a separately reviewed production execution boundary exists.
+7. Replace the GitHub Actions AI review credential through repository secret management and rerun the failed review; credentials must not enter source or logs.
+
 ### Conversation Context And Workflow State (Architecture Direction Confirmed)
 
 Status: Direction confirmed on 2026-10-25. Initial behavior slices completed: period-specific record requests resolve against the active planning choice; the user can change the planning horizon while the pending monthly proposal remains unchanged; confirmation is still required for the current-period amount. Victoria should continue toward explicit context assembly, grounded reference resolution, and structured conversation workflow state before financial execution. The orchestrator coordinates Financial Moment, Savings Reasoning, and Companion Voice as advisory specialists. Deterministic policy/domain code remains the only authority for proposal lifecycle, exact-action approval, and mocked-ledger writes.

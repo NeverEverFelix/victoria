@@ -1,5 +1,6 @@
 import type { AgentMemory, FinancialDecision, SavingsGoal, UserHabit } from "../types.js";
 import type { TransactionFinancialProfile } from "../../domain/financial-profile.js";
+import { isDialogueWorkingState, type DialogueWorkingState } from "../dialogue-working-state.js";
 import type { ConversationMessage, ConversationalMemory, ConversationalMemoryPage, MemoryProvider } from "./types.js";
 import { extractConversationalMemory } from "./extract-preference.js";
 import { conversationMessagesFromLegacy, legacyConversationContext } from "./conversation-transcript.js";
@@ -224,6 +225,21 @@ export class MemoryOrchestrator implements MemoryProvider {
       return;
     }
     await this.storage.setConversationContext(userId, conversationId, legacyConversationContext(messages));
+  }
+
+  getDialogueWorkingState(userId: string, conversationId: string): Promise<DialogueWorkingState | undefined> {
+    if (!this.storage.getDialogueWorkingState) return Promise.resolve(undefined);
+    return this.storage.getDialogueWorkingState(userId, conversationId).then((state) =>
+      isDialogueWorkingState(state, conversationId) && Date.parse(state.expiresAt) > (this.options.now?.() ?? new Date()).getTime()
+        ? state
+        : undefined);
+  }
+
+  async setDialogueWorkingState(userId: string, conversationId: string, state: DialogueWorkingState): Promise<void> {
+    if (!userId.trim() || !isDialogueWorkingState(state, conversationId)) {
+      throw new Error("Dialogue working state must be valid and scoped to the requested conversation.");
+    }
+    await this.storage.setDialogueWorkingState?.(userId, conversationId, state);
   }
 
   private async listCurrentStoredMemories(userId: string): Promise<ConversationalMemory[]> {

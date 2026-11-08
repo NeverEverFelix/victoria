@@ -5,7 +5,8 @@ import {
   MockLlmAdapter,
   MockMemoryProvider,
   MockVictoriaTools,
-  VictoriaAgent
+  VictoriaAgent,
+  appendDialogueWorkingTurn
 } from "../../../src/agent/index.js";
 import type { AgentTeamSpecialists } from "../../../src/agent/index.js";
 import type { UserHabit } from "../../../src/agent/types.js";
@@ -19,6 +20,39 @@ import type { ConversationContextSnapshot } from "../../../src/agent/conversatio
 import { MemoryOrchestrator } from "../../../src/agent/memory/memory-orchestrator.js";
 
 describe("VictoriaAgent", () => {
+  it("[ARC-007] uses durable same-conversation dialogue after the rolling transcript window expires it", async () => {
+    const memory = new MockMemoryProvider();
+    const request = { userId: "durable_dialogue_user", conversationId: "durable_dialogue_chat" };
+    const oldState = appendDialogueWorkingTurn({ conversationId: request.conversationId,
+      sourceTurnId: "old-debt-tradeoff", text: "I want to compare paying down my credit card with building an emergency fund.",
+      now: new Date("2026-10-30T12:00:00.000Z") });
+    expect(oldState).toBeDefined();
+    await memory.setDialogueWorkingState(request.userId, request.conversationId, oldState!);
+    await memory.setConversationContext(request.userId, request.conversationId,
+      Array.from({ length: 20 }, (_, index) => index % 2 === 0
+        ? `User: unrelated weekend topic ${index}` : `Victoria: follow-up question ${index}?`));
+    let responderInput: ConversationResponderInput | undefined;
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory, tools: new MockVictoriaTools(),
+      conversationResponder: { async respond(input) {
+        responderInput = input;
+        return "You were weighing credit-card repayment against an emergency fund.";
+      } }
+    });
+
+    const response = await agent.respond({ ...request,
+      message: "Returning to the credit card tradeoff, should I prioritize it?",
+      sourceTurnReferences: [{ turnId: "resume-debt-turn", userMessage: "Returning to the credit card tradeoff, should I prioritize it?" }]
+    });
+
+    expect(response.message).toContain("credit-card repayment against an emergency fund");
+    expect(responderInput?.contextSnapshot?.priorDialogue).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: oldState?.turns[0]?.text })
+    ]));
+    const updated = await memory.getDialogueWorkingState(request.userId, request.conversationId);
+    expect(updated?.turns.map(({ sourceTurnId }) => sourceTurnId)).toContain("resume-debt-turn");
+  });
+
   it("queues eligible learning by turn identity and defers provider extraction until the worker runs", async () => {
     const extractor = { extract: vi.fn(async () => [{
       category: "interest" as const, key: "interest:tennis", value: "Enjoys playing tennis",
@@ -1245,6 +1279,30 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
   });
 
+  it("answers an independent question while keeping a mixed approval attempt pending", async () => {
+    const tools = new MockVictoriaTools();
+    const responder = vi.fn(async () => "You mentioned cancelling a $35/month yoga membership.");
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      conversationResponder: { respond: responder }
+    });
+    const request = { userId: "mixed_approval_question_user", conversationId: "mixed_approval_question_chat" };
+    const initial = await agent.respond({ ...request, message: "I canceled a $35/month yoga membership." });
+    expect(initial.decision.proposal?.status).toBe("pending");
+
+    const mixed = await agent.respond({ ...request,
+      message: "Yes, record that $35 in my Victoria ledger, and what did I mention first?" });
+
+    expect(mixed.message).toContain("You mentioned cancelling a $35/month yoga membership");
+    expect(mixed.decision.action).not.toBe("create_ledger_entry");
+    expect(responder).toHaveBeenCalledOnce();
+    expect(await tools.listSavingsEntries(request.userId)).toEqual([]);
+
+    const confirmed = await agent.respond({ ...request, message: "Yes" });
+    expect(confirmed.decision.action).toBe("create_ledger_entry");
+    expect((await tools.listSavingsEntries(request.userId))[0]?.amountCents).toBe(3_500);
+  });
+
   it("[ARC-006] uses model-selected references only after matching them to grounded context events", async () => {
     const tools = new MockVictoriaTools();
     const memory = new MockMemoryProvider();
@@ -2201,14 +2259,23 @@ describe("VictoriaAgent", () => {
     expect(await tools.listSavingsEntries("ended_transfer_user")).toEqual([]);
   });
 
-  it("treats a covered-expense money-redirection question as planning advice", async () => {
-    const response = await createAgent([], new MockVictoriaTools()).respond({
+  it("[INT-006] answers a covered-expense budgeting question without proposing a savings entry", async () => {
+    const tools = new MockVictoriaTools();
+    const responder = vi.fn(async () =>
+      "We can compare debt repayment with other priorities before you decide. Nothing has been recorded."
+    );
+    const agent = new VictoriaAgent({
+      llm: new MockLlmAdapter(), memory: new MockMemoryProvider(), tools,
+      conversationResponder: { respond: responder }
+    });
+    const response = await agent.respond({
       userId: "covered_budgeting_question_user",
       message: "I like to play basketball at this gym that costs me $35 a month, but now my company pays for my gym membership. Is it a good idea to move this money elsewhere?"
     });
-    expect(response.decision.classification.type).toBe("avoided_spend");
-    expect(response.decision.action).toBe("suggest_savings");
-    expect(response.decision.toolCall?.name).toBe("createSavingsEntry");
+    expect(response.message).toContain("compare debt repayment");
+    expect(response.decision.action).toBe("reflect");
+    expect(responder).toHaveBeenCalledOnce();
+    expect(await tools.listSavingsEntries("covered_budgeting_question_user")).toEqual([]);
   });
 
   it.each([

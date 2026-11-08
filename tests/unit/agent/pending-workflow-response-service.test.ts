@@ -69,7 +69,8 @@ describe("PendingWorkflowResponseService", () => {
     expect(approveEntryCorrection).toHaveBeenCalledWith(
       expect.objectContaining({ approvedActionId: "action-correction" }), correctionDecision()
     );
-    expect(result?.message).toBe("action-correction");
+    expect(result).toMatchObject({ kind: "handled", workflow: "entry_correction", resolution: "approval" });
+    expect(result.kind === "handled" ? result.response.message : undefined).toBe("action-correction");
     expect(corrections.getForConversation(request.userId, JSON.stringify([request.userId, request.conversationId]))).toBeDefined();
   });
 
@@ -91,7 +92,8 @@ describe("PendingWorkflowResponseService", () => {
 
     const result = await service.resolveEntryCorrection({ ...request, message: "No" }, []);
 
-    expect(result?.message).toContain("remains unchanged");
+    expect(result).toMatchObject({ kind: "handled", workflow: "entry_correction", resolution: "decline" });
+    expect(result.kind === "handled" ? result.response.message : undefined).toContain("remains unchanged");
     expect(approveEntryCorrection).not.toHaveBeenCalled();
     expect(corrections.getForConversation(request.userId, conversationKey)).toBeUndefined();
   });
@@ -116,7 +118,8 @@ describe("PendingWorkflowResponseService", () => {
       ...request, message: "Can we talk about dinner instead?"
     }, ["Victoria: Confirm the allocation?"]);
 
-    expect(result?.message).toBe("goal_allocation");
+    expect(result).toMatchObject({ kind: "handled", workflow: "goal_allocation", resolution: "pending" });
+    expect(result.kind === "handled" ? result.response.message : undefined).toBe("goal_allocation");
     expect(respondConversationalTurn).toHaveBeenCalledWith(
       expect.objectContaining({ message: "Can we talk about dinner instead?" }),
       ["Victoria: Confirm the allocation?"], expect.stringContaining("remains pending"), "goal_allocation"
@@ -143,7 +146,8 @@ describe("PendingWorkflowResponseService", () => {
 
     const result = await service.resolveGoalAllocation({ ...request, message: "Maybe" }, []);
 
-    expect(result?.message).toBe("goal_allocation");
+    expect(result).toMatchObject({ kind: "handled", workflow: "goal_allocation", resolution: "pending" });
+    expect(result.kind === "handled" ? result.response.message : undefined).toBe("goal_allocation");
     expect(respondConversationalTurn).toHaveBeenCalledWith(
       expect.objectContaining({ message: "Maybe" }), [], expect.stringContaining("couldn't tell"), "goal_allocation"
     );

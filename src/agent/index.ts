@@ -15,6 +15,7 @@ export * from "./pending-workflow-response-service.js";
 export * from "./pending-savings-history-response-service.js";
 export * from "./conversation-transcript-service.js";
 export * from "./conversation-turn-completion-service.js";
+export * from "./dialogue-working-state.js";
 export * from "./pending-savings-action-store.js";
 export * from "./savings-event-store.js";
 export * from "./policy.js";

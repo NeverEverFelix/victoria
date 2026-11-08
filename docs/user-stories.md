@@ -598,8 +598,9 @@ As a user whose employer now covers a recurring expense, I want Victoria to help
 
 Expected behavior:
 
-- When I state a clear monthly USD cost that my employer now covers and ask whether to redirect it, Victoria recognizes a savings moment and may show the annualized amount as a projection.
-- Victoria proposes only the user-stated monthly amount for the mocked ledger and asks before recording it; the annual projection is never treated as a current or guaranteed saving.
+- When I state a clear monthly USD cost that my employer now covers, Victoria recognizes the freed amount and may show the annualized amount as a conditional projection.
+- If I ask whether to use the freed amount for a specific priority such as debt repayment, Victoria answers that read-only advice question without opening a savings proposal just because it recognized an avoided-spend event.
+- If I explicitly ask Victoria to record the freed amount, it proposes only the user-stated monthly amount for the mocked ledger and asks before recording it; the annual projection is never treated as a current or guaranteed saving.
 - Victoria does not claim access to a complete current financial picture unless an available authorized profile supports that claim.
 - If the user explicitly shares an interest in the same message, Victoria remembers that interest and acknowledges it naturally, even if optional provider memory extraction is unavailable.
 - If I provide an amount in a follow-up, Victoria uses the conversation context and asks for confirmation instead of asking what the amount was for again.
@@ -618,6 +619,7 @@ As a user who has stopped an activity with a stated recurring cost, I want Victo
 Expected behavior:
 
 - A clear statement that the activity ended, with one positive USD amount and monthly or yearly period, supports an avoided-spend planning moment even if the provider returns an unclear classification.
+- A read-only question about whether the freed amount belongs in savings or another priority receives advice without opening a proposal; an explicit request to record it can start the normal approval-gated flow.
 - Common compact price wording such as "$35-a-month" and "$35/month" supplies the same stated period; tentative cancellations and conflicting periods still require clarification.
 - Victoria may present an annual projection from a monthly amount only as conditional on the cost remaining out of the budget. She responds to the user's reason for stopping without shame or medical advice.
 - A monthly or annual planning choice is separate from approval. Victoria may offer to record only the current month's amount in the mocked ledger after that choice and must wait for explicit confirmation.
@@ -673,3 +675,25 @@ Expected behavior:
 - Generated dollar amounts are accepted only when they match that deterministic result or another authorized source.
 - A calculation cannot create or approve a savings proposal, claim an account balance, or claim that money was saved.
 - Requests to record, transfer, withdraw, or calculate an account balance stay outside this calculator.
+
+## Story 27: Resume A Discussion In A Long Conversation
+
+As a user, I want Victoria to recover an earlier topic after a long conversation so I do not have to repeat the relevant context.
+
+Expected behavior:
+
+- Victoria keeps a bounded, same-conversation working state separately from the rolling transcript and long-term personal memories.
+- Historical turns may carry a rough question, constraint, correction, decision, or topic tag, linked to the unchanged source turn; these tags do not resolve questions or supersede history.
+- Working-state excerpts are linked to their source user-turn IDs, expire after 30 days, and are selected by relevance for a read-only response.
+- Later user corrections remain separate source turns and take precedence over earlier statements when the user clearly corrects them.
+- Historical dialogue can guide continuity but is not verified financial evidence, a current account fact, an approval, or authority to create or change a financial action.
+- The state never crosses user or conversation boundaries.
+- Credentials, account/contact identifiers, and sensitive personal categories are not retained in this state.
+
+Acceptance criteria:
+
+- After more than 20 transcript messages, Victoria can use a relevant earlier user turn when the user explicitly returns to that topic.
+- An unrelated conversation does not receive another conversation's working state.
+- A repeated source-turn ID does not duplicate the stored turn.
+- Expired or malformed stored state is not provided to the responder.
+- Mentioned amounts in prior dialogue do not become newly verified dollar evidence.

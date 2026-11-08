@@ -40,6 +40,13 @@ describe("agent policy", () => {
     expect(interpretApprovalResponse("Yes, record that $20. Also, which event did I mention first?", 2_000)).toBe("not_approval");
   });
 
+  it.each([
+    "Sure, I guess. Whatever you think.",
+    "Yeah, that makes sense, but I don't think I want to save the whole amount. Maybe some should go to debt?"
+  ])("does not convert conversational agreement or uncertainty into approval: %s", (message) => {
+    expect(interpretApprovalResponse(message, 2_000)).not.toBe("explicit_approval");
+  });
+
   it("blocks real money movement without explicit approval", () => {
     const decision = canCallTool(baseRequest(), {
       name: "eventuallyMoveMoney",

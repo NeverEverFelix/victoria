@@ -6,6 +6,8 @@ import { conversationMessagesFromLegacy, isConversationMessage, legacyConversati
 import { toPgVectorLiteral, validateSemanticEmbedding, type SemanticEmbeddingProvider } from "./semantic-embedding.js";
 import type { TransactionFinancialProfile } from "../../domain/financial-profile.js";
 import { formatUsd } from "../../domain/money.js";
+import { immutableSnapshot } from "../../domain/immutable.js";
+import { isDialogueWorkingState, type DialogueWorkingState } from "../dialogue-working-state.js";
 
 /** Durable user-scoped conversational memory. Financial history belongs in its own repositories. */
 export class PostgresMemoryRepository implements MemoryProvider {
@@ -88,6 +90,33 @@ export class PostgresMemoryRepository implements MemoryProvider {
        ON CONFLICT (user_id, conversation_id) DO UPDATE SET messages = EXCLUDED.messages,
          updated_at = EXCLUDED.updated_at, expires_at = EXCLUDED.expires_at`,
       [userId, conversationId, JSON.stringify(bounded), new Date(Date.now() + this.shortTermContextTtlMs).toISOString()]
+    );
+  }
+
+  async getDialogueWorkingState(userId: string, conversationId: string): Promise<DialogueWorkingState | undefined> {
+    if (!userId.trim() || !conversationId.trim()) return undefined;
+    const result = await this.db.query<{ state: unknown }>(
+      `WITH expired AS (
+         DELETE FROM victoria_dialogue_working_state WHERE expires_at <= now()
+       )
+       SELECT state FROM victoria_dialogue_working_state
+       WHERE user_id = $1 AND conversation_id = $2 AND expires_at > now()`,
+      [userId, conversationId]
+    );
+    const state = result.rows[0]?.state;
+    return isDialogueWorkingState(state, conversationId) ? immutableSnapshot(state) : undefined;
+  }
+
+  async setDialogueWorkingState(userId: string, conversationId: string, state: DialogueWorkingState): Promise<void> {
+    if (!userId.trim() || !conversationId.trim() || !isDialogueWorkingState(state, conversationId)) {
+      throw new Error("Dialogue working state must be valid and scoped to the requested conversation.");
+    }
+    await this.db.query(
+      `INSERT INTO victoria_dialogue_working_state (user_id, conversation_id, state, updated_at, expires_at)
+       VALUES ($1, $2, $3::jsonb, $4, $5)
+       ON CONFLICT (user_id, conversation_id) DO UPDATE SET state = EXCLUDED.state,
+         updated_at = EXCLUDED.updated_at, expires_at = EXCLUDED.expires_at`,
+      [userId, conversationId, JSON.stringify(state), state.updatedAt, state.expiresAt]
     );
   }
 

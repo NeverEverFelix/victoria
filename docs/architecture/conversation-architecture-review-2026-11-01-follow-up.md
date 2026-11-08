@@ -1,0 +1,26 @@
+# Conversation Architecture Review Follow-up
+
+Date: 2026-11-01
+
+This status record tracks the findings in `VICTORIA_REPOSITORY_CONVERSATION_ARCHITECTURE_REVIEW_2026-11-01.md`, supplied outside the repository. The review is an engineering assessment. Product behavior remains governed by [`docs/mvp.md`](../mvp.md), [`docs/user-stories.md`](../user-stories.md), and the [MVP safety contract](../specification/mvp-safety-contract.md).
+
+## Finding Status
+
+| Finding | Status | Resolution or remaining work |
+| --- | --- | --- |
+| F-01 Fragmented turn orchestration | Partial | A typed turn coordinator now assembles the read-only route, recognized event, requested action, pending-workflow disposition, and financial-assessment skip signal in [`conversation-turn-coordinator.ts`](../../src/agent/conversation-turn-coordinator.ts). `VictoriaAgent` uses its route to dispatch read-only turns. Plain “yes, but what about…” language no longer describes a proposal revision unless the message contains edit language; this keeps a follow-up question from being mislabeled as an action outcome. Pending savings confirmation and correction/goal-allocation resolvers now return discriminated handled/unhandled results with explicit workflow and resolution labels; approval labels describe deterministic handling and callbacks remain the only mutation path. A mixed confirmation attempt plus exact mock-ledger request and independent question still answers the question while retaining the proposal; a later standalone exact confirmation remains required. Transcript handling, context assembly, workflow outcomes, and final response composition still span separate services; the full unified composition contract remains queued in [`docs/agent-work-queue.md`](../agent-work-queue.md). |
+| F-02 Event classification coupled to savings proposals | Addressed for read-only advice questions | Budgeting-advice questions are excluded from direct proposal parsing and routed to the read-only responder even when the financial classifier recognizes avoided spending. A request to record remains a separate approval-gated workflow. Coverage is in [`conversation-intent-plan.test.ts`](../../tests/unit/agent/conversation-intent-plan.test.ts), [`victoria-agent.test.ts`](../../tests/unit/agent/victoria-agent.test.ts), and the fixed disagreement set. |
+| F-03 Regex-led routing | Partial | Regressions cover agreement-with-uncertainty followed by a debt question without treating it as approval or a record request. A frozen six-case synthetic disagreement set now checks deterministic-versus-advisory comparisons and routing; its scripted advisory plans are regression inputs, not live model-quality evidence, and the set is not held out. Broader paraphrase and model-versus-rule disagreement evaluation remains open. |
+| F-04 Ephemeral dialogue state | Partial | A separate same-conversation working-state store now retains up to 40 source-turn-linked user excerpts for 30 days and selects up to six relevant excerpts for a read-only response. Excerpts retain their source IDs and carry fallible question/constraint/correction/decision/topic tags; the responder is instructed not to treat those tags as truth, lifecycle, or action authority. It remains historical dialogue, not personal memory or financial evidence. Structured open-question/constraint lifecycle and richer topic resolution remain open. |
+| F-05 Cross-session financial history | Open | Personal memories and same-conversation typed financial events are available. Cross-session retrieval of grounded financial discussions remains queued; no memory eligibility gates were loosened. |
+| F-06 Validation and fallback quality | Partial | Detailed response depth and structured rejection reasons already exist. Multi-intent, detailed-answer, and outage quality still need held-out and human evaluation. |
+| F-07 Specialist cost and quality | Measured; decision pending | The saved 50-turn comparison records higher latency and cost for the specialist arm without a clear overall improvement. A blinded human review and routing decision remain open. |
+| F-08 Real-money transfer execution | Deferred by MVP boundary | No transfer system was added. Transfers remain unavailable until a separately reviewed production execution design and safety boundary are approved. |
+| F-09 ` 2` duplicate files | Addressed | Removed all 198 tracked ` 2`-suffixed snapshots whose canonical counterparts were present. Divergent copies were checked: the suffixed versions were stale subsets of the canonical files. The agent setup validator now rejects new suffixed snapshots. |
+| F-10 AI Code Review authentication | External action required | The supplied review reports an HTTP 401 `invalid_api_key`. Replacing the repository Actions secret requires secret-manager access and a valid replacement credential, neither of which is available in the repository. Rerun the AI review after the repository owner updates the secret. |
+
+## Verification
+
+- The advice-route regression ensures a debt question receives a read-only response, with no proposal or ledger entry.
+- The duplicate-path guard is covered by [`validate-agentic-setup.test.ts`](../../tests/unit/scripts/validate-agentic-setup.test.ts).
+- Full repository verification is recorded in the corresponding session-history entry.
