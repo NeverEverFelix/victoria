@@ -1,4 +1,5 @@
 import { calculateReadOnlySavingsQuestion } from "./read-only-calculator.js";
+import { isBudgetingAdviceQuestion } from "./money-movement-intent.js";
 import type { AdvisoryTurnPlan } from "./turn-understanding.js";
 import type { ClassifiedMessage } from "./types.js";
 import {
@@ -71,14 +72,14 @@ export function buildConversationIntentPlan(input: {
   const readOnlyQuestions: string[] = [];
   const independent = independentOrdinaryQuestion(message);
   if (independent) readOnlyQuestions.push(independent);
-  else if (!actionQuestion && (isOrdinaryQuestion(message) || isReadOnlyFinancialReflection(message) ||
+  else if (!actionQuestion && (isOrdinaryQuestion(message) || isBudgetingAdviceQuestion(message) || isReadOnlyFinancialReflection(message) ||
       isExplicitReadOnlyTopicSwitch(message) || calculateReadOnlySavingsQuestion(message))) {
     readOnlyQuestions.push(message);
   }
 
   const correction = /\b(?:actually|correction|i meant|revise|correct that|change that|change the amount|change the goal)\b/i.test(message);
   const memoryControl = /\b(?:forget|don't remember|do not remember|stop remembering|remember that)\b/i.test(message);
-  const directProposalInstruction = !actionQuestion && (
+  const directProposalInstruction = !actionQuestion && !isBudgetingAdviceQuestion(message) && (
     /\b(?:put|allocate|link|assign|apply)\b[^.!?]{0,100}\b(?:toward|to|for|goal|savings)\b/i.test(message) ||
     /\b(?:record|log|add)\b[^.!?]{0,80}\b(?:ledger|savings entry|saved)\b/i.test(message));
   const actionMention = /\b(?:record|log|add|transfer|deposit|withdraw|approve|confirm|allocate|link|assign)\b[^.!?]{0,60}\b(?:the|that|this|it|\$|entry|ledger|money|funds?|goal|savings)\b/i.test(message) ||
@@ -99,7 +100,7 @@ export function buildConversationIntentPlan(input: {
   const mockRecordRequest = !negatesFinancialAction && !realMovementRequest &&
     /\b(?:record|log|add)\b[^.!?]{0,80}\b(?:ledger|savings entry|saved|mock(?:ed)? entry)\b/i.test(message);
   const planOnly = !realMovementRequest && !mockRecordRequest && /\b(?:plan|planning|goal|save|saving|set aside|monthly target)\b/i.test(message);
-  const revisionWording = correction || /\b(?:yes|yeah|sure)\s*,?\s*but\b|\b(?:instead|rather|make it|change to|use \$)\b/i.test(message);
+  const revisionWording = correction || /\b(?:instead|rather|make it|change to|use \$)\b/i.test(message);
   const changesTopic = isExplicitReadOnlyTopicSwitch(message) || isConversationTopicTurn(message);
   const lastTurnWasQuestion = (input.recentTurns ?? []).at(-1)
     ?.replace(/^Victoria:\s*/i, "").trim().endsWith("?") ?? false;

@@ -1,4 +1,5 @@
 import type { AgentMemory, FinancialDecision, SavingsGoal, UserHabit } from "../types.js";
+import type { DialogueWorkingState } from "../dialogue-working-state.js";
 
 export interface MemoryProvider {
   getMemoryForUser(userId: string, query?: string): Promise<AgentMemory>;
@@ -10,6 +11,9 @@ export interface MemoryProvider {
   /** Structured role-preserving transcript API; legacy string methods remain for existing consumers. */
   getConversationMessages?(userId: string, conversationId: string): Promise<readonly ConversationMessage[]>;
   setConversationMessages?(userId: string, conversationId: string, messages: readonly ConversationMessage[]): Promise<void>;
+  /** Durable, bounded same-conversation dialogue continuity; separate from transcript and personal memory. */
+  getDialogueWorkingState?(userId: string, conversationId: string): Promise<DialogueWorkingState | undefined>;
+  setDialogueWorkingState?(userId: string, conversationId: string, state: DialogueWorkingState): Promise<void>;
   listConversationalMemories(userId: string, page?: ConversationalMemoryPage): Promise<readonly ConversationalMemory[]>;
   /** Optional efficient current-fact view; include suppression markers only for lifecycle writes. */
   listCurrentConversationalMemories?(

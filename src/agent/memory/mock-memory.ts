@@ -3,12 +3,14 @@ import { DEFAULT_CONVERSATION_CONTEXT_LIMIT, type ConversationalMemory, type Con
 import { immutableSnapshot } from "../../domain/immutable.js";
 import { conversationMessagesFromLegacy, legacyConversationContext } from "./conversation-transcript.js";
 import type { ConversationMessage } from "./types.js";
+import type { DialogueWorkingState } from "../dialogue-working-state.js";
 
 export class MockMemoryProvider implements MemoryProvider {
   private readonly decisionsByUser = new Map<string, FinancialDecision[]>();
   private readonly contextByConversation = new Map<string, readonly string[]>();
   private readonly messagesByConversation = new Map<string, readonly ConversationMessage[]>();
   private readonly memoriesByUser = new Map<string, ConversationalMemory[]>();
+  private readonly dialogueWorkingStateByConversation = new Map<string, DialogueWorkingState>();
 
   constructor(
     private readonly habits: UserHabit[] = [],
@@ -75,6 +77,14 @@ export class MockMemoryProvider implements MemoryProvider {
     const bounded = immutableSnapshot(messages.slice(-DEFAULT_CONVERSATION_CONTEXT_LIMIT));
     this.messagesByConversation.set(key, bounded);
     this.contextByConversation.set(key, legacyConversationContext(bounded));
+  }
+
+  async getDialogueWorkingState(userId: string, conversationId: string): Promise<DialogueWorkingState | undefined> {
+    return this.dialogueWorkingStateByConversation.get(`${userId}\u0000${conversationId}`);
+  }
+
+  async setDialogueWorkingState(userId: string, conversationId: string, state: DialogueWorkingState): Promise<void> {
+    this.dialogueWorkingStateByConversation.set(`${userId}\u0000${conversationId}`, immutableSnapshot(state));
   }
 
   async listConversationalMemories(userId: string): Promise<readonly ConversationalMemory[]> {

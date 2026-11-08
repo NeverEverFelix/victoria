@@ -35,6 +35,18 @@ describe("agentic setup validation", () => {
     expect(result.stderr).toContain("Missing required file: .github/CODEOWNERS");
   });
 
+  it("fails when a duplicate snapshot with a space-two suffix is present", () => {
+    const fixture = createRepositoryFixture();
+    writeFileSync(join(fixture, "src/agent/conversation-routing 2.ts"), "export {};\n", "utf8");
+
+    const result = runValidator(fixture);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      'Remove duplicate snapshot path with a " 2" suffix: src/agent/conversation-routing 2.ts'
+    );
+  });
+
   it("fails when the README suggests moving money during the MVP", () => {
     const fixture = createRepositoryFixture();
     const readmePath = join(fixture, "README.md");

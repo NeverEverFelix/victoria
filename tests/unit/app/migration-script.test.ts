@@ -11,7 +11,8 @@ describe("database migration runner safety gates", () => {
     "0024_conversation_scoped_savings_events.sql",
     "0025_correct_conversation_event_identity.sql",
     "0028_durable_memory_learning_queue.sql",
-    "0029_stale_turn_recovery_index.sql"
+    "0029_stale_turn_recovery_index.sql",
+    "0030_dialogue_working_state.sql"
   ])(
     "keeps the local and Supabase copies of migration %s identical", (filename) => {
       const localMigration = new URL(`../../../db/migrations/${filename}`, import.meta.url);
@@ -40,6 +41,16 @@ describe("database migration runner safety gates", () => {
     expect(migration).toContain("ALTER TABLE victoria_memory_learning_jobs ENABLE ROW LEVEL SECURITY");
     expect(migration).toContain("REVOKE ALL ON TABLE victoria_memory_learning_jobs FROM PUBLIC, anon, authenticated");
     expect(migration).not.toContain("user_message");
+  });
+
+  it("keeps dialogue working state bounded, expiring, and server-only", () => {
+    const migration = readFileSync(new URL("../../../db/migrations/0030_dialogue_working_state.sql", import.meta.url), "utf8");
+    expect(migration).toContain("PRIMARY KEY (user_id, conversation_id)");
+    expect(migration).toContain("jsonb_array_length(state->'turns') <= 40");
+    expect(migration).toContain("expires_at > updated_at");
+    expect(migration).toContain("ALTER TABLE victoria_dialogue_working_state ENABLE ROW LEVEL SECURITY");
+    expect(migration).toContain("REVOKE ALL ON TABLE victoria_dialogue_working_state FROM PUBLIC, anon, authenticated");
+    expect(migration).toContain("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE victoria_dialogue_working_state TO service_role");
   });
 
   it("requires explicit opt-in before opening a database connection", () => {

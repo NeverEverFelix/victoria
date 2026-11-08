@@ -1,5 +1,6 @@
 /** Narrow routing helpers for read-only dialogue versus financial workflows. */
 import { calculateReadOnlySavingsQuestion } from "./read-only-calculator.js";
+import { isBudgetingAdviceQuestion } from "./money-movement-intent.js";
 
 export function isOrdinaryQuestion(message: string): boolean {
   return /\?/.test(message) &&
@@ -38,6 +39,7 @@ export function isConversationTopicTurn(message: string): boolean {
 /** Route clear read-only dialogue without requiring punctuation, while leaving finance/action turns to their existing paths. */
 export function shouldRouteToConversationResponder(message: string): boolean {
   return calculateReadOnlySavingsQuestion(message) !== undefined ||
+    isBudgetingAdviceQuestion(message) ||
     (isOrdinaryQuestion(message) && !hasFinancialActionSignal(message)) ||
     isExplicitReadOnlyTopicSwitch(message) || isReadOnlyFinancialReflection(message) ||
     (isConversationTopicTurn(message) && !hasFinancialActionSignal(message));

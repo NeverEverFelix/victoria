@@ -4,6 +4,7 @@ import { buildConversationContextSnapshot, OpenAiConversationResponder, validate
 import type { ConversationResponderInput } from "../../../src/agent/conversation-responder.js";
 import { ConversationReplyService } from "../../../src/agent/conversation-reply-service.js";
 import { ProviderUsageReporter } from "../../../src/agent/telemetry/provider-usage-reporter.js";
+import { appendDialogueWorkingTurn } from "../../../src/agent/dialogue-working-state.js";
 
 describe("conversation response boundary", () => {
   it("reports only route, retry, rejection, and fallback categories", async () => {
@@ -74,6 +75,42 @@ describe("conversation response boundary", () => {
     expect(Object.isFrozen(snapshot.scope)).toBe(true);
     expect(Object.isFrozen(snapshot.dialogueTurns)).toBe(true);
     expect(snapshot.dialogueTurns.every((turn) => Object.isFrozen(turn))).toBe(true);
+  });
+
+  it("adds relevant source-backed prior dialogue separately from current facts and memories", () => {
+    const snapshot = buildConversationContextSnapshot({
+      message: "Returning to the credit card tradeoff, should I prioritize it?",
+      recentTurns: ["User: I might take a pottery class this winter."],
+      memories: [],
+      priorDialogueTurns: [
+        { sourceTurnId: "old-debt", kind: "topic", text: "I want to compare paying down my credit card with building an emergency fund.", createdAt: "2026-10-30T12:00:00.000Z" },
+        { sourceTurnId: "recent-pottery", kind: "topic", text: "I might take a pottery class this winter.", createdAt: "2026-11-01T12:00:00.000Z" }
+      ]
+    });
+
+    expect(snapshot.priorDialogue).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: "I want to compare paying down my credit card with building an emergency fund.", createdAt: "2026-10-30T12:00:00.000Z", kind: "topic", sourceTurnId: "old-debt" })
+    ]));
+    expect(Object.isFrozen(snapshot.priorDialogue)).toBe(true);
+    expect(snapshot.selectedMemories).toEqual([]);
+    expect(snapshot.financialContext).toBeUndefined();
+  });
+
+  it("does not treat amounts from prior dialogue excerpts as verified monetary evidence", () => {
+    const snapshot = buildConversationContextSnapshot({
+      message: "Should I revisit that old choice?",
+      recentTurns: [], memories: [],
+      priorDialogueTurns: [{ sourceTurnId: "old-amount", kind: "topic", text: "I was considering setting aside $35 for a month.",
+        createdAt: "2026-10-30T12:00:00.000Z" }]
+    });
+    const validation = validateConversationReplyDetailed(
+      "The $35 could still be a reasonable amount.", {
+        message: "Should I revisit that old choice?", recentTurns: [], memories: [],
+        baselineReply: "We can revisit the earlier discussion.", contextSnapshot: snapshot
+      }
+    );
+
+    expect(validation).toMatchObject({ ok: false, reason: "unsupported_numeric_claim" });
   });
 
   it("does not reconstruct assistant role from a user message that imitates the transcript prefix", async () => {
@@ -237,6 +274,20 @@ describe("conversation response boundary", () => {
     expect(snapshot.dialogueState?.recentCorrections.at(-1)?.text).toBe("Actually, I need a small buffer first.");
     expect(snapshot.dialogueState?.currentConstraints.at(-1)?.text).toContain("need a small buffer");
     expect(snapshot.dialogueState?.referencedEntities).toEqual([{ kind: "pending_action", id: "action-7" }]);
+  });
+
+  it("projects source-linked dialogue signal types into the read-only context snapshot", () => {
+    const prior = appendDialogueWorkingTurn({ conversationId: "chat-1", sourceTurnId: "question-turn",
+      text: "Should I prioritize paying down my card?", now: new Date("2026-11-01T12:00:00.000Z") });
+    const snapshot = buildConversationContextSnapshot({
+      message: "Back to my card question.", recentTurns: [], memories: [],
+      ...(prior ? { priorDialogueTurns: prior.turns } : {})
+    });
+
+    expect(snapshot.priorDialogue).toEqual([{
+      sourceTurnId: "question-turn", kind: "question", text: "Should I prioritize paying down my card?",
+      createdAt: "2026-11-01T12:00:00.000Z"
+    }]);
   });
 
   it("uses the immutable snapshot depth for reply validation when outer hints disagree", () => {
