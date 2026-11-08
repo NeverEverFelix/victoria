@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "advice-question-versus-savings-proposal",
+      "message": "My employer covers my $35 gym now. Should I put the extra money toward debt?",
+      "financialClassificationType": "avoided_spend",
+      "hasPendingWorkflow": false,
+      "advisory": { "primaryIntent": "savings_moment", "requestedAction": "propose_savings", "actionMention": "mock_ledger" },
+      "expectedIntentDisagreement": true,
+      "expectedActionDisagreement": true,
+      "expectedRoute": "read_only"
+    },
+    {
+      "id": "record-request-versus-dialogue",
+      "message": "Please record the $25 I saved.",
+      "financialClassificationType": "avoided_spend",
+      "hasPendingWorkflow": false,
+      "advisory": { "primaryIntent": "dialogue", "requestedAction": "none", "actionMention": "none" },
+      "expectedIntentDisagreement": true,
+      "expectedActionDisagreement": true,
+      "expectedRoute": "financial_workflow"
+    },
+    {
+      "id": "agreement-and-debt-question-versus-planning",
+      "message": "Yeah, that makes sense, but I don't think I want to save the whole amount. Maybe some should go to debt?",
+      "financialClassificationType": "general_finance",
+      "hasPendingWorkflow": true,
+      "advisory": { "primaryIntent": "planning", "requestedAction": "none", "actionMention": "none" },
+      "expectedIntentDisagreement": true,
+      "expectedActionDisagreement": true,
+      "expectedRoute": "pending_workflow"
+    },
+    {
+      "id": "historical-transfer-versus-real-transfer-request",
+      "message": "I moved money last week. Do you think I moved enough?",
+      "financialClassificationType": "general_finance",
+      "hasPendingWorkflow": false,
+      "advisory": { "primaryIntent": "workflow_action", "requestedAction": "real_transfer_request", "actionMention": "real_money" },
+      "expectedIntentDisagreement": true,
+      "expectedActionDisagreement": true,
+      "expectedRoute": "read_only"
+    },
+    {
+      "id": "negated-transfer-versus-real-transfer-request",
+      "message": "I don't want to transfer anything; can we discuss my budget?",
+      "financialClassificationType": "general_finance",
+      "hasPendingWorkflow": false,
+      "advisory": { "primaryIntent": "workflow_action", "requestedAction": "real_transfer_request", "actionMention": "real_money" },
+      "expectedIntentDisagreement": true,
+      "expectedActionDisagreement": true,
+      "expectedRoute": "read_only"
+    },
+    {
+      "id": "plain-topic-control",
+      "message": "I had a really good weekend at the lake.",
+      "financialClassificationType": "general_finance",
+      "hasPendingWorkflow": false,
+      "advisory": { "primaryIntent": "dialogue", "requestedAction": "none", "actionMention": "none" },
+      "expectedIntentDisagreement": false,
+      "expectedActionDisagreement": false,
+      "expectedRoute": "read_only"
+    }
+  ]
+}

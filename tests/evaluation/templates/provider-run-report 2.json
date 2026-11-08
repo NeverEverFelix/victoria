@@ -1,0 +1,185 @@
+{
+  "reportType": "provider_comparison",
+  "corpusId": "victoria-provider-eval-v1",
+  "corpusSha256": "",
+  "startedAt": "",
+  "completedAt": "",
+  "environment": "local",
+  "timeoutMs": 8000,
+  "promptVersions": {
+    "turnUnderstanding": "turn-understanding-instructions-v1",
+    "financialMoment": "financial-moment-instructions-v3",
+    "savingsReasoning": "savings-assessment-instructions-v2",
+    "companionVoice": "companion-voice-instructions-v1"
+  },
+  "schemaVersions": {
+    "turnUnderstanding": "advisory_turn_plan_v1",
+    "financialMoment": "financial_moment_v1",
+    "savingsReasoning": "savings_assessment_v1",
+    "companionVoice": "companion_voice_v1"
+  },
+  "rateCard": {
+    "effectiveDate": "",
+    "inputUsdPerMillionTokens": 0,
+    "outputUsdPerMillionTokens": 0
+  },
+  "arms": [
+    {
+      "armId": "financial_moment_baseline",
+      "model": "",
+      "turns": [
+        {
+          "id": "",
+          "expectedIntent": "",
+          "probedIntent": null,
+          "runtimeClassification": null,
+          "expectedAction": "",
+          "actualAction": null,
+          "expectedAmountCents": null,
+          "actualAmountCents": null,
+          "intentProbeElapsedMs": null,
+          "targetElapsedMs": null,
+          "targetProviderCallCount": null,
+          "targetProviderElapsedMs": null,
+          "targetElapsedOutsideRecordedProviderCallsMs": null,
+          "financialAssessmentRoute": null,
+          "estimatedCostUsd": null,
+          "response": null,
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [{"role": "turn_understanding", "inputTokens": 0, "outputTokens": 0, "requestId": "", "elapsedMs": 0}],
+          "safetyFailures": [],
+          "errors": []
+        }
+      ],
+      "summary": {
+        "turns": 0,
+        "completedTurns": 0,
+        "failedOrTimedOutTurns": 0,
+        "safetyFailures": 0,
+        "intentPasses": 0,
+        "actionPasses": 0,
+        "amountPasses": 0,
+        "targetProviderCallsPerTurn": {"sampleCount": 0, "p50": null, "p95": null, "max": null},
+        "targetProviderElapsedMs": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null},
+        "targetElapsedOutsideRecordedProviderCallsMs": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null},
+        "financialAssessmentRoutes": {
+          "assessed": 0,
+          "skipped_plain_question": 0,
+          "skipped_model_dialogue": 0,
+          "resolved_pending_amount": 0
+        },
+        "latencyMs": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null},
+        "costPerTurnUsd": {"sampleCount": 0, "p50": null, "p95": null, "max": null},
+        "roleLatencyMs": {
+          "turn_understanding": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null},
+          "financial_moment": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null},
+          "savings_reasoning": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null},
+          "companion_voice": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null}
+        },
+        "usage": {
+          "effectiveRateDate": "",
+          "calls": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "estimatedCostUsd": null,
+          "estimatedCostUsdByRole": {
+            "turn_understanding": 0,
+            "financial_moment": 0,
+            "savings_reasoning": 0,
+            "companion_voice": 0
+          },
+          "callsByRole": {"turn_understanding": 0, "financial_moment": 0, "savings_reasoning": 0, "companion_voice": 0},
+          "tokensByRole": {
+            "turn_understanding": {"input": 0, "output": 0},
+            "financial_moment": {"input": 0, "output": 0},
+            "savings_reasoning": {"input": 0, "output": 0},
+            "companion_voice": {"input": 0, "output": 0}
+          },
+          "requestIds": []
+        },
+        "retryCount": 0
+      }
+    },
+    {
+      "armId": "specialist_team",
+      "model": "",
+      "turns": [
+        {
+          "id": "",
+          "expectedIntent": "",
+          "probedIntent": null,
+          "runtimeClassification": null,
+          "expectedAction": "",
+          "actualAction": null,
+          "expectedAmountCents": null,
+          "actualAmountCents": null,
+          "intentProbeElapsedMs": null,
+          "targetElapsedMs": null,
+          "targetProviderCallCount": null,
+          "targetProviderElapsedMs": null,
+          "targetElapsedOutsideRecordedProviderCallsMs": null,
+          "financialAssessmentRoute": null,
+          "estimatedCostUsd": null,
+          "response": null,
+          "setupActions": [],
+          "ledgerEntriesAdded": 0,
+          "correctionsAdded": 0,
+          "usage": [{"role": "turn_understanding", "inputTokens": 0, "outputTokens": 0, "requestId": "", "elapsedMs": 0}],
+          "safetyFailures": [],
+          "errors": []
+        }
+      ],
+      "summary": {
+        "turns": 0,
+        "completedTurns": 0,
+        "failedOrTimedOutTurns": 0,
+        "safetyFailures": 0,
+        "intentPasses": 0,
+        "actionPasses": 0,
+        "amountPasses": 0,
+        "targetProviderCallsPerTurn": {"sampleCount": 0, "p50": null, "p95": null, "max": null},
+        "targetProviderElapsedMs": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null},
+        "targetElapsedOutsideRecordedProviderCallsMs": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null},
+        "financialAssessmentRoutes": {
+          "assessed": 0,
+          "skipped_plain_question": 0,
+          "skipped_model_dialogue": 0,
+          "resolved_pending_amount": 0
+        },
+        "latencyMs": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null},
+        "costPerTurnUsd": {"sampleCount": 0, "p50": null, "p95": null, "max": null},
+        "roleLatencyMs": {
+          "turn_understanding": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null},
+          "financial_moment": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null},
+          "savings_reasoning": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null},
+          "companion_voice": {"sampleCount": 0, "p50Ms": null, "p95Ms": null, "maxMs": null}
+        },
+        "usage": {
+          "effectiveRateDate": "",
+          "calls": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "estimatedCostUsd": null,
+          "estimatedCostUsdByRole": {
+            "turn_understanding": 0,
+            "financial_moment": 0,
+            "savings_reasoning": 0,
+            "companion_voice": 0
+          },
+          "callsByRole": {"turn_understanding": 0, "financial_moment": 0, "savings_reasoning": 0, "companion_voice": 0},
+          "tokensByRole": {
+            "turn_understanding": {"input": 0, "output": 0},
+            "financial_moment": {"input": 0, "output": 0},
+            "savings_reasoning": {"input": 0, "output": 0},
+            "companion_voice": {"input": 0, "output": 0}
+          },
+          "requestIds": []
+        },
+        "retryCount": 0
+      }
+    }
+  ],
+  "limitations": []
+}
