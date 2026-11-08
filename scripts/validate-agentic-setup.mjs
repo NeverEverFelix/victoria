@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 
 const requiredFiles = [
   "AGENTS.md",
@@ -109,8 +109,26 @@ function requireNotIncludes(path, values) {
   }
 }
 
+function findSuffixedDuplicatePaths(directory = ".", prefix = "") {
+  const matches = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.name === ".git" || entry.name === "node_modules" || entry.name === ".next") continue;
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      matches.push(...findSuffixedDuplicatePaths(`${directory}/${entry.name}`, relativePath));
+    } else if (entry.isFile() && / 2(?:\.[^.]+)+$/.test(entry.name)) {
+      matches.push(relativePath);
+    }
+  }
+  return matches;
+}
+
 for (const file of requiredFiles) {
   requireFile(file);
+}
+
+for (const duplicatePath of findSuffixedDuplicatePaths()) {
+  errors.push(`Remove duplicate snapshot path with a " 2" suffix: ${duplicatePath}`);
 }
 
 for (const file of taskFiles) {

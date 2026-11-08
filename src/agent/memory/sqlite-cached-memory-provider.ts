@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import type { AgentMemory, FinancialDecision, SavingsGoal, UserHabit } from "../types.js";
 import type { ConversationMessage, ConversationalMemory, ConversationalMemoryPage, MemoryProvider } from "./types.js";
+import type { DialogueWorkingState } from "../dialogue-working-state.js";
 import { DEFAULT_CONVERSATION_CONTEXT_LIMIT } from "./types.js";
 import { PostgresMemoryRepository } from "./postgres-memory-repository.js";
 import { conversationMessagesFromLegacy, isConversationMessage, legacyConversationContext } from "./conversation-transcript.js";
@@ -174,6 +175,14 @@ export class SqliteCachedMemoryProvider implements MemoryProvider {
       throw error;
     }
     this.scheduleContextFlush(userId, conversationId);
+  }
+
+  getDialogueWorkingState(userId: string, conversationId: string): Promise<DialogueWorkingState | undefined> {
+    return this.durable.getDialogueWorkingState(userId, conversationId);
+  }
+
+  setDialogueWorkingState(userId: string, conversationId: string, state: DialogueWorkingState): Promise<void> {
+    return this.durable.setDialogueWorkingState(userId, conversationId, state);
   }
 
   async flushPendingContextBackups(): Promise<void> {

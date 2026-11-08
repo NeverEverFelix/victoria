@@ -27,6 +27,33 @@ describe("contextual multi-intent plan", () => {
     expect(mayDispatchConversationIntent(plan)).toBe(true);
   });
 
+  it("routes budgeting advice about a freed recurring cost to read-only dialogue", () => {
+    for (const [message, expectedQuestion] of [
+      ["My employer covers the $35 gym now. Should I put the extra money into debt repayment?", "Should I put the extra money into debt repayment?"],
+      ["My employer covers my $35 gym now. Should I put the extra money toward debt?", "Should I put the extra money toward debt?"]
+    ] as const) {
+      const plan = buildConversationIntentPlan({ message });
+
+      expect(plan.intents).toContain("dialogue");
+      expect(plan.readOnlyQuestions).toEqual([expectedQuestion]);
+      expect(plan.requestedActions).toEqual([]);
+      expect(shouldDispatchConversationIntent(understoodTurn(plan, message, "avoided_spend"))).toBe(true);
+    }
+  });
+
+  it("keeps agreement, uncertainty, and a debt question separate from a savings request", () => {
+    const message = "Yeah, that makes sense, but I don't think I want to save the whole amount. Maybe some should go to debt?";
+    const plan = buildConversationIntentPlan({ message, hasPendingWorkflow: true });
+
+    expect(plan.actionRequest.kind).toBe("plan_only");
+    expect(plan.requestedActions).toEqual([]);
+    expect(plan.dialogueActs).toContain("attempt_confirmation");
+    expect(plan.expressesUncertainty).toBe(true);
+    expect(plan.workflowRelation).not.toBe("revises_pending");
+    expect(shouldDispatchConversationIntent(understoodTurn(plan, message))).toBe(false);
+    expect(shouldDispatchConversationIntent(understoodTurn(plan, message, "avoided_spend"))).toBe(false);
+  });
+
   it("splits an independent question from an explicit savings proposal without authorizing it", () => {
     const plan = buildConversationIntentPlan({
       message: "Put the $35 toward vacation, and how long until summer?",

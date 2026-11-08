@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MemoryOrchestrator } from "../../../src/agent/memory/memory-orchestrator.js";
 import { MockMemoryProvider } from "../../../src/agent/memory/mock-memory.js";
 import type { ConversationalMemory } from "../../../src/agent/memory/types.js";
+import { appendDialogueWorkingTurn } from "../../../src/agent/dialogue-working-state.js";
 
 const profileMemory = (overrides: Partial<Omit<ConversationalMemory, "id" | "createdAt">> = {}): Omit<ConversationalMemory, "id" | "createdAt"> => ({
   category: "financial_pattern" as const,
@@ -15,6 +16,22 @@ const profileMemory = (overrides: Partial<Omit<ConversationalMemory, "id" | "cre
 });
 
 describe("MemoryOrchestrator", () => {
+  it("only returns unexpired dialogue working state scoped to its conversation", async () => {
+    const storage = new MockMemoryProvider();
+    const now = new Date("2026-11-01T12:00:00.000Z");
+    const memory = new MemoryOrchestrator(storage, { now: () => now });
+    const current = appendDialogueWorkingTurn({ conversationId: "chat-a", sourceTurnId: "turn-current",
+      text: "I am considering the credit-card tradeoff.", now });
+    const expired = appendDialogueWorkingTurn({ conversationId: "chat-a", sourceTurnId: "turn-expired",
+      text: "I was considering an old plan.", now: new Date(now.getTime() - 31 * 24 * 60 * 60_000) });
+    await storage.setDialogueWorkingState("user-a", "chat-a", current!);
+    await storage.setDialogueWorkingState("user-a", "chat-b", expired!);
+
+    await expect(memory.getDialogueWorkingState("user-a", "chat-a")).resolves.toEqual(current);
+    await expect(memory.getDialogueWorkingState("user-a", "chat-b")).resolves.toBeUndefined();
+    await expect(memory.getDialogueWorkingState("user-b", "chat-a")).resolves.toBeUndefined();
+  });
+
   it("carries source-turn provenance into append-only forget markers", async () => {
     const storage = new MockMemoryProvider();
     const memory = new MemoryOrchestrator(storage);
